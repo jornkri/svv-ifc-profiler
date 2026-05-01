@@ -1,0 +1,30 @@
+# IFC-parsing
+ifcopenshell>=0.7.0
+
+# Geometri og numerikk
+numpy>=1.26
+shapely>=2.0
+trimesh>=4.0
+scipy>=1.11
+
+# GIS
+geopandas>=0.14
+arcgis>=2.3            # ArcGIS API for Python (pip-installerbar, cross-platform)
+# arcpy                # ArcPy krever ArcGIS Pro + Windows-lisens. Installeres
+                       # via ArcGIS Pro sin egen conda-distribusjon, ikke via pip.
+                       # Aktiver kun hvis du faktisk trenger Pro-funksjonalitet.
+
+# Visualisering / rendering av tverrprofiler
+matplotlib>=3.8
+pillow>=10.0
+
+# Backend API
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9   # filopplasting
+pydantic>=2.6
+
+# Test og kvalitet
+pytest>=8.0
+pytest-cov>=5.0
+ruff>=0.4

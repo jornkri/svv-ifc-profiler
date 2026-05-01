@@ -1,0 +1,66 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# --- Node / frontend ---
+node_modules/
+.npm
+.pnp
+.pnp.js
+.yarn/
+dist/
+.vite/
+.next/
+.turbo/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Miljø / hemmeligheter ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Prosjekt-spesifikt ---
+# Store IFC-filer skal ikke i Git – bruk Git LFS eller eksternt lager
+samples/*.ifc
+samples/*.IFC
+uploads/
+output/
+*.ifczip
+
+# Genererte profiler / bilder fra prosessering
+output_profiles/
+*.tmp.png
+*.tmp.svg
+
+# ArcGIS midlertidige filer
+*.lock
+*.gdb/

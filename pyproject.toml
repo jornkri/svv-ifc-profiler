@@ -1,0 +1,27 @@
+[project]
+name = "svv-ifc-profiler"
+version = "0.1.0"
+description = "Generer tverrprofiler og lengdeprofiler fra IFC-modeller iht. SVV håndbok R700"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Jørn Kristiansen", email = "jorn.kristiansen@geodata.no" }
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
