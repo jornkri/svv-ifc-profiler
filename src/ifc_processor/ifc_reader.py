@@ -73,7 +73,14 @@ def read_ifc_tins(ifc_path: Path) -> list[TINLayer]:
             continue
 
         verts = np.array(shape.geometry.verts, dtype=float).reshape(-1, 3)
-        faces = np.array(shape.geometry.faces, dtype=int).reshape(-1, 3)
+        faces_raw = np.array(shape.geometry.faces, dtype=int)
+        if len(faces_raw) % 3 != 0:
+            logger.warning(
+                "Element %s has non-triangular faces (%d indices), skipping",
+                element.GlobalId, len(faces_raw)
+            )
+            continue
+        faces = faces_raw.reshape(-1, 3)
         triangles = verts[faces]  # shape (N, 3, 3)
 
         result.append(TINLayer(

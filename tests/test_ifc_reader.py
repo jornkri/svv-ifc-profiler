@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from src.ifc_processor.ifc_reader import TINLayer, classify_layer, read_ifc_tins
 
-SAMPLE_IFC = Path("samples/UEH-32-A-55075_05 Vei Kleverud_IFC.ifc")
+SAMPLE_IFC = Path(__file__).parent.parent / "samples" / "UEH-32-A-55075_05 Vei Kleverud_IFC.ifc"
 
 def test_classify_layer_planum():
     assert classify_layer("3D_D_Planum_ColGreyS") == "planum"
@@ -37,5 +37,6 @@ def test_read_ifc_tins_triangles_shape():
     tins = read_ifc_tins(SAMPLE_IFC)
     for tin in tins:
         assert tin.triangles.ndim == 3
+        assert tin.triangles.shape[0] > 0   # N triangles
         assert tin.triangles.shape[1] == 3  # 3 vertices
         assert tin.triangles.shape[2] == 3  # XYZ
