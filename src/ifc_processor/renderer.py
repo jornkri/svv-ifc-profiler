@@ -58,9 +58,15 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
 
     if not all_u:
         logger.warning("Ingen segmenter å rendre for stasjon %.1f", cross_section.station)
+        ax.set_title(
+            f"Profil {cross_section.station:.2f} (tomt snitt)",
+            fontsize=9, fontweight="bold", pad=6, loc="left",
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(output_path), format="svg")
-        plt.close(fig)
+        try:
+            fig.savefig(str(output_path), format="svg")
+        finally:
+            plt.close(fig)
         return output_path
 
     u_margin = max(5.0, (max(all_u) - min(all_u)) * 0.15)
@@ -102,8 +108,10 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(str(output_path), format="svg", bbox_inches="tight")
-    plt.close(fig)
+    try:
+        fig.savefig(str(output_path), format="svg", bbox_inches="tight")
+    finally:
+        plt.close(fig)
     return output_path
 
 
