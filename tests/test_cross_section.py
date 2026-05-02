@@ -8,6 +8,7 @@ from src.ifc_processor.cross_section import (
     sample_stations,
     cut_cross_section,
     _intersect_triangle_plane,
+    _project_to_2d,
 )
 from src.ifc_processor.ifc_reader import TINLayer
 
@@ -88,3 +89,28 @@ def test_cut_cross_section_elevation():
     tin = _flat_road_tin(z=0.0)
     cs = cut_cross_section([tin], station)
     assert cs.elevation == pytest.approx(0.0, abs=0.1)
+
+
+def test_project_to_2d_horizontal_road():
+    """For a road running along +X: right (−Y) is positive u, up is positive v."""
+    tangent = np.array([1.0, 0.0, 0.0])
+    plane_point = np.array([50.0, 0.0, 100.0])
+    # Point 3m to the right (−Y direction for +X travel)
+    p_right = np.array([50.0, -3.0, 100.0])
+    u, v = _project_to_2d(p_right, plane_point, tangent)
+    assert u == pytest.approx(3.0, abs=1e-6)
+    assert v == pytest.approx(0.0, abs=1e-6)
+
+
+def test_project_to_2d_graded_road():
+    """On a graded road, the horizontal offset should not pick up elevation error."""
+    # 10% grade: tangent has z component
+    tangent = np.array([1.0, 0.0, 0.1])
+    tangent /= np.linalg.norm(tangent)
+    plane_point = np.array([50.0, 0.0, 100.0])
+    # Point 3m to the right (−Y) at same elevation
+    p_right = np.array([50.0, -3.0, 100.0])
+    u, v = _project_to_2d(p_right, plane_point, tangent)
+    # u should still be ~3.0 regardless of grade
+    assert u == pytest.approx(3.0, abs=0.01)
+    assert v == pytest.approx(0.0, abs=0.01)

@@ -95,9 +95,14 @@ def _project_to_2d(
     tangent: np.ndarray,
 ) -> tuple[float, float]:
     """Projiser 3D-punkt til 2D i snittplanets koordinatsystem."""
-    u = np.cross(tangent, np.array([0.0, 0.0, 1.0]))
-    u_norm = np.linalg.norm(u)
-    u = u / u_norm if u_norm > 1e-9 else np.array([0.0, 1.0, 0.0])
+    horiz = np.array([tangent[0], tangent[1], 0.0])
+    horiz_norm = np.linalg.norm(horiz)
+    if horiz_norm > 1e-9:
+        horiz /= horiz_norm
+        u = np.cross(horiz, np.array([0.0, 0.0, 1.0]))
+    else:
+        logger.warning("Tangent er nær vertikal — bruker fallback u-akse")
+        u = np.array([0.0, 1.0, 0.0])
     delta = p - plane_point
     return float(delta @ u), float(delta[2])
 
