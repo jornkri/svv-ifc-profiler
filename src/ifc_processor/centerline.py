@@ -22,8 +22,12 @@ class Centerline:
 
 
 def _stations_from_points(points: np.ndarray) -> np.ndarray:
+    if len(points) < 2:
+        raise ValueError(f"Senterlinje krever minst 2 punkter, fikk {len(points)}")
     diffs = np.diff(points, axis=0)
     seg_lengths = np.linalg.norm(diffs, axis=1)
+    if np.any(seg_lengths == 0):
+        logger.warning("Senterlinje har duplikate punkter (0-lengde segmenter)")
     return np.concatenate([[0.0], np.cumsum(seg_lengths)])
 
 
@@ -34,13 +38,21 @@ def _load_from_geojson(path: Path) -> Centerline:
         geom = feat.get("geometry", feat)
         if geom.get("type") == "LineString":
             coords = geom["coordinates"]
+            if not coords:
+                raise ValueError(f"LineString i {path} har ingen koordinater")
             pts = np.array([[c[0], c[1], c[2] if len(c) > 2 else 0.0] for c in coords])
             return Centerline(points=pts, stations=_stations_from_points(pts))
     raise ValueError(f"Ingen LineString funnet i {path}")
 
 
 def _load_from_csv(path: Path) -> Centerline:
-    pts = np.loadtxt(path, delimiter=",", usecols=(0, 1, 2))
+    try:
+        pts = np.loadtxt(path, delimiter=",", usecols=(0, 1, 2))
+    except (ValueError, IndexError) as exc:
+        raise ValueError(
+            f"Kan ikke lese senterlinje fra {path}: {exc}. "
+            "Forventet format: X,Y,Z per linje, minst 3 kolonner."
+        ) from exc
     if pts.ndim == 1:
         pts = pts.reshape(1, 3)
     return Centerline(points=pts, stations=_stations_from_points(pts))
