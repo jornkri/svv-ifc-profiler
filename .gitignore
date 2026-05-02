@@ -64,3 +64,6 @@ output_profiles/
 # ArcGIS midlertidige filer
 *.lock
 *.gdb/
+
+# Brainstorming-sesjoner (Visual Companion)
+.superpowers/
