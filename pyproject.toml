@@ -7,6 +7,9 @@ requires-python = ">=3.11"
 authors = [
     { name = "Jørn Kristiansen", email = "jorn.kristiansen@geodata.no" }
 ]
+dependencies = [
+    "matplotlib>=3.8",
+]
 
 [tool.ruff]
 line-length = 100
