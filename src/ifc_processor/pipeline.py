@@ -65,12 +65,12 @@ def run_pipeline(
     for s in stations:
         try:
             cs = cut_cross_section(tins, s)
+            svg_path = output_dir / f"station_{s.distance:07.1f}.svg"
+            render_cross_section_svg(cs, svg_path)
         except Exception as exc:
             logger.warning("Hopper over stasjon %.1f m: %s", s.distance, exc)
             continue
 
-        svg_path = output_dir / f"station_{s.distance:07.1f}.svg"
-        render_cross_section_svg(cs, svg_path)
         svg_paths.append(str(svg_path))
         metadata_rows.append({
             "station": round(s.distance, 3),
