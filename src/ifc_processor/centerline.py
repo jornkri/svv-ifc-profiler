@@ -140,6 +140,78 @@ def _try_ifc_alignment(ifc_path: Path) -> Centerline | None:
     return None
 
 
+def derive_centerline_from_ifc(ifc_path: Path, layer_keyword: str = "kjørefelt", n_slices: int = 200) -> Centerline:
+    """Deriver senterlinje fra IFC-overflate-TIN via PCA-midtpunkt-metode.
+
+    Finner TINer der Layer inneholder `layer_keyword` (f.eks. "kjørefelt"),
+    bruker PCA til å finne vegens primærretning, skjærer langs denne og
+    finner midtpunktet i tverrretningen for hvert snitt.
+
+    Args:
+        ifc_path:      Sti til IFC-fil.
+        layer_keyword: Nøkkelord i Layer-navnet (ikke skift-sensitivt).
+        n_slices:      Antall samplepunkter langs vegens lengderetning.
+
+    Returns:
+        Centerline med 3D-punkter.
+
+    Raises:
+        ValueError: Hvis ingen TINer med `layer_keyword` finnes.
+    """
+    from .ifc_reader import read_ifc_tins
+
+    tins = read_ifc_tins(ifc_path)
+    keyword_lower = layer_keyword.lower()
+    surface_tins = [t for t in tins if keyword_lower in t.layer.lower()]
+
+    if not surface_tins:
+        available = sorted({t.layer for t in tins})
+        raise ValueError(
+            f"Ingen TINer med '{layer_keyword}' i Layer-navn. "
+            f"Tilgjengelige lag: {available}"
+        )
+
+    logger.info("Deriverer senterlinje fra %d '%s'-TINer", len(surface_tins), layer_keyword)
+
+    # Hent alle 3D-hjørnepunkter
+    all_pts = np.vstack([t.triangles.reshape(-1, 3) for t in surface_tins])
+
+    # PCA: finn primærretning (langs vegen) og sekundærretning (tvers)
+    pts_2d = all_pts[:, :2]
+    mean_2d = pts_2d.mean(axis=0)
+    centered = pts_2d - mean_2d
+    cov = np.cov(centered.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    primary = eigvecs[:, -1]    # langs vegen (størst varians)
+    secondary = eigvecs[:, -2]  # tvers på vegen
+
+    along = centered @ primary   # projeksjoner langs primærretning
+    across = centered @ secondary
+
+    # Skjær langs primærretningen og finn midtpunkt i tverrretningen
+    s_min, s_max = along.min(), along.max()
+    slice_centers = np.linspace(s_min, s_max, n_slices + 2)[1:-1]
+    window = (s_max - s_min) / n_slices * 2.0
+
+    centerline_pts: list[np.ndarray] = []
+    for s in slice_centers:
+        mask = np.abs(along - s) < window
+        if mask.sum() < 3:
+            continue
+        mid_across = (across[mask].min() + across[mask].max()) / 2.0
+        center_2d = mean_2d + s * primary + mid_across * secondary
+        z = float(all_pts[mask, 2].mean())
+        centerline_pts.append(np.array([center_2d[0], center_2d[1], z]))
+
+    if len(centerline_pts) < 2:
+        raise ValueError("For få snitt med data til å danne en senterlinje")
+
+    pts_arr = np.array(centerline_pts)
+    logger.info("Senterlinje derivert: %d punkter, %.1f m", len(pts_arr),
+                np.sum(np.linalg.norm(np.diff(pts_arr, axis=0), axis=1)))
+    return Centerline(points=pts_arr, stations=_stations_from_points(pts_arr))
+
+
 def _medial_axis_from_tins(tins: list) -> Centerline:
     all_pts = np.vstack([t.triangles.reshape(-1, 3)[:, :2] for t in tins])
     from shapely.geometry import MultiPoint
