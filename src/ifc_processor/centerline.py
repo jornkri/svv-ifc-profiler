@@ -45,6 +45,65 @@ def _load_from_geojson(path: Path) -> Centerline:
     raise ValueError(f"Ingen LineString funnet i {path}")
 
 
+def _load_from_landxml(path: Path) -> Centerline:
+    """Les LandXML 1.2 PlanFeature/CoordGeom/Line-struktur.
+
+    LandXML bruker (Northing, Easting, Z) — konverteres til (Easting, Northing, Z)
+    slik at koordinatene matcher IFC-modellens lokale system.
+    """
+    import xml.etree.ElementTree as ET
+
+    # Støtt både med og uten LandXML-namespace
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError as exc:
+        raise ValueError(f"Ugyldig XML i {path}: {exc}") from exc
+
+    root = tree.getroot()
+    ns_uri = ""
+    if root.tag.startswith("{"):
+        ns_uri = root.tag.split("}")[0][1:]
+    ns = {"lx": ns_uri} if ns_uri else {}
+
+    def find_all(parent, tag):
+        if ns_uri:
+            return parent.findall(f".//lx:{tag}", ns)
+        return parent.findall(f".//{tag}")
+
+    def parse_coord(text: str) -> tuple[float, float, float]:
+        parts = text.strip().split()
+        # LandXML: Northing Easting [Z]
+        n, e = float(parts[0]), float(parts[1])
+        z = float(parts[2]) if len(parts) > 2 else 0.0
+        return e, n, z  # → (X, Y, Z) som samsvarer med IFC
+
+    # Hent alle linjestykker og kjed dem til én sammenhengende polyline
+    raw_pts: list[tuple[float, float, float]] = []
+
+    for line in find_all(root, "Line"):
+        start_el = line.find("lx:Start", ns) if ns_uri else line.find("Start")
+        end_el = line.find("lx:End", ns) if ns_uri else line.find("End")
+        if start_el is None or end_el is None:
+            continue
+        s = parse_coord(start_el.text)
+        e = parse_coord(end_el.text)
+        if not raw_pts:
+            raw_pts.append(s)
+        raw_pts.append(e)
+
+    if not raw_pts:
+        raise ValueError(f"Ingen Line-elementer funnet i {path}")
+
+    # Fjern duplikate konsekutive punkter
+    pts_arr = np.array(raw_pts)
+    mask = np.ones(len(pts_arr), dtype=bool)
+    mask[1:] = np.any(pts_arr[1:] != pts_arr[:-1], axis=1)
+    pts_arr = pts_arr[mask]
+
+    logger.info("LandXML: leste %d punkter fra %s", len(pts_arr), path.name)
+    return Centerline(points=pts_arr, stations=_stations_from_points(pts_arr))
+
+
 def _load_from_csv(path: Path) -> Centerline:
     try:
         pts = np.loadtxt(path, delimiter=",", usecols=(0, 1, 2))
@@ -107,7 +166,9 @@ def load_centerline(source: Path | None, ifc_path: Path) -> Centerline:
             return _load_from_geojson(source)
         if suffix == ".csv":
             return _load_from_csv(source)
-        raise ValueError(f"Ukjent senterlinje-format: {suffix}. Godkjente formater: .geojson, .csv")
+        if suffix == ".xml":
+            return _load_from_landxml(source)
+        raise ValueError(f"Ukjent senterlinje-format: {suffix}. Godkjente formater: .geojson, .csv, .xml (LandXML)")
 
     if ifc_path.exists():
         cl = _try_ifc_alignment(ifc_path)
@@ -128,5 +189,6 @@ def load_centerline(source: Path | None, ifc_path: Path) -> Centerline:
     raise ValueError(
         "Ingen senterlinje funnet. Oppgi senterlinje som:\n"
         "  --centerline senterlinje.geojson   (GeoJSON med LineString)\n"
+        "  --centerline senterlinje.xml        (LandXML 1.2 med PlanFeature/Line)\n"
         "  --centerline stasjoner.csv          (X,Y,Z per linje)"
     )
