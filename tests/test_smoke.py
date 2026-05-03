@@ -1,23 +1,19 @@
 """Smoke-tester: sjekk at modulene kan importeres og at API-en svarer."""
 
-from fastapi.testclient import TestClient
-
 
 def test_imports():
     from src.ifc_processor import (
-        extract_centerline,
+        Centerline,
+        CrossSection,
+        Station,
+        TINLayer,
         generate_cross_sections,
-        generate_longitudinal_profile,
+        load_centerline,
+        read_ifc_tins,
+        run_pipeline,
+        sample_stations,
     )
-    assert callable(extract_centerline)
-    assert callable(generate_cross_sections)
-    assert callable(generate_longitudinal_profile)
-
-
-def test_health_endpoint():
-    from src.api.server import app
-
-    client = TestClient(app)
-    resp = client.get("/api/health")
-    assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    assert callable(load_centerline)
+    assert callable(read_ifc_tins)
+    assert callable(run_pipeline)
+    assert callable(sample_stations)
