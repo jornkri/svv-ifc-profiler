@@ -38,14 +38,22 @@ def convert_bim(ifc_path: str, dataset_name: str, wkid: int = 25833) -> list[str
         ) from exc
 
     dataset_path = os.path.join(gdb_path, dataset_name)
-    arcpy.env.workspace = dataset_path
-    fcs = arcpy.ListFeatureClasses() or []
+    old_ws = arcpy.env.workspace
+    try:
+        arcpy.env.workspace = dataset_path
+        fcs = arcpy.ListFeatureClasses() or []
+    finally:
+        arcpy.env.workspace = old_ws
     logger.info("BIMFileToGeodatabase produserte %d feature classes", len(fcs))
     return [os.path.join(dataset_path, fc) for fc in fcs]
 
 
-def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:
+def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:  # noqa: ARG001
     """Slett feature classes uten features. Returner gjenstående.
+
+    Args:
+        fc_paths: Liste med stier til feature classes å sjekke.
+        dataset_path: Stien til datasett (reservert for fremtidiges implementasjoner).
 
     Raises:
         ArcpyProcessorError: NO_FEATURES hvis alle er tomme.

@@ -28,6 +28,8 @@ def test_convert_bim_calls_bimfile_to_geodatabase():
     fcs = converter.convert_bim("test.ifc", "test_dataset", wkid=25833)
     arcpy_mock.conversion.BIMFileToGeodatabase.assert_called_once()
     assert len(fcs) == 2
+    assert "Planum" in fcs[0]
+    assert "Skjaering" in fcs[1]
 
 
 def test_delete_empty_fcs_removes_zero_count():
