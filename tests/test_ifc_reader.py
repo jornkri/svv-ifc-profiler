@@ -18,6 +18,27 @@ def test_classify_layer_fylling():
 def test_classify_layer_groft():
     assert classify_layer("3D_D_Grøfteskråning_Grass01") == "groft"
 
+def test_classify_layer_kjorefelt():
+    assert classify_layer("3D_D_Kjørefelt_Asphalt01") == "kjørefelt"
+
+def test_classify_layer_skulder():
+    assert classify_layer("3D_D_Skulder_Gravel01") == "skulder"
+
+def test_classify_layer_groeftebunn():
+    assert classify_layer("3D_D__Grøftebunn_Gravel03") == "groft"
+
+def test_classify_layer_sykkelveg():
+    assert classify_layer("3D_D__GangSykkelveg_Asphalt02") == "gang_sykkel"
+
+def test_classify_layer_kantstein():
+    assert classify_layer("3D_D_Kantstein_Stone01") == "kantstein"
+
+def test_classify_layer_berghylle():
+    assert classify_layer("3D_D__Berghylle_Rock01") == "skjaering"
+
+def test_classify_layer_vegkropp():
+    assert classify_layer("Vegkropp og kryss") == "planum"
+
 def test_classify_layer_unknown():
     assert classify_layer("UkjentLag") == "unknown"
 

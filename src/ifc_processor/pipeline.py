@@ -5,12 +5,64 @@ import json
 import logging
 from pathlib import Path
 
-from .centerline import load_centerline
+import numpy as np
+
+from .centerline import Centerline, load_centerline
 from .cross_section import cut_cross_section, sample_stations
-from .ifc_reader import read_ifc_tins
+from .ifc_reader import TINLayer, read_ifc_tins
 from .renderer import render_cross_section_svg
 
 logger = logging.getLogger(__name__)
+
+
+def _clip_centerline_to_tins(
+    centerline: Centerline,
+    tins: list[TINLayer],
+    buffer_m: float = 50.0,
+) -> Centerline:
+    """Klipp senterlinjen til bounding-boksen til TINene + buffer.
+
+    Brukes når senterlinjen er hentet fra en ekstern fil (LandXML/GeoJSON) som
+    kan dekke et mye lengre vegstrekk enn IFC-modellen.
+    Dersom under 2 punkter faller innenfor boksen, returneres originallinjen.
+    """
+    if not tins:
+        return centerline
+
+    # Bruk kun vegflate-TINer for å finne IFC-modellens faktiske strekningsutstrekning.
+    # "Vegkropp og kryss"-TINer kan dekke et mye lengre strekk enn selve detaljmodellen.
+    _SURFACE_CLASSES = {"planum", "kjørefelt", "skulder", "skjaering", "fylling"}
+    surface_tins = [t for t in tins if t.road_class in _SURFACE_CLASSES]
+    ref_tins = surface_tins if surface_tins else tins
+
+    all_verts = np.vstack([t.triangles.reshape(-1, 3) for t in ref_tins])
+    xy_min = all_verts[:, :2].min(axis=0) - buffer_m
+    xy_max = all_verts[:, :2].max(axis=0) + buffer_m
+
+    pts = centerline.points
+    mask = (
+        (pts[:, 0] >= xy_min[0]) & (pts[:, 0] <= xy_max[0]) &
+        (pts[:, 1] >= xy_min[1]) & (pts[:, 1] <= xy_max[1])
+    )
+    n_in = int(mask.sum())
+
+    if n_in == len(pts):
+        return centerline  # Allerede innenfor
+
+    if n_in < 2:
+        logger.warning(
+            "Senterlinje og IFC-modell overlapper ikke — bruker full senterlinje"
+        )
+        return centerline
+
+    clipped = Centerline.from_points(pts[mask])
+    logger.info(
+        "Senterlinje klippet fra %.1f m (%d pt) til %.1f m (%d pt) "
+        "(IFC-bbox + %.0f m buffer)",
+        centerline.total_length, len(pts),
+        clipped.total_length, n_in, buffer_m,
+    )
+    return clipped
 
 
 def _save_centerline_geojson(centerline, path: Path) -> None:
@@ -49,12 +101,17 @@ def run_pipeline(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    centerline = load_centerline(source=centerline_path, ifc_path=ifc_path)
-    logger.info("Senterlinje: %.1f m lang, %d punkter", centerline.total_length, len(centerline.points))
-
     logger.info("Leser TINer fra %s", ifc_path)
-    tins = read_ifc_tins(ifc_path)
-    logger.info("Leste %d TINer", len(tins))
+    try:
+        tins = read_ifc_tins(ifc_path)
+        logger.info("Leste %d TINer", len(tins))
+    except Exception as exc:
+        logger.warning("Kan ikke lese TINer (senterlinjeklipping deaktivert): %s", exc)
+        tins = []
+
+    centerline = load_centerline(source=centerline_path, ifc_path=ifc_path)
+    centerline = _clip_centerline_to_tins(centerline, tins)
+    logger.info("Senterlinje: %.1f m lang, %d punkter", centerline.total_length, len(centerline.points))
 
     stations = sample_stations(centerline, interval_m)
     logger.info("Genererer %d tverrprofiler (intervall: %.1f m)", len(stations), interval_m)

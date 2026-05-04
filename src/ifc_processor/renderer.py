@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -15,12 +16,78 @@ logger = logging.getLogger(__name__)
 
 # R700 line styles per road component
 _STYLE: dict[str, dict] = {
-    "planum":    {"color": "black", "linewidth": 2.0, "linestyle": "-", "zorder": 3},
-    "skjaering": {"color": "black", "linewidth": 1.0, "linestyle": "-", "zorder": 2},
-    "fylling":   {"color": "black", "linewidth": 1.0, "linestyle": "-", "zorder": 2},
-    "groft":     {"color": "black", "linewidth": 1.0, "linestyle": "-", "zorder": 2},
-    "unknown":   {"color": "black", "linewidth": 0.5, "linestyle": "--", "zorder": 1},
+    "planum":      {"color": "black",   "linewidth": 2.0, "linestyle": "-",  "zorder": 5},
+    "kjørefelt":   {"color": "#111111", "linewidth": 1.5, "linestyle": "-",  "zorder": 4},
+    "skulder":     {"color": "#333333", "linewidth": 1.0, "linestyle": "-",  "zorder": 4},
+    "kantstein":   {"color": "black",   "linewidth": 1.5, "linestyle": "-",  "zorder": 4},
+    "gang_sykkel": {"color": "#444444", "linewidth": 1.0, "linestyle": "-",  "zorder": 3},
+    "skjaering":   {"color": "black",   "linewidth": 1.0, "linestyle": "-",  "zorder": 3},
+    "fylling":     {"color": "black",   "linewidth": 1.0, "linestyle": "-",  "zorder": 3},
+    "groft":       {"color": "black",   "linewidth": 1.0, "linestyle": "-",  "zorder": 3},
+    "unknown":     {"color": "#888888", "linewidth": 0.5, "linestyle": "--", "zorder": 1},
 }
+
+_TOL = 1e-6  # toleranse for sammenkjeding av endepunkter (meter)
+
+
+def _chain_segments(
+    segs: list[tuple[tuple[float, float], tuple[float, float]]],
+) -> list[list[tuple[float, float]]]:
+    """Kjed isolerte linjestykker fra triangelsnitt til sammenhengende polylinjer."""
+    if not segs:
+        return []
+
+    def key(p: tuple[float, float]) -> tuple:
+        return (round(p[0] / _TOL) * _TOL, round(p[1] / _TOL) * _TOL)
+
+    adj: dict[tuple, list[tuple[tuple, int, tuple]]] = defaultdict(list)
+    for i, (p1, p2) in enumerate(segs):
+        k1, k2 = key(p1), key(p2)
+        adj[k1].append((k2, i, p2))
+        adj[k2].append((k1, i, p1))
+
+    used: set[int] = set()
+    chains: list[list[tuple[float, float]]] = []
+
+    # Start fra endepunkter (grad 1) for å bygge kjeder fra ytterpunktene innover
+    start_candidates = [
+        pt for pt, neighbors in adj.items()
+        if len(neighbors) == 1 and neighbors[0][1] not in used
+    ]
+    if not start_candidates:
+        start_candidates = list(adj.keys())
+
+    for start in start_candidates:
+        available = [(nb, idx, actual) for nb, idx, actual in adj[start] if idx not in used]
+        if not available:
+            continue
+
+        first_nb, first_idx, _ = available[0]
+        first_seg = segs[first_idx]
+        chain: list[tuple[float, float]] = (
+            [first_seg[0], first_seg[1]] if key(first_seg[0]) == start
+            else [first_seg[1], first_seg[0]]
+        )
+        used.add(first_idx)
+        current = first_nb
+
+        while True:
+            nxt = [(nb, idx, a) for nb, idx, a in adj[current] if idx not in used]
+            if not nxt:
+                break
+            nb, idx, _ = nxt[0]
+            seg = segs[idx]
+            chain.append(seg[1] if key(seg[0]) == current else seg[0])
+            used.add(idx)
+            current = nb
+
+        chains.append(chain)
+
+    for i, (p1, p2) in enumerate(segs):
+        if i not in used:
+            chains.append([p1, p2])
+
+    return chains
 
 _PAPER_W_MM = 420  # A3 width
 _PAPER_H_MM = 297  # A3 height
@@ -83,11 +150,13 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
         va="center", ha="right", fontsize=7, fontfamily="monospace",
     )
 
-    # Draw segments
+    # Draw segments as connected polylines
     for road_class, segs in cross_section.segments.items():
         style = _STYLE.get(road_class, _STYLE["unknown"])
-        for (u1, v1), (u2, v2) in segs:
-            ax.plot([u1, u2], [v1, v2], **style)
+        for chain in _chain_segments(segs):
+            us = [p[0] for p in chain]
+            vs = [p[1] for p in chain]
+            ax.plot(us, vs, **style)
 
     # Profile number above plot (R700)
     ax.set_title(

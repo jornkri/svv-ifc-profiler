@@ -20,6 +20,10 @@ class Centerline:
     def total_length(self) -> float:
         return float(self.stations[-1]) if len(self.stations) > 0 else 0.0
 
+    @classmethod
+    def from_points(cls, points: np.ndarray) -> "Centerline":
+        return cls(points=points, stations=_stations_from_points(points))
+
 
 def _stations_from_points(points: np.ndarray) -> np.ndarray:
     if len(points) < 2:

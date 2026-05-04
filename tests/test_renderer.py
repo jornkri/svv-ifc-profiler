@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 import pytest
 from src.ifc_processor.cross_section import CrossSection
-from src.ifc_processor.renderer import render_cross_section_svg
+from src.ifc_processor.renderer import _chain_segments, render_cross_section_svg
 
 
 def _simple_cross_section(station=50.0, elevation=100.0) -> CrossSection:
@@ -16,6 +16,32 @@ def _simple_cross_section(station=50.0, elevation=100.0) -> CrossSection:
             "unknown": [((-15.0, 0.0), (-5.0, 0.0))],
         }
     )
+
+
+def test_chain_segments_connects_adjacent():
+    # Tre segmenter: A-B, B-C, C-D → én kjede med 4 punkter
+    segs = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((1.0, 0.0), (2.0, 0.0)),
+        ((2.0, 0.0), (3.0, 0.0)),
+    ]
+    chains = _chain_segments(segs)
+    assert len(chains) == 1
+    assert len(chains[0]) == 4
+
+
+def test_chain_segments_isolated():
+    # To adskilte segmenter → to kjeder
+    segs = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((5.0, 0.0), (6.0, 0.0)),
+    ]
+    chains = _chain_segments(segs)
+    assert len(chains) == 2
+
+
+def test_chain_segments_empty():
+    assert _chain_segments([]) == []
 
 
 def test_render_produces_svg_file():

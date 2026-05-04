@@ -13,11 +13,22 @@ logger = logging.getLogger(__name__)
 
 _LAYER_KEYWORDS: dict[str, str] = {
     "planum": "planum",
+    "vegkropp": "planum",
+    "kjørefelt": "kjørefelt",
+    "kjorfelt": "kjørefelt",
+    "skulder": "skulder",
     "skjæring": "skjaering",
     "skjaering": "skjaering",
+    "berghylle": "skjaering",
+    "bergskjær": "skjaering",
     "fylling": "fylling",
     "grøfteskråning": "groft",
     "grofteskraning": "groft",
+    "grøfteskraning": "groft",
+    "grøftebunn": "groft",
+    "sykkelveg": "gang_sykkel",
+    "gangsykkel": "gang_sykkel",
+    "kantstein": "kantstein",
 }
 
 
