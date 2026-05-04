@@ -18,7 +18,7 @@ def connect() -> GIS:
     password = os.getenv("AGOL_PASSWORD")
     org_url = os.getenv("AGOL_ORG_URL", "https://www.arcgis.com")
 
-    if not username or not password:
+    if not (username and username.strip()) or not (password and password.strip()):
         raise ArcpyProcessorError(
             AUTH_FAILED,
             "AGOL_USERNAME og AGOL_PASSWORD må settes i .env-filen.",
