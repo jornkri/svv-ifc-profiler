@@ -1,4 +1,7 @@
-from src.arcpy_processor.errors import ArcpyProcessorError, NAME_EXISTS
+from src.arcpy_processor.errors import (
+    ArcpyProcessorError, NAME_EXISTS,
+    LANDXML_NOT_FOUND, LANDXML_PARSE_ERROR
+)
 
 
 def test_error_has_code_and_message():
@@ -27,3 +30,17 @@ def test_all_error_codes_exist():
              NAME_EXISTS, BIM_CONVERSION_FAILED, NO_FEATURES, PUBLISH_FAILED]
     assert len(codes) == 7
     assert all(isinstance(c, str) for c in codes)
+
+
+def test_landxml_error_codes_exist():
+    assert LANDXML_NOT_FOUND == "LANDXML_NOT_FOUND"
+    assert LANDXML_PARSE_ERROR == "LANDXML_PARSE_ERROR"
+
+
+def test_landxml_error_to_dict():
+    err = ArcpyProcessorError(LANDXML_PARSE_ERROR, "EPSG mangler")
+    assert err.to_dict() == {
+        "status": "error",
+        "code": "LANDXML_PARSE_ERROR",
+        "message": "EPSG mangler",
+    }
