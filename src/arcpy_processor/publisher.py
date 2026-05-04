@@ -69,6 +69,12 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
             snippet=f"BIM-data konvertert fra IFC: {name}",
         )
         folder_obj = gis.content.folders.get(folder if folder else None)
+        if folder_obj is None:
+            raise ArcpyProcessorError(
+                PUBLISH_FAILED,
+                f"Mappe '{folder}' ble ikke funnet i ArcGIS Online-kontoen. "
+                "Opprett mappen i AGOL eller oppgi et annet mappenavn med --folder.",
+            )
         job = folder_obj.add(item_properties=item_props, file=zip_path)
         item = job.result()
         logger.info("Lastet opp GDB som item %s", item.id)
