@@ -12,6 +12,7 @@ from .errors import (
     LANDXML_PARSE_ERROR,
 )
 from .bim_to_agol import main as run_bim_to_agol
+from .landxml_to_agol import main as run_landxml_to_agol
 
 __all__ = [
     "ArcpyProcessorError",
@@ -25,4 +26,5 @@ __all__ = [
     "LANDXML_NOT_FOUND",
     "LANDXML_PARSE_ERROR",
     "run_bim_to_agol",
+    "run_landxml_to_agol",
 ]
