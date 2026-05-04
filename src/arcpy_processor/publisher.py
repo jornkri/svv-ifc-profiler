@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from arcgis.gis import GIS
 
+from arcgis.gis import ItemProperties
+
 from .errors import ArcpyProcessorError, NAME_EXISTS, PUBLISH_FAILED
 
 logger = logging.getLogger(__name__)
@@ -60,13 +62,15 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         _zip_gdb(gdb_path, zip_path)
         logger.info("Zippet GDB til %s (%.1f MB)", zip_path, os.path.getsize(zip_path) / 1e6)
 
-        item_props = {
-            "type": "File Geodatabase",
-            "title": name,
-            "tags": "IFC,BIM,SVV,tverrprofil",
-            "snippet": f"BIM-data konvertert fra IFC: {name}",
-        }
-        item = gis.content.add(item_props, data=zip_path, folder=folder)
+        item_props = ItemProperties(
+            title=name,
+            item_type="File Geodatabase",
+            tags=["IFC", "BIM", "SVV", "tverrprofil"],
+            snippet=f"BIM-data konvertert fra IFC: {name}",
+        )
+        folder_obj = gis.content.folders.get(folder if folder else None)
+        job = folder_obj.add(item_properties=item_props, file=zip_path)
+        item = job.result()
         logger.info("Lastet opp GDB som item %s", item.id)
 
         fs_item = item.publish()

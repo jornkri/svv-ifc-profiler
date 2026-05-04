@@ -45,7 +45,9 @@ def test_publish_returns_metadata():
     mock_fs.url = "https://services.arcgis.com/xxx/FeatureServer"
     mock_fs.layers = [MagicMock(), MagicMock()]
     mock_item.publish.return_value = mock_fs
-    gis.content.add.return_value = mock_item
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_item
+    gis.content.folders.get.return_value.add.return_value = mock_job
 
     from src.arcpy_processor import publisher
     import importlib; importlib.reload(publisher)
@@ -70,7 +72,7 @@ def test_publish_returns_metadata():
 
 def test_publish_raises_publish_failed_on_error():
     gis = _make_gis()
-    gis.content.add.side_effect = Exception("Upload feilet")
+    gis.content.folders.get.return_value.add.side_effect = Exception("Upload feilet")
 
     from src.arcpy_processor import publisher
     import importlib; importlib.reload(publisher)
