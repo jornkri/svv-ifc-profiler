@@ -61,7 +61,7 @@ def create_polyline_fc(
     with arcpy.da.InsertCursor(fc_path, ["name", "feat_length", "SHAPE@"]) as cursor:
         for feat_name, pts in points_dict.items():
             array = arcpy.Array([arcpy.Point(x, y, z) for x, y, z in pts])
-            polyline = arcpy.Polyline(array, sr, True)
+            polyline = arcpy.Polyline(array, sr, has_z=True)
             cursor.insertRow([feat_name, polyline.length, polyline])
 
     logger.info("Opprettet FC '%s' med %d feature(s)", fc_name, len(points_dict))
