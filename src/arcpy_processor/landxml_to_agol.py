@@ -16,6 +16,8 @@ from .errors import ArcpyProcessorError, LANDXML_NOT_FOUND, ARCPY_UNAVAILABLE, P
 
 logger = logging.getLogger(__name__)
 
+TARGET_EPSG = 25833
+
 
 def _check_arcpy() -> None:
     try:
@@ -128,20 +130,22 @@ def main(argv: list[str] | None = None) -> None:
 
         try:
             fc_path = create_polyline_fc(points_dict, gdb_path, dataset_name, source_epsg)
+        except ArcpyProcessorError:
+            raise
         except Exception as exc:
             raise ArcpyProcessorError(
                 PUBLISH_FAILED, f"Kunne ikke opprette feature class: {exc}"
             ) from exc
 
         try:
-            if source_epsg != 25833:
-                projected_path = fc_path + "_25833"
+            if source_epsg != TARGET_EPSG:
+                projected_path = fc_path + f"_{TARGET_EPSG}"
                 arcpy.management.Project(
-                    fc_path, projected_path, arcpy.SpatialReference(25833)
+                    fc_path, projected_path, arcpy.SpatialReference(TARGET_EPSG)
                 )
                 arcpy.management.Delete(fc_path)
                 fc_path = projected_path
-                logger.info("Reprosjektert fra EPSG:%d til EPSG:25833", source_epsg)
+                logger.info("Reprosjektert fra EPSG:%d til EPSG:%d", source_epsg, TARGET_EPSG)
         except ArcpyProcessorError:
             raise
         except Exception as exc:
