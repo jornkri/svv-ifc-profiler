@@ -64,7 +64,7 @@ def test_publish_returns_metadata():
     assert result["status"] == "ok"
     assert result["item_id"] == "abc123"
     assert result["url"] == "https://services.arcgis.com/xxx/FeatureServer"
-    assert result["feature_count"] == 2
+    assert result["layer_count"] == 2
 
 
 def test_publish_raises_publish_failed_on_error():
@@ -81,3 +81,19 @@ def test_publish_raises_publish_failed_on_error():
         with pytest.raises(ArcpyProcessorError) as exc_info:
             publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Vei_Kleverud", "SVV")
         assert exc_info.value.code == PUBLISH_FAILED
+
+
+def test_publish_cleans_up_when_archive_fails():
+    gis = _make_gis()
+
+    with patch("src.arcpy_processor.publisher.shutil.make_archive",
+               side_effect=Exception("Disk full")), \
+         patch("src.arcpy_processor.publisher.os.path.exists", return_value=False), \
+         patch("src.arcpy_processor.publisher.os.remove") as mock_remove:
+        from src.arcpy_processor import publisher
+        import importlib; importlib.reload(publisher)
+
+        with pytest.raises(ArcpyProcessorError) as exc_info:
+            publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Test", "SVV")
+        assert exc_info.value.code == PUBLISH_FAILED
+        mock_remove.assert_not_called()  # zip finnes ikke, skal ikke forsøke slette

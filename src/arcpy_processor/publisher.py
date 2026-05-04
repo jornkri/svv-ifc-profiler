@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 def check_name_available(gis: GIS, name: str, folder: str) -> None:
     """Feiler med NAME_EXISTS hvis et item med samme tittel finnes."""
+    # Sjekker navn på tvers av hele org (ikke kun angitt folder) for å unngå navnekonflikter.
     existing = gis.content.search(
         query=f'title:"{name}" AND type:"Feature Service"',
         max_items=10,
@@ -57,14 +58,14 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         fs_item = item.publish()
         logger.info("Publisert feature service: %s", fs_item.url)
 
-        feature_count = len(getattr(fs_item, "layers", []))
+        layer_count = len(getattr(fs_item, "layers", []))
 
         return {
             "status": "ok",
             "url": fs_item.url,
             "item_id": item.id,
             "item_url": item.homepage,
-            "feature_count": feature_count,
+            "layer_count": layer_count,
             "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
             "published_at": datetime.now(timezone.utc).isoformat(),
         }
