@@ -47,12 +47,13 @@ def test_publish_returns_metadata():
     mock_item.publish.return_value = mock_fs
     gis.content.add.return_value = mock_item
 
-    with patch("src.arcpy_processor.publisher.shutil.make_archive", return_value="/tmp/bim.zip"), \
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch("src.arcpy_processor.publisher._zip_gdb"), \
          patch("src.arcpy_processor.publisher.os.path.exists", return_value=True), \
          patch("src.arcpy_processor.publisher.os.remove"), \
          patch("src.arcpy_processor.publisher.os.path.getsize", return_value=1000000):
-        from src.arcpy_processor import publisher
-        import importlib; importlib.reload(publisher)
 
         result = publisher.upload_and_publish(
             gis=gis,
@@ -71,12 +72,13 @@ def test_publish_raises_publish_failed_on_error():
     gis = _make_gis()
     gis.content.add.side_effect = Exception("Upload feilet")
 
-    with patch("src.arcpy_processor.publisher.shutil.make_archive", return_value="/tmp/bim.zip"), \
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch("src.arcpy_processor.publisher._zip_gdb"), \
          patch("src.arcpy_processor.publisher.os.path.exists", return_value=True), \
          patch("src.arcpy_processor.publisher.os.remove"), \
          patch("src.arcpy_processor.publisher.os.path.getsize", return_value=1000000):
-        from src.arcpy_processor import publisher
-        import importlib; importlib.reload(publisher)
 
         with pytest.raises(ArcpyProcessorError) as exc_info:
             publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Vei_Kleverud", "SVV")
@@ -86,12 +88,13 @@ def test_publish_raises_publish_failed_on_error():
 def test_publish_cleans_up_when_archive_fails():
     gis = _make_gis()
 
-    with patch("src.arcpy_processor.publisher.shutil.make_archive",
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch("src.arcpy_processor.publisher._zip_gdb",
                side_effect=Exception("Disk full")), \
          patch("src.arcpy_processor.publisher.os.path.exists", return_value=False), \
          patch("src.arcpy_processor.publisher.os.remove") as mock_remove:
-        from src.arcpy_processor import publisher
-        import importlib; importlib.reload(publisher)
 
         with pytest.raises(ArcpyProcessorError) as exc_info:
             publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Test", "SVV")

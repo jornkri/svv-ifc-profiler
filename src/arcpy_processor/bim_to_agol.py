@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
+from dotenv import load_dotenv
+
 from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ def _check_arcpy() -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    load_dotenv()
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
                         format="%(asctime)s %(levelname)s %(message)s")
 

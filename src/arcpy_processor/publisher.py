@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
+import zipfile
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -13,6 +13,19 @@ if TYPE_CHECKING:
 from .errors import ArcpyProcessorError, NAME_EXISTS, PUBLISH_FAILED
 
 logger = logging.getLogger(__name__)
+
+
+def _zip_gdb(gdb_path: str, zip_path: str) -> None:
+    """Zip en File GDB og hopp over ArcPy-låsefiler (.lock)."""
+    gdb_dir = os.path.dirname(gdb_path)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(gdb_path):
+            for fname in files:
+                if fname.endswith(".lock"):
+                    continue
+                full = os.path.join(root, fname)
+                arcname = os.path.relpath(full, gdb_dir)
+                zf.write(full, arcname)
 
 
 def check_name_available(gis: GIS, name: str, folder: str) -> None:  # noqa: ARG001
@@ -44,7 +57,7 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
     zip_path = zip_base + ".zip"
 
     try:
-        shutil.make_archive(zip_base, "zip", scratch_dir, os.path.basename(gdb_path))
+        _zip_gdb(gdb_path, zip_path)
         logger.info("Zippet GDB til %s (%.1f MB)", zip_path, os.path.getsize(zip_path) / 1e6)
 
         item_props = {
