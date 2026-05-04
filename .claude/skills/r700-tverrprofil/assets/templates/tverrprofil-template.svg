@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  R700 Tverrprofil — single-profile SVG template.
+
+  Coordinate system: 1 user unit = 1 mm of paper at 1:200.
+  At 1:200, 1 m of real-world distance = 5 mm on paper = 5 user units.
+
+  This template is sized for one cross-section, ~30 m wide × ~20 m tall in the
+  real world, occupying roughly 150 × 100 mm on paper.
+
+  Replace the <path> coordinates with the actual road geometry from the IFC.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 200 140"
+     width="200mm" height="140mm">
+
+  <defs>
+    <!-- Reusable patterns and styles per R700 -->
+    <pattern id="grid1m" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
+      <!-- 1m grid at 1:200: 5mm × 5mm cells -->
+      <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#cfd6dc" stroke-width="0.1"/>
+    </pattern>
+    <pattern id="grid5m" x="0" y="0" width="25" height="25" patternUnits="userSpaceOnUse">
+      <!-- 5m grid at 1:200: 25mm × 25mm cells -->
+      <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#a8b1ba" stroke-width="0.15"/>
+    </pattern>
+  </defs>
+
+  <style>
+    /* R700 line conventions, sized for A1 print */
+    .designed       { fill: none; stroke: #000; stroke-width: 0.5; stroke-linejoin: round; stroke-linecap: round; }
+    .terrain-jord   { fill: none; stroke: #000; stroke-width: 0.35; stroke-dasharray: 4 2; }
+    .terrain-fjell  { fill: none; stroke: #000; stroke-width: 0.35; stroke-dasharray: 4 2 1 2; }
+    .reference-line { fill: none; stroke: #000; stroke-width: 0.5; }
+    .centreline     { fill: none; stroke: #000; stroke-width: 0.25; stroke-dasharray: 2 2 0.5 2; }
+    .label-profile  { font: 3.5px sans-serif; fill: #000; }
+    .label-kote     { font: 2.5px sans-serif; fill: #000; }
+    .label-kote-anchor { dominant-baseline: middle; text-anchor: end; }
+  </style>
+
+  <!-- Graph paper background (REQUIRED — do not hide). -->
+  <rect width="100%" height="100%" fill="url(#grid1m)"/>
+  <rect width="100%" height="100%" fill="url(#grid5m)"/>
+
+  <!-- Reference line (kotehøyde anchor). Solid horizontal line at chosen elevation. -->
+  <!-- For this template: kotehøyde at y=110 in SVG coords, representing kote 33.0 -->
+  <line class="reference-line" x1="20" y1="110" x2="180" y2="110"/>
+  <text class="label-kote label-kote-anchor" x="18" y="110">33</text>
+
+  <!-- Profile number above the profile (REQUIRED — plain text, no decoration). -->
+  <text class="label-profile" x="100" y="20" text-anchor="middle">4910</text>
+
+  <!-- Centreline vertical mark through the profile. -->
+  <line class="centreline" x1="100" y1="22" x2="100" y2="118"/>
+
+  <!--
+    Existing terrain (dashed). Drawn beyond the road footprint up the cut slope
+    and down the fill slope. Replace these coordinates with terrain sampled
+    perpendicular to the centreline at this station.
+  -->
+  <path class="terrain-jord"
+        d="M 10,80
+           L 40,85
+           L 60,90
+           L 80,93
+           L 100,95
+           L 120,93
+           L 140,90
+           L 160,85
+           L 190,80"/>
+
+  <!--
+    Designed road geometry (solid). The "kink in the middle" — top of asphalt,
+    shoulders, edges of carriageway, ditch, slopes down to terrain. Replace
+    with the IFC-derived geometry.
+  -->
+  <path class="designed"
+        d="M 60,90
+           L 70,93
+           L 75,95
+           L 78,95
+           L 80,94
+           L 92,93
+           L 108,93
+           L 120,94
+           L 122,95
+           L 125,95
+           L 130,93
+           L 140,90"/>
+
+  <!-- Title strip area (ribbon for legend / annotations) — keep clean. -->
+  <!-- The actual title block lives once per sheet, not per profile. -->
+</svg>
