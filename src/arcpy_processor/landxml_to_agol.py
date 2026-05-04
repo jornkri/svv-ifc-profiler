@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> None:
             raise
         except Exception as exc:
             raise ArcpyProcessorError(
-                PUBLISH_FAILED, f"Reprojeksjon til EPSG:25833 feilet: {exc}"
+                PUBLISH_FAILED, f"Reprojeksjon til EPSG:{TARGET_EPSG} feilet: {exc}"
             ) from exc
 
         feature_count = int(arcpy.management.GetCount(fc_path)[0])
