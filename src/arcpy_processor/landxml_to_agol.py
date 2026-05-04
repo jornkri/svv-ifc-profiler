@@ -133,14 +133,21 @@ def main(argv: list[str] | None = None) -> None:
                 PUBLISH_FAILED, f"Kunne ikke opprette feature class: {exc}"
             ) from exc
 
-        if source_epsg != 25833:
-            projected_path = fc_path + "_25833"
-            arcpy.management.Project(
-                fc_path, projected_path, arcpy.SpatialReference(25833)
-            )
-            arcpy.management.Delete(fc_path)
-            fc_path = projected_path
-            logger.info("Reprosjektert fra EPSG:%d til EPSG:25833", source_epsg)
+        try:
+            if source_epsg != 25833:
+                projected_path = fc_path + "_25833"
+                arcpy.management.Project(
+                    fc_path, projected_path, arcpy.SpatialReference(25833)
+                )
+                arcpy.management.Delete(fc_path)
+                fc_path = projected_path
+                logger.info("Reprosjektert fra EPSG:%d til EPSG:25833", source_epsg)
+        except ArcpyProcessorError:
+            raise
+        except Exception as exc:
+            raise ArcpyProcessorError(
+                PUBLISH_FAILED, f"Reprojeksjon til EPSG:25833 feilet: {exc}"
+            ) from exc
 
         feature_count = int(arcpy.management.GetCount(fc_path)[0])
 
