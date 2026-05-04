@@ -5,26 +5,27 @@ import logging
 import os
 import shutil
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
-from arcgis.gis import GIS
+if TYPE_CHECKING:
+    from arcgis.gis import GIS
 
 from .errors import ArcpyProcessorError, NAME_EXISTS, PUBLISH_FAILED
 
 logger = logging.getLogger(__name__)
 
 
-def check_name_available(gis: GIS, name: str, folder: str) -> None:
-    """Feiler med NAME_EXISTS hvis et item med samme tittel finnes."""
-    # Sjekker navn på tvers av hele org (ikke kun angitt folder) for å unngå navnekonflikter.
+def check_name_available(gis: GIS, name: str, folder: str) -> None:  # noqa: ARG001
+    """Feiler med NAME_EXISTS hvis et item med samme tittel finnes i organisasjonen."""
     existing = gis.content.search(
-        query=f'title:"{name}" AND type:"Feature Service"',
+        query=f'title:"{name}" AND (type:"Feature Service" OR type:"File Geodatabase")',
         max_items=10,
     )
     if any(item.title == name for item in existing):
         raise ArcpyProcessorError(
             NAME_EXISTS,
-            f"En tjeneste med navn '{name}' finnes allerede i folder '{folder}'. "
-            "Velg et annet navn eller slett den eksisterende tjenesten.",
+            f"Et item med navn '{name}' finnes allerede i organisasjonen. "
+            "Velg et annet navn eller slett det eksisterende itemet.",
         )
 
 

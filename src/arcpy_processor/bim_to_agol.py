@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES
+from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +16,15 @@ logger = logging.getLogger(__name__)
 def _gdb_path_from_fcs(fc_paths: list[str]) -> str:
     """Utled GDB-sti fra første FC-sti (format: /scratch/bim_temp.gdb/dataset/FC)."""
     if not fc_paths:
-        raise ValueError("fc_paths er tom")
+        raise ArcpyProcessorError(PUBLISH_FAILED, "Intern feil: fc_paths er tom")
     parts = Path(fc_paths[0]).parts
     try:
         gdb_idx = next(i for i, p in enumerate(parts) if p.endswith(".gdb"))
     except StopIteration:
-        raise ValueError(f"Ingen .gdb-komponent funnet i sti: {fc_paths[0]}") from None
+        raise ArcpyProcessorError(
+            PUBLISH_FAILED,
+            f"Intern feil: ingen .gdb-komponent i sti: {fc_paths[0]}",
+        ) from None
     return str(Path(*parts[:gdb_idx + 1]))
 
 

@@ -26,6 +26,9 @@ def convert_bim(ifc_path: str, dataset_name: str, wkid: int = 25833) -> list[str
     gdb_path = os.path.join(scratch, gdb_name)
 
     try:
+        if arcpy.Exists(gdb_path):
+            arcpy.management.Delete(gdb_path)
+            logger.debug("Slettet eksisterende scratchGDB: %s", gdb_path)
         arcpy.management.CreateFileGDB(scratch, gdb_name)
         sr = arcpy.SpatialReference(wkid)
         arcpy.conversion.BIMFileToGeodatabase(

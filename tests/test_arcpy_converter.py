@@ -16,6 +16,7 @@ from src.arcpy_processor.errors import ArcpyProcessorError, BIM_CONVERSION_FAILE
 
 def test_convert_bim_calls_bimfile_to_geodatabase():
     arcpy_mock.env.scratchFolder = "C:/scratch"
+    arcpy_mock.Exists.return_value = False  # ingen stale GDB
     arcpy_mock.management.CreateFileGDB.return_value = None
     arcpy_mock.conversion.BIMFileToGeodatabase.return_value = None
     arcpy_mock.env.workspace = ""
@@ -34,6 +35,7 @@ def test_convert_bim_calls_bimfile_to_geodatabase():
 
 def test_delete_empty_fcs_removes_zero_count():
     arcpy_mock.management.GetCount.side_effect = lambda fc: [0] if fc == "Empty" else [5]
+    arcpy_mock.management.Delete.reset_mock()
     arcpy_mock.management.Delete.return_value = None
 
     from src.arcpy_processor import converter
