@@ -9,6 +9,7 @@ from .errors import (
     NO_FEATURES,
     PUBLISH_FAILED,
 )
+from .bim_to_agol import main as run_bim_to_agol
 
 __all__ = [
     "ArcpyProcessorError",
@@ -19,4 +20,5 @@ __all__ = [
     "BIM_CONVERSION_FAILED",
     "NO_FEATURES",
     "PUBLISH_FAILED",
+    "run_bim_to_agol",
 ]

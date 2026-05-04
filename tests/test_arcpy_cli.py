@@ -24,6 +24,29 @@ def setup_mocks():
     sys.modules.setdefault("arcgis.gis", arcgis_gis_mock)
 
 
+def test_cli_exits_1_when_convert_bim_returns_empty(capsys):
+    # Verifies the CRITICAL guard: if convert_bim() returns [], the CLI must emit
+    # clean JSON (NO_FEATURES) rather than crashing with an unhandled IndexError.
+    with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.converter.convert_bim", return_value=[]), \
+         patch("pathlib.Path.exists", return_value=True):
+
+        from src.arcpy_processor.bim_to_agol import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--ifc", "test.ifc", "--name", "TestLag", "--folder", "SVV"])
+        assert exc_info.value.code == 1
+
+    captured = capsys.readouterr()
+    error = json.loads(captured.err)
+    assert error["code"] == "NO_FEATURES"
+
+
+# bim_to_agol uses lazy imports inside main(), so patching the source module
+# attribute is the correct target — the local name is bound at call time, not
+# at import time. If imports are ever moved to module level, patch targets
+# must change to src.arcpy_processor.bim_to_agol.<name>.
 def test_cli_prints_json_on_success(capsys):
     mock_gis = MagicMock()
     success_meta = {

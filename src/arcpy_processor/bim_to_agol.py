@@ -1,24 +1,27 @@
-# src/arcpy_processor/bim_to_agol.py
 from __future__ import annotations
 
 import argparse
 import json
 import logging
-import os
+import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
-from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE
+from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr,
-                    format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def _gdb_path_from_fcs(fc_paths: list[str]) -> str:
     """Utled GDB-sti fra første FC-sti (format: /scratch/bim_temp.gdb/dataset/FC)."""
+    if not fc_paths:
+        raise ValueError("fc_paths er tom")
     parts = Path(fc_paths[0]).parts
-    gdb_idx = next(i for i, p in enumerate(parts) if p.endswith(".gdb"))
+    try:
+        gdb_idx = next(i for i, p in enumerate(parts) if p.endswith(".gdb"))
+    except StopIteration:
+        raise ValueError(f"Ingen .gdb-komponent funnet i sti: {fc_paths[0]}") from None
     return str(Path(*parts[:gdb_idx + 1]))
 
 
@@ -33,6 +36,9 @@ def _check_arcpy() -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
+                        format="%(asctime)s %(levelname)s %(message)s")
+
     parser = argparse.ArgumentParser(
         description="Konverter IFC-fil til 3D Object Layer i ArcGIS Online"
     )
@@ -41,7 +47,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--folder", required=True, help="Folder i ArcGIS Online")
     args = parser.parse_args(argv)
 
-    def _fail(err: ArcpyProcessorError) -> None:
+    def _fail(err: ArcpyProcessorError) -> NoReturn:
         print(json.dumps(err.to_dict()), file=sys.stderr)
         sys.exit(1)
 
@@ -57,9 +63,19 @@ def main(argv: list[str] | None = None) -> None:
         gis = connect()
         check_name_available(gis, args.name, args.folder)
 
-        dataset_name = Path(args.ifc).stem.replace(" ", "_")[:50]
+        stem = Path(args.ifc).stem
+        dataset_name = re.sub(r"[^A-Za-z0-9_]", "_", stem)[:50]
+        if dataset_name and dataset_name[0].isdigit():
+            dataset_name = "_" + dataset_name[:49]
+
         fc_paths = convert_bim(args.ifc, dataset_name, wkid=25833)
-        fc_paths = delete_empty_fcs(fc_paths, os.path.dirname(fc_paths[0]))
+        if not fc_paths:
+            raise ArcpyProcessorError(
+                NO_FEATURES,
+                "BIMFileToGeodatabase produserte ingen feature classes. "
+                "Sjekk at IFC-filen inneholder geometri.",
+            )
+        fc_paths = delete_empty_fcs(fc_paths, "")
         gdb_path = _gdb_path_from_fcs(fc_paths)
 
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
