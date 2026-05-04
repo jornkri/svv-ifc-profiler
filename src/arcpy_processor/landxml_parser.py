@@ -17,7 +17,8 @@ def parse_landxml(
     Args:
         path:        Sti til LandXML-fil.
         features:    Navnliste over PlanFeatures å inkludere. None = alle.
-        source_epsg: Overstyr kilde-EPSG (brukes hvis epsgCode mangler i fil).
+        source_epsg: Fallback-EPSG brukes kun hvis epsgCode mangler i fil.
+                     Filens epsgCode overstyrer alltid.
 
     Returns:
         Tuple (points_dict, epsg) der points_dict mapper PlanFeature-navn
@@ -53,8 +54,14 @@ def parse_landxml(
         try:
             epsg = int(cs_el.get("epsgCode"))
         except ValueError:
-            pass
+            epsg = None  # will be caught below as missing EPSG
     if epsg is None:
+        bad_code = cs_el.get("epsgCode") if cs_el is not None else None
+        if bad_code:
+            raise ArcpyProcessorError(
+                LANDXML_PARSE_ERROR,
+                f"Ugyldig epsgCode '{bad_code}' i '{Path(path).name}'. Forventet et heltall.",
+            )
         raise ArcpyProcessorError(
             LANDXML_PARSE_ERROR,
             f"Filen '{Path(path).name}' mangler epsgCode i <CoordinateSystem>. "
@@ -62,13 +69,19 @@ def parse_landxml(
         )
 
     def parse_coord(text: str) -> tuple[float, float, float]:
-        parts = text.strip().split()
-        n, e = float(parts[0]), float(parts[1])
-        z = float(parts[2]) if len(parts) > 2 else 0.0
-        return e, n, z  # Northing/Easting-swap → (X=Easting, Y=Northing, Z)
+        try:
+            parts = text.strip().split()
+            n, e = float(parts[0]), float(parts[1])
+            z = float(parts[2]) if len(parts) > 2 else 0.0
+            return e, n, z  # Northing/Easting-swap → (X=Easting, Y=Northing, Z)
+        except (IndexError, ValueError) as exc:
+            raise ArcpyProcessorError(
+                LANDXML_PARSE_ERROR, f"Ugyldig koordinat '{text.strip()}': {exc}"
+            ) from exc
 
+    plan_features = find_all(root, "PlanFeature")
     result: dict[str, list[tuple[float, float, float]]] = {}
-    for pf in find_all(root, "PlanFeature"):
+    for pf in plan_features:
         name = pf.get("name", "")
         if features is not None and name not in features:
             continue
@@ -78,17 +91,20 @@ def parse_landxml(
             end_el = find_one(line, "End")
             if start_el is None or end_el is None:
                 continue
+            if start_el.text is None or end_el.text is None:
+                continue
             s = parse_coord(start_el.text)
             e_pt = parse_coord(end_el.text)
             if not pts:
                 pts.append(s)
+            # tuple float-equality OK: adjacent End/Start share bit-identical text values
             if e_pt != pts[-1]:
                 pts.append(e_pt)
         if len(pts) >= 2:
             result[name] = pts
 
     if not result:
-        available = [pf.get("name", "") for pf in find_all(root, "PlanFeature")]
+        available = [pf.get("name", "") for pf in plan_features]
         hint = f" Tilgjengelige PlanFeatures: {available}." if available else ""
         raise ArcpyProcessorError(
             LANDXML_PARSE_ERROR,

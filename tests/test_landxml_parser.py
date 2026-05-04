@@ -3,42 +3,38 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 from src.arcpy_processor.errors import ArcpyProcessorError, LANDXML_PARSE_ERROR
+from src.arcpy_processor.landxml_parser import parse_landxml
 
-SAMPLE = Path("samples/FV229_Senterlinje.xml")
+SAMPLE = Path(__file__).parent.parent / "samples" / "FV229_Senterlinje.xml"
 
 
 def test_parses_epsg_from_file():
-    from src.arcpy_processor.landxml_parser import parse_landxml
     _, epsg = parse_landxml(SAMPLE)
     assert epsg == 5111
 
 
 def test_northing_easting_swap():
-    from src.arcpy_processor.landxml_parser import parse_landxml
     points_dict, _ = parse_landxml(SAMPLE)
     name = next(iter(points_dict))
     first_pt = points_dict[name][0]
-    # LandXML: Northing=1283548, Easting=86098 → after swap: X(Easting)≈86098
-    assert first_pt[0] < 200_000   # Easting is small in NTM zone 11
-    assert first_pt[1] > 1_000_000  # Northing is large
+    assert first_pt[0] == pytest.approx(86098.615097)
+    assert first_pt[1] == pytest.approx(1283548.213623)
+    assert first_pt[2] == pytest.approx(129.432205)
 
 
 def test_features_filter():
-    from src.arcpy_processor.landxml_parser import parse_landxml
     points_dict, _ = parse_landxml(SAMPLE, features=["L530"])
     assert list(points_dict.keys()) == ["L530"]
     assert len(points_dict["L530"]) >= 2
 
 
 def test_raises_for_unknown_feature():
-    from src.arcpy_processor.landxml_parser import parse_landxml
     with pytest.raises(ArcpyProcessorError) as exc_info:
         parse_landxml(SAMPLE, features=["FINNESIKKE"])
     assert exc_info.value.code == LANDXML_PARSE_ERROR
 
 
 def test_raises_when_epsg_missing_and_no_override(tmp_path):
-    from src.arcpy_processor.landxml_parser import parse_landxml
     xml = tmp_path / "no_epsg.xml"
     xml.write_text(
         '<?xml version="1.0"?>\n'
@@ -59,7 +55,6 @@ def test_raises_when_epsg_missing_and_no_override(tmp_path):
 
 
 def test_source_epsg_override(tmp_path):
-    from src.arcpy_processor.landxml_parser import parse_landxml
     xml = tmp_path / "no_epsg.xml"
     xml.write_text(
         '<?xml version="1.0"?>\n'
