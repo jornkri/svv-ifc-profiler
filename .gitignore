@@ -67,3 +67,6 @@ output_profiles/
 
 # Brainstorming-sesjoner (Visual Companion)
 .superpowers/
+
+# Git worktrees
+.worktrees/
