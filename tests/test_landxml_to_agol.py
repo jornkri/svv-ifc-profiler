@@ -120,3 +120,32 @@ def test_reprojection_called_when_source_differs(capsys):
                   "--source-epsg", "5111"])
 
     arcpy_mock.management.Project.assert_called_once()
+
+
+def test_cli_passes_token_to_connect(capsys):
+    """--token arg is forwarded to auth.connect()."""
+    success_meta = {
+        "status": "ok", "url": "https://services.arcgis.com/xxx/FeatureServer",
+        "item_id": "abc", "item_url": "https://arcgis.com/home/item.html?id=abc",
+        "layer_count": 1, "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
+        "published_at": "2026-05-04T10:00:00+00:00",
+    }
+
+    with patch("src.arcpy_processor.auth.connect") as mock_connect, \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.landxml_parser.parse_landxml",
+               return_value=({"L530": [(86098.0, 1283548.0, 129.4)]}, 25833)), \
+         patch("src.arcpy_processor.landxml_to_agol.create_polyline_fc",
+               return_value="C:/scratch/landxml_temp.gdb/ds_centerline"), \
+         patch("src.arcpy_processor.publisher.upload_and_publish",
+               return_value=success_meta), \
+         patch("pathlib.Path.exists", return_value=True), \
+         patch("arcpy.management.GetCount", return_value=[1]):
+
+        mock_connect.return_value = MagicMock()
+        from src.arcpy_processor.landxml_to_agol import main
+        with pytest.raises(SystemExit):
+            main(["--xml", "test.xml", "--name", "TestLag", "--folder", "",
+                  "--token", "mytoken123", "--org-url", "https://myorg.maps.arcgis.com"])
+
+    mock_connect.assert_called_once_with(token="mytoken123", org_url="https://myorg.maps.arcgis.com")

@@ -83,6 +83,10 @@ def main(argv: list[str] | None = None) -> None:
                         help="Kommaseparerte PlanFeature-navn (default: alle)")
     parser.add_argument("--source-epsg", type=int, default=None,
                         help="Overstyr kilde-EPSG hvis mangler i fil")
+    parser.add_argument("--token", default=None,
+                        help="OAuth2 access_token (overstyrer .env credentials)")
+    parser.add_argument("--org-url", default=None,
+                        help="AGOL org-URL (overstyrer AGOL_ORG_URL i .env)")
     args = parser.parse_args(argv)
 
     def _fail(err: ArcpyProcessorError) -> NoReturn:
@@ -105,7 +109,7 @@ def main(argv: list[str] | None = None) -> None:
         from .publisher import check_name_available, upload_and_publish
         from .landxml_parser import parse_landxml
 
-        gis = connect()
+        gis = connect(token=args.token, org_url=args.org_url)
         check_name_available(gis, args.name, args.folder)
 
         points_dict, source_epsg = parse_landxml(
