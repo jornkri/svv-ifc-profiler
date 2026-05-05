@@ -61,3 +61,47 @@ def test_connect_with_token():
         auth_module.connect(token="mytoken", org_url="https://test.maps.arcgis.com")
 
     GIS_mock.assert_called_once_with("https://test.maps.arcgis.com", token="mytoken")
+
+
+def test_connect_without_token_uses_env_credentials():
+    """connect() with no args calls GIS(url, username, password) from env."""
+    import sys
+    import importlib
+    import pytest
+    from unittest.mock import MagicMock, patch
+
+    GIS_mock = MagicMock(return_value=MagicMock())
+
+    with patch.dict(sys.modules, {"arcgis.gis": MagicMock(GIS=GIS_mock)}), \
+         patch.dict("os.environ", {
+             "AGOL_USERNAME": "testuser",
+             "AGOL_PASSWORD": "testpass",
+             "AGOL_ORG_URL": "https://myorg.maps.arcgis.com",
+         }):
+        import src.arcpy_processor.auth as auth_module
+        importlib.reload(auth_module)
+        auth_module.connect()
+
+    GIS_mock.assert_called_once_with(
+        "https://myorg.maps.arcgis.com", "testuser", "testpass"
+    )
+
+
+def test_connect_raises_when_credentials_missing():
+    """connect() with no token and no env credentials raises AUTH_FAILED."""
+    import sys
+    import importlib
+    import pytest
+    from unittest.mock import MagicMock, patch
+    from src.arcpy_processor.errors import ArcpyProcessorError, AUTH_FAILED
+
+    GIS_mock = MagicMock(return_value=MagicMock())
+
+    with patch.dict(sys.modules, {"arcgis.gis": MagicMock(GIS=GIS_mock)}), \
+         patch.dict("os.environ", {}, clear=True):
+        import src.arcpy_processor.auth as auth_module
+        importlib.reload(auth_module)
+        with pytest.raises(ArcpyProcessorError) as exc_info:
+            auth_module.connect()
+
+    assert exc_info.value.code == AUTH_FAILED
