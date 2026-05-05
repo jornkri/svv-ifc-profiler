@@ -45,7 +45,7 @@ function updateUI(data) {
 
   currentMessage.textContent = data.message || "";
 
-  if (data.message && data.message !== prevMessage && data.status !== "failed") {
+  if (data.message && data.message !== prevMessage) {
     if (prevMessage) addLogEntry(prevMessage);
     prevMessage = data.message;
   }
