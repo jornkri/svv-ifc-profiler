@@ -118,6 +118,7 @@ def run_pipeline(
 
     svg_paths: list[str] = []
     metadata_rows: list[dict] = []
+    station_rows: list[dict] = []
 
     for s in stations:
         try:
@@ -135,9 +136,19 @@ def run_pipeline(
             "svg": str(svg_path),
             "segment_classes": list(cs.segments.keys()),
         })
+        station_rows.append({
+            "station_m": round(s.distance, 3),
+            "profil_nr": f"{s.distance:07.2f}",
+            "x": round(float(s.position[0]), 3),
+            "y": round(float(s.position[1]), 3),
+            "z": round(float(s.position[2]), 3),
+        })
 
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
+
+    stations_json_path = output_dir / "stations.json"
+    stations_json_path.write_text(json.dumps(station_rows, indent=2))
 
     meta_path = output_dir / "metadata.json"
     meta_path.write_text(json.dumps({"stations": metadata_rows}, indent=2))
@@ -147,4 +158,5 @@ def run_pipeline(
         "svgs": svg_paths,
         "centerline": str(cl_path),
         "metadata": str(meta_path),
+        "stations_json": str(stations_json_path),
     }
