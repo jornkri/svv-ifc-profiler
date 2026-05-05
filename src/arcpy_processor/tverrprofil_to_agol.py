@@ -132,13 +132,27 @@ def main(argv: list[str] | None = None) -> None:
 
         arcpy.management.EnableAttachments(fc_path)
 
+        # AddAttachments krever en match-tabell: (join_oid, file_path)
+        match_tbl = os.path.join(arcpy.env.scratchGDB, f"{stem}_attach_match")
+        if arcpy.Exists(match_tbl):
+            arcpy.management.Delete(match_tbl)
+        arcpy.management.CreateTable(arcpy.env.scratchGDB, f"{stem}_attach_match")
+        arcpy.management.AddField(match_tbl, "fc_oid", "LONG")
+        arcpy.management.AddField(match_tbl, "svg_path", "TEXT", field_length=512)
+
+        rows_added = 0
         with arcpy.da.SearchCursor(fc_path, ["OID@", "stasjon_m"]) as cur:
-            for oid, station_m in cur:
-                svg = svgs_dir / f"station_{station_m:07.1f}.svg"
-                if svg.exists():
-                    arcpy.management.AddAttachment(fc_path, oid, str(svg))
-                else:
-                    logger.warning("SVG ikke funnet for stasjon %.1f m: %s", station_m, svg)
+            with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "svg_path"]) as ins:
+                for oid, station_m in cur:
+                    svg = svgs_dir / f"station_{station_m:07.1f}.svg"
+                    if svg.exists():
+                        ins.insertRow((oid, str(svg)))
+                        rows_added += 1
+                    else:
+                        logger.warning("SVG ikke funnet for stasjon %.1f m: %s", station_m, svg)
+
+        if rows_added > 0:
+            arcpy.management.AddAttachments(fc_path, "OBJECTID", match_tbl, "fc_oid", "svg_path")
 
         feature_count = int(arcpy.management.GetCount(fc_path)[0])
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)

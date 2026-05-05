@@ -1,7 +1,7 @@
 // web/src/main.js
 // Wizard landing page: auth check, file validation, job submission.
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "";
 
 const step2Card = document.getElementById("step2");
 const step3Card = document.getElementById("step3");

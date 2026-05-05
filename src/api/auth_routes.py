@@ -69,7 +69,8 @@ def auth_callback(request: Request, code: str, state: str) -> RedirectResponse:
         "full_name": user.get("fullName", ""),
         "org_url": org_url,
     })
-    return RedirectResponse("/")
+    frontend_url = _env("FRONTEND_URL", "http://localhost:5173")
+    return RedirectResponse(frontend_url)
 
 
 @router.get("/me")
