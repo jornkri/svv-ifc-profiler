@@ -87,6 +87,36 @@ def test_publish_raises_publish_failed_on_error():
         assert exc_info.value.code == PUBLISH_FAILED
 
 
+def test_publish_uses_etrs89_utm33_spatial_reference():
+    """publish() skal sende targetSR wkid=25833 slik at AGOL lagrer i ETRS89/UTM33."""
+    gis = _make_gis()
+    mock_item = MagicMock()
+    mock_fs = MagicMock()
+    mock_fs.url = "https://services.arcgis.com/xxx/FeatureServer"
+    mock_fs.layers = []
+    mock_item.publish.return_value = mock_fs
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_item
+    gis.content.folders.get.return_value.add.return_value = mock_job
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch("src.arcpy_processor.publisher._zip_gdb"), \
+         patch("src.arcpy_processor.publisher.os.path.exists", return_value=True), \
+         patch("src.arcpy_processor.publisher.os.remove"), \
+         patch("src.arcpy_processor.publisher.os.path.getsize", return_value=1000000):
+
+        publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Test", "SVV")
+
+    call_kwargs = mock_item.publish.call_args
+    params = call_kwargs[1].get("publish_parameters") or (
+        call_kwargs[0][0] if call_kwargs[0] else None
+    )
+    assert params is not None, "publish() ble kalt uten publish_parameters"
+    assert params.get("targetSR", {}).get("wkid") == 25833
+
+
 def test_publish_cleans_up_when_archive_fails():
     gis = _make_gis()
 
