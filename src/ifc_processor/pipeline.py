@@ -93,7 +93,7 @@ def run_pipeline(
         interval_m:      Stasjoneringsintervall i meter (default 10).
 
     Returns:
-        Dict med nøklene "svgs", "centerline", "metadata".
+        Dict med nøklene "svgs", "centerline", "metadata", "stations_json".
 
     Raises:
         ValueError: Hvis ingen senterlinje kan bestemmes.
