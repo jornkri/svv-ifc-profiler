@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVV IFC Profiler — Jobbstatus</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+    header {
+      background: #1a3a5c;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    header a { color: rgba(255,255,255,0.8); font-size: 0.85rem; text-decoration: none; }
+    header a:hover { color: white; }
+
+    main {
+      max-width: 640px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .job-title { font-size: 1.05rem; font-weight: 600; color: #1a3a5c; }
+    .status-badge {
+      font-size: 0.8rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .status-queued  { background: #e3f2fd; color: #1565c0; }
+    .status-running { background: #e8f5e9; color: #2e7d32; }
+    .status-done    { background: #e8f5e9; color: #2e7d32; }
+    .status-failed  { background: #ffebee; color: #c62828; }
+
+    /* Progress bar */
+    .progress-wrap {
+      background: #e0e0e0;
+      border-radius: 4px;
+      height: 10px;
+      margin-bottom: 0.6rem;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #1565c0;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-bar.done { background: #2e7d32; }
+    .progress-bar.failed { background: #c62828; }
+
+    #current-message {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Log */
+    .log-title { font-size: 0.8rem; font-weight: 600; color: #888; margin: 0.75rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    #status-log { list-style: none; }
+    #status-log li {
+      font-size: 0.82rem;
+      padding: 0.2rem 0;
+      color: #444;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    /* Error box */
+    #error-box {
+      display: none;
+      background: #ffebee;
+      border: 1px solid #ef9a9a;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      color: #c62828;
+      font-size: 0.85rem;
+    }
+
+    /* Result links */
+    #result-links { display: none; }
+    .result-link {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      text-decoration: none;
+      color: #1a3a5c;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      transition: background 0.15s;
+    }
+    .result-link:hover { background: #f5f5f5; }
+    .result-link span { font-size: 1.1rem; }
+
+    .back-link { text-align: center; margin-top: 1rem; }
+    .back-link a { color: #1a3a5c; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVV IFC Profiler</h1>
+    <a href="/">← Ny jobb</a>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="job-header">
+        <span class="job-title" id="job-title">Laster jobb…</span>
+        <span class="status-badge status-queued" id="status-badge">Venter</span>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div id="current-message">Starter…</div>
+
+      <p class="log-title">Fullførte steg</p>
+      <ul id="status-log"></ul>
+    </div>
+
+    <div id="error-box"></div>
+
+    <div id="result-links" class="card">
+      <p style="font-size:0.9rem;font-weight:600;color:#2e7d32;margin-bottom:0.75rem">
+        Pipeline ferdig — åpne i ArcGIS Online:
+      </p>
+      <a href="#" class="result-link" id="link-centerline" target="_blank">
+        <span>Senterlinje (3D PolylineZ)</span>
+      </a>
+      <a href="#" class="result-link" id="link-sections" target="_blank">
+        <span>Tverrprofil-stasjoner (PointZ + SVG-vedlegg)</span>
+      </a>
+    </div>
+
+    <div class="back-link">
+      <a href="/">← Start ny jobb</a>
+    </div>
+  </main>
+
+  <script type="module" src="/src/job.js"></script>
+</body>
+</html>
