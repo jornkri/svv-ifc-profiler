@@ -86,11 +86,56 @@ def test_create_point_fc_calls_insert_cursor(tmp_path):
     ]
 
     from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
-    create_point_fc(stations, "C:/scratch/test.gdb", "myservice")
+    create_point_fc(stations, "C:/scratch/test.gdb", "myservice", source_epsg=25833)
 
     arcpy_mock.management.CreateFeatureclass.assert_called_once()
     insert_cursor_ctx = arcpy_mock.da.InsertCursor.return_value.__enter__.return_value
     assert insert_cursor_ctx.insertRow.call_count == 2
+
+
+def test_create_point_fc_uses_source_epsg():
+    """create_point_fc skal bruke source_epsg, ikke hardkodet 25833."""
+    arcpy_mock = sys.modules["arcpy"]
+    arcpy_mock.SpatialReference.reset_mock()
+
+    stations = [{"station_m": 0.0, "profil_nr": "0000.00", "x": 86098.0, "y": 1283548.0, "z": 129.0}]
+
+    from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
+    create_point_fc(stations, "C:/scratch/test.gdb", "myservice", source_epsg=5111)
+
+    arcpy_mock.SpatialReference.assert_called_with(5111)
+
+
+def test_cli_reprojects_to_25833_when_source_epsg_differs(tmp_path, capsys):
+    """main() skal kalle arcpy.management.Project til 25833 når --source-epsg != 25833."""
+    stations_path = _stations_json(tmp_path)
+    arcpy_mock = sys.modules["arcpy"]
+    arcpy_mock.management.Project.reset_mock()
+
+    success_meta = {"status": "ok", "url": "https://x/FeatureServer",
+                    "item_id": "i", "item_url": "https://x",
+                    "layer_count": 1, "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
+                    "published_at": "2026-05-04T10:00:00+00:00"}
+
+    with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.tverrprofil_to_agol.create_point_fc",
+               return_value="C:/scratch/t.gdb/t_tverrprofiler"), \
+         patch("src.arcpy_processor.publisher.upload_and_publish", return_value=success_meta), \
+         patch("arcpy.management.GetCount", return_value=[2]), \
+         patch("arcpy.Exists", return_value=False), \
+         patch("arcpy.management.Delete"), \
+         patch("arcpy.management.CreateFileGDB"):
+
+        from src.arcpy_processor.tverrprofil_to_agol import main
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--stations-json", str(stations_path),
+                  "--svgs-dir", str(tmp_path),
+                  "--name", "Test", "--folder", "",
+                  "--source-epsg", "5111"])
+        assert exc_info.value.code == 0
+
+    arcpy_mock.management.Project.assert_called_once()
 
 
 def test_cli_passes_token_to_connect(tmp_path):

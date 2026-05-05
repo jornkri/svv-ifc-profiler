@@ -32,6 +32,7 @@ def create_point_fc(
     stations: list[dict],
     gdb_path: str,
     dataset_name: str,
+    source_epsg: int = 25833,
 ) -> str:
     """Opprett PointZ feature class og populer med stasjonsdata.
 
@@ -39,13 +40,14 @@ def create_point_fc(
         stations:     Liste med dicts {station_m, profil_nr, x, y, z}.
         gdb_path:     Full sti til .gdb-katalog.
         dataset_name: Navn på datasett (brukes som prefix for feature class).
+        source_epsg:  EPSG-kode for koordinatene i stations.
 
     Returns:
         Full sti til opprettet feature class.
     """
     import arcpy
 
-    sr = arcpy.SpatialReference(25833)
+    sr = arcpy.SpatialReference(source_epsg)
     fc_name = f"{dataset_name}_tverrprofiler"
     fc_path = os.path.join(gdb_path, fc_name)
 
@@ -81,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="Tjenestenavn i ArcGIS Online")
     parser.add_argument("--folder", default="",
                         help="Mappe i ArcGIS Online (default: rotmappen)")
+    parser.add_argument("--source-epsg", type=int, default=None,
+                        help="EPSG-kode for koordinatene i stations.json (default: 25833)")
     parser.add_argument("--token", default=None,
                         help="OAuth2 access_token (overstyrer .env credentials)")
     parser.add_argument("--org-url", default=None,
@@ -109,6 +113,7 @@ def main(argv: list[str] | None = None) -> None:
 
         stations = json.loads(stations_path.read_text())
         svgs_dir = Path(args.svgs_dir)
+        source_epsg = args.source_epsg or 25833
 
         scratch = arcpy.env.scratchFolder
         stem = re.sub(r"[^A-Za-z0-9_]", "_", args.name)[:50]
@@ -122,13 +127,20 @@ def main(argv: list[str] | None = None) -> None:
         arcpy.management.CreateFileGDB(scratch, gdb_name)
 
         try:
-            fc_path = create_point_fc(stations, gdb_path, stem)
+            fc_path = create_point_fc(stations, gdb_path, stem, source_epsg=source_epsg)
         except ArcpyProcessorError:
             raise
         except Exception as exc:
             raise ArcpyProcessorError(
                 PUBLISH_FAILED, f"Kunne ikke opprette feature class: {exc}"
             ) from exc
+
+        if source_epsg != 25833:
+            projected_path = fc_path + "_25833"
+            arcpy.management.Project(fc_path, projected_path, arcpy.SpatialReference(25833))
+            arcpy.management.Delete(fc_path)
+            fc_path = projected_path
+            logger.info("Reprosjektert fra EPSG:%d til EPSG:25833", source_epsg)
 
         arcpy.management.EnableAttachments(fc_path)
 

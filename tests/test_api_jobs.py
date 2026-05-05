@@ -51,7 +51,8 @@ def test_run_job_success(tmp_path):
     job_id = create_job()
     with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
          patch("src.api.job_runner.subprocess.run",
-               side_effect=[mock_proc_cl, mock_proc_tp]):
+               side_effect=[mock_proc_cl, mock_proc_tp]), \
+         patch("src.api.job_runner.parse_landxml", return_value=({}, 25833)):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
@@ -68,6 +69,41 @@ def test_run_job_success(tmp_path):
     assert state.progress_pct == 100
     assert state.centerline_url == "https://agol/cl/FeatureServer"
     assert state.sections_url == "https://agol/tp/FeatureServer"
+
+
+def test_run_job_passes_source_epsg_to_tverrprofil(tmp_path):
+    """run_job skal sende --source-epsg til tverrprofil_to_agol basert på LandXML."""
+    from src.api.job_runner import create_job, run_job
+
+    fake_ifc = tmp_path / "model.ifc"; fake_ifc.write_text("")
+    fake_xml = tmp_path / "cl.xml"; fake_xml.write_text("")
+    output_dir = tmp_path / "output"; output_dir.mkdir()
+    meta = {"stations": [{}]}
+    (output_dir / "metadata.json").write_text(json.dumps(meta))
+
+    pipeline_result = {
+        "svgs": [], "centerline": str(output_dir / "c.geojson"),
+        "metadata": str(output_dir / "metadata.json"),
+        "stations_json": str(output_dir / "stations.json"),
+    }
+
+    cl_stdout = json.dumps({"status": "ok", "url": "https://agol/cl"})
+    tp_stdout = json.dumps({"status": "ok", "url": "https://agol/tp"})
+    mock_proc_cl = MagicMock(stdout=cl_stdout, returncode=0)
+    mock_proc_tp = MagicMock(stdout=tp_stdout, returncode=0)
+
+    job_id = create_job()
+    with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
+         patch("src.api.job_runner.subprocess.run",
+               side_effect=[mock_proc_cl, mock_proc_tp]) as mock_run, \
+         patch("src.api.job_runner.parse_landxml", return_value=({}, 5111)):
+        run_job(job_id=job_id, ifc_path=fake_ifc, xml_path=fake_xml,
+                name="T", interval=10.0, access_token="tok",
+                org_url="https://x.arcgis.com", output_dir=output_dir)
+
+    tp_call_args = mock_run.call_args_list[1][0][0]
+    assert "--source-epsg" in tp_call_args
+    assert "5111" in tp_call_args
 
 
 def test_run_job_sets_failed_on_subprocess_error(tmp_path):
@@ -93,7 +129,8 @@ def test_run_job_sets_failed_on_subprocess_error(tmp_path):
     job_id = create_job()
     with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
          patch("src.api.job_runner.subprocess.run",
-               side_effect=subprocess.CalledProcessError(1, "cmd", stderr="AGOL feilet")):
+               side_effect=subprocess.CalledProcessError(1, "cmd", stderr="AGOL feilet")), \
+         patch("src.api.job_runner.parse_landxml", return_value=({}, 25833)):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,

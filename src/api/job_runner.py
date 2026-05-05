@@ -13,13 +13,16 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-# Lazy module-level reference so tests can patch 'src.api.job_runner.run_pipeline'.
-# Import is deferred to avoid circular deps at startup; callers (run_job) use this
-# module-level name which is populated on first use.
+# Lazy module-level references so tests can patch them.
 try:
     from src.ifc_processor.pipeline import run_pipeline  # noqa: F401
-except Exception:  # pragma: no cover – optional dep (arcpy) may be absent
+except Exception:  # pragma: no cover
     run_pipeline = None  # type: ignore[assignment]
+
+try:
+    from src.arcpy_processor.landxml_parser import parse_landxml  # noqa: F401
+except Exception:  # pragma: no cover
+    parse_landxml = None  # type: ignore[assignment]
 
 JobStatus = Literal["queued", "running", "done", "failed"]
 
@@ -84,6 +87,8 @@ def run_job(
         n_sections = len(meta["stations"])
         _update(state, 50, f"Genererte {n_sections} tverrprofiler")
 
+        _, source_epsg = parse_landxml(xml_path)
+
         _update(state, 55, "Publiserer senterlinje til AGOL…")
         cl_proc = subprocess.run(
             [
@@ -108,6 +113,7 @@ def run_job(
                 "--svgs-dir", str(output_dir),
                 "--name", f"{name}_tverrprofiler",
                 "--folder", "",
+                "--source-epsg", str(source_epsg),
                 "--token", access_token,
                 "--org-url", org_url,
             ],
