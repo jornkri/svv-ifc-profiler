@@ -1,86 +1,136 @@
-// SVV IFC Profiler - frontend entrypoint
-// Bruker ArcGIS Maps SDK for JavaScript som kartrammeverk.
-
-import Map from "@arcgis/core/Map.js";
-import MapView from "@arcgis/core/views/MapView.js";
-import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer.js";
-import Graphic from "@arcgis/core/Graphic.js";
+// web/src/main.js
+// Wizard landing page: auth check, file validation, job submission.
 
 const API_BASE = "http://localhost:8000";
 
-// --- Kart -------------------------------------------------------------------
-const centerlineLayer = new GraphicsLayer({ id: "centerline" });
+const step2Card = document.getElementById("step2");
+const step3Card = document.getElementById("step3");
+const step1Ind = document.getElementById("step-ind-1");
+const step2Ind = document.getElementById("step-ind-2");
+const step3Ind = document.getElementById("step-ind-3");
+const userInfo = document.getElementById("user-info");
+const loginBtn = document.getElementById("login-btn");
+const ifcFile = document.getElementById("ifc-file");
+const xmlFile = document.getElementById("xml-file");
+const ifcError = document.getElementById("ifc-error");
+const xmlError = document.getElementById("xml-error");
+const runBtn = document.getElementById("run-btn");
+const formError = document.getElementById("form-error");
+const serviceNameInput = document.getElementById("service-name");
+const intervalInput = document.getElementById("interval");
 
-const map = new Map({
-  basemap: "topo-vector",
-  layers: [centerlineLayer],
-});
-
-const view = new MapView({
-  container: "map",
-  map,
-  // Norge - default extent. Justeres når senterlinje lastes.
-  center: [10.75, 59.91],
-  zoom: 6,
-});
-
-// --- State ------------------------------------------------------------------
-let currentJobId = null;
-
-// --- Opplasting -------------------------------------------------------------
-const uploadInput = document.getElementById("upload");
-const statusEl = document.getElementById("status");
-const stationLabel = document.getElementById("station-label");
-const profileImg = document.getElementById("profile-img");
-
-uploadInput.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  statusEl.textContent = `Laster opp ${file.name}…`;
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  try {
-    const resp = await fetch(`${API_BASE}/api/upload`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!resp.ok) throw new Error(`Opplasting feilet: ${resp.status}`);
-    const data = await resp.json();
-    currentJobId = data.job_id;
-    statusEl.textContent = `Jobb ${currentJobId} opprettet. Behandler…`;
-
-    await loadCenterline(currentJobId);
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = `Feil: ${err.message}`;
-  }
-});
-
-// --- Senterlinje ------------------------------------------------------------
-async function loadCenterline(jobId) {
-  // TODO: backend må returnere senterlinje som GeoJSON.
-  const resp = await fetch(`${API_BASE}/api/jobs/${jobId}/centerline`);
-  if (!resp.ok) {
-    statusEl.textContent = "Kunne ikke laste senterlinje (ikke implementert ennå).";
-    return;
-  }
-  const geojson = await resp.json();
-  // TODO: konverter GeoJSON-LineString til ArcGIS Polyline og legg til som Graphic.
-  console.log("Senterlinje mottatt:", geojson);
+function sanitizeName(filename) {
+  return filename.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 60);
 }
 
-// --- Klikk på senterlinje ---------------------------------------------------
-view.on("click", async (event) => {
-  if (!currentJobId) return;
+function activateStep2() {
+  step1Ind.classList.remove("active");
+  step1Ind.classList.add("done");
+  step2Ind.classList.add("active");
+  step2Card.classList.remove("disabled");
+}
 
-  const hit = await view.hitTest(event, { include: [centerlineLayer] });
-  if (!hit.results.length) return;
+function activateStep3() {
+  step2Ind.classList.remove("active");
+  step2Ind.classList.add("done");
+  step3Ind.classList.add("active");
+  step3Card.classList.remove("disabled");
+  runBtn.disabled = false;
+}
 
-  // TODO: regn ut nærmeste stasjon (m) på senterlinjen for klikkpunktet.
-  const station = 0;
-  stationLabel.textContent = `Stasjon: ${station.toFixed(1)} m`;
-  profileImg.src = `${API_BASE}/api/jobs/${currentJobId}/section?station=${station}`;
+// Check if both files are selected and valid
+function validateFiles() {
+  let ok = true;
+  ifcError.textContent = "";
+  xmlError.textContent = "";
+
+  if (ifcFile.files.length === 0) {
+    ok = false;
+  } else if (!ifcFile.files[0].name.toLowerCase().endsWith(".ifc")) {
+    ifcError.textContent = "Velg en .ifc-fil";
+    ok = false;
+  }
+
+  if (xmlFile.files.length === 0) {
+    ok = false;
+  } else if (!xmlFile.files[0].name.toLowerCase().endsWith(".xml")) {
+    xmlError.textContent = "Velg en .xml LandXML-fil";
+    ok = false;
+  }
+
+  if (ok && step3Card.classList.contains("disabled")) {
+    activateStep3();
+    // Pre-fill service name from IFC filename
+    if (ifcFile.files.length > 0 && !serviceNameInput.value) {
+      serviceNameInput.value = sanitizeName(ifcFile.files[0].name);
+    }
+  }
+}
+
+ifcFile.addEventListener("change", validateFiles);
+xmlFile.addEventListener("change", validateFiles);
+
+// Submit
+runBtn.addEventListener("click", async () => {
+  formError.textContent = "";
+  const name = serviceNameInput.value.trim();
+  const interval = parseFloat(intervalInput.value);
+
+  if (!name) {
+    formError.textContent = "Tjenestenavn er påkrevd";
+    return;
+  }
+  if (isNaN(interval) || interval < 1 || interval > 100) {
+    formError.textContent = "Tverrprofilintervall må være mellom 1 og 100";
+    return;
+  }
+  if (ifcFile.files.length === 0 || xmlFile.files.length === 0) {
+    formError.textContent = "Begge filer er påkrevd";
+    return;
+  }
+
+  runBtn.disabled = true;
+  runBtn.textContent = "Laster opp…";
+
+  const fd = new FormData();
+  fd.append("ifc_file", ifcFile.files[0]);
+  fd.append("xml_file", xmlFile.files[0]);
+  fd.append("name", name);
+  fd.append("interval", String(interval));
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/jobs`, {
+      method: "POST",
+      body: fd,
+      credentials: "include",
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || `Feil ${resp.status}`);
+    }
+    const data = await resp.json();
+    window.location = `/job.html?id=${data.job_id}`;
+  } catch (err) {
+    formError.textContent = `Feil: ${err.message}`;
+    runBtn.disabled = false;
+    runBtn.textContent = "Kjør pipeline";
+  }
 });
+
+// On load: check auth status
+async function checkAuth() {
+  try {
+    const resp = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+    if (resp.ok) {
+      const user = await resp.json();
+      userInfo.textContent = `Innlogget som ${user.full_name || user.username}`;
+      loginBtn.disabled = true;
+      loginBtn.textContent = "Innlogget";
+      activateStep2();
+    }
+  } catch {
+    // Not logged in — leave UI in initial state
+  }
+}
+
+checkAuth();
