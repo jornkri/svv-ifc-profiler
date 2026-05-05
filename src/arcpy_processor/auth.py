@@ -23,7 +23,15 @@ def connect(token: str | None = None, org_url: str | None = None) -> GIS:
 
     if token:
         try:
-            return GIS(url, token=token)
+            gis = GIS(url, token=token)
+            if gis.users.me is None:
+                raise ArcpyProcessorError(
+                    AUTH_FAILED,
+                    "OAuth2-token er utløpt eller ugyldig. Logg inn på nytt.",
+                )
+            return gis
+        except ArcpyProcessorError:
+            raise
         except Exception as exc:
             raise ArcpyProcessorError(
                 AUTH_FAILED,

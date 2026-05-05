@@ -86,6 +86,28 @@ def test_connect_raises_when_env_missing(monkeypatch):
         del sys.modules["arcgis"]
 
 
+def test_connect_raises_when_token_creates_anonymous_session(monkeypatch):
+    """GIS(token=...) kan returnere anonym tilkobling uten å kaste exception — auth.py skal oppdage og feile."""
+    import sys
+
+    mock_gis_instance = MagicMock()
+    mock_gis_instance.users.me = None  # anonym tilkobling
+    mock_gis_class = MagicMock(return_value=mock_gis_instance)
+
+    sys.modules["arcgis"] = MagicMock()
+    sys.modules["arcgis.gis"] = MagicMock()
+    sys.modules["arcgis.gis"].GIS = mock_gis_class
+
+    from src.arcpy_processor.auth import connect
+    with pytest.raises(ArcpyProcessorError) as exc_info:
+        connect(token="expired_or_invalid_token", org_url="https://www.arcgis.com")
+    assert exc_info.value.code == "AUTH_FAILED"
+    assert "utløpt" in exc_info.value.message or "ugyldig" in exc_info.value.message
+
+    del sys.modules["arcgis.gis"]
+    del sys.modules["arcgis"]
+
+
 def test_connect_uses_default_org_url(monkeypatch):
     """Test that connect() uses default ArcGIS.com URL when AGOL_ORG_URL not set."""
     monkeypatch.setenv("AGOL_USERNAME", "user")
