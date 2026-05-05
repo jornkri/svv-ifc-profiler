@@ -115,6 +115,7 @@ def test_publish_uses_etrs89_utm33_spatial_reference():
     )
     assert params is not None, "publish() ble kalt uten publish_parameters"
     assert params.get("targetSR", {}).get("wkid") == 25833
+    assert params.get("name") == "Test", "publish_parameters må inneholde name"
 
 
 def test_publish_cleans_up_when_archive_fails():

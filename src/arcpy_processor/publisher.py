@@ -79,7 +79,7 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         item = job.result()
         logger.info("Lastet opp GDB som item %s", item.id)
 
-        fs_item = item.publish(publish_parameters={"targetSR": {"wkid": 25833, "latestWkid": 25833}})
+        fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
         logger.info("Publisert feature service: %s", fs_item.url)
 
         layer_count = len(getattr(fs_item, "layers", []))
