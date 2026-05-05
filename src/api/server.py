@@ -1,22 +1,30 @@
-"""FastAPI-server som tar imot IFC-opplastinger og leverer profilresultater.
+"""FastAPI-server for SVV IFC Profiler.
 
-Endepunkter (utkast):
-    POST /api/upload                   → motta IFC, kjør prosessering, returner job_id
-    GET  /api/jobs/{job_id}            → status (pending/running/done/failed)
-    GET  /api/jobs/{job_id}/centerline → senterlinje som GeoJSON for kartvisning
-    GET  /api/jobs/{job_id}/section?station={m}
-                                       → tverrprofil som PNG eller SVG
-    GET  /api/jobs/{job_id}/longitudinal
-                                       → lengdeprofil som PNG eller SVG
+Endepunkter:
+    GET  /api/health          → helsesjekk
+    GET  /auth/login          → OAuth2 innlogging (redirect til AGOL)
+    GET  /auth/callback       → OAuth2 callback (bytt code mot token)
+    GET  /auth/me             → innlogget brukerinfo (fra session)
+    POST /auth/logout         → logg ut (slett session)
+    POST /api/jobs            → start ny pipeline-jobb
+    GET  /api/jobs/{id}       → jobbstatus
 """
-
 from __future__ import annotations
 
+import os
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
+
+load_dotenv()
+
+from .auth_routes import router as auth_router
+from . import job_runner
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -24,19 +32,22 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 app = FastAPI(
     title="SVV IFC Profiler API",
     description="Generer tverr- og lengdeprofiler fra IFC-modeller iht. R700.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
-# CORS for lokal frontend-utvikling (Vite default port 5173)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-prod"),
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
-# In-memory jobbregister (erstattes senere med Redis / SQLite / queue)
-JOBS: dict[str, dict] = {}
+app.include_router(auth_router, prefix="/auth")
 
 
 @app.get("/api/health")
@@ -44,47 +55,64 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/api/upload")
-async def upload_ifc(file: UploadFile = File(...)) -> dict:
-    """Motta en IFC-fil, lagre den, og opprett en jobb."""
-    if not file.filename or not file.filename.lower().endswith(".ifc"):
-        raise HTTPException(400, "Forventet en .ifc-fil")
+@app.post("/api/jobs")
+async def create_job(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    ifc_file: UploadFile = File(...),
+    xml_file: UploadFile = File(...),
+    name: str = Form(...),
+    interval: float = Form(10.0),
+) -> dict:
+    """Motta IFC + LandXML, start pipeline-jobb i bakgrunnen."""
+    if "access_token" not in request.session:
+        raise HTTPException(401, "Ikke innlogget — bruk /auth/login")
+    if not ifc_file.filename or not ifc_file.filename.lower().endswith(".ifc"):
+        raise HTTPException(400, "ifc_file må være en .ifc-fil")
+    if not xml_file.filename or not xml_file.filename.lower().endswith(".xml"):
+        raise HTTPException(400, "xml_file må være en .xml LandXML-fil")
+    if not (1 <= interval <= 100):
+        raise HTTPException(400, "interval må være mellom 1 og 100 meter")
 
-    job_id = str(uuid.uuid4())
-    target = UPLOAD_DIR / f"{job_id}.ifc"
+    job_id = job_runner.create_job()
+    job_dir = UPLOAD_DIR / job_id
+    job_dir.mkdir()
 
-    with target.open("wb") as f:
-        while chunk := await file.read(1024 * 1024):
+    ifc_path = job_dir / "model.ifc"
+    xml_path = job_dir / "centerline.xml"
+
+    with ifc_path.open("wb") as f:
+        while chunk := await ifc_file.read(1024 * 1024):
+            f.write(chunk)
+    with xml_path.open("wb") as f:
+        while chunk := await xml_file.read(1024 * 1024):
             f.write(chunk)
 
-    JOBS[job_id] = {
-        "status": "pending",
-        "ifc_path": str(target),
-        "filename": file.filename,
-    }
+    background_tasks.add_task(
+        job_runner.run_job,
+        job_id=job_id,
+        ifc_path=ifc_path,
+        xml_path=xml_path,
+        name=name,
+        interval=interval,
+        access_token=request.session["access_token"],
+        org_url=request.session.get("org_url", "https://www.arcgis.com"),
+        output_dir=job_dir / "output",
+    )
 
-    # TODO: kø prosesseringsjobben (background task / Celery / RQ).
-    return {"job_id": job_id, "status": "pending"}
+    return {"job_id": job_id, "status": "queued"}
 
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
-    if job_id not in JOBS:
+    state = job_runner.get_job(job_id)
+    if state is None:
         raise HTTPException(404, "Jobb ikke funnet")
-    return JOBS[job_id]
-
-
-@app.get("/api/jobs/{job_id}/centerline")
-def get_centerline(job_id: str) -> dict:
-    """Returner senterlinje som GeoJSON. TODO: implementer."""
-    if job_id not in JOBS:
-        raise HTTPException(404, "Jobb ikke funnet")
-    raise HTTPException(501, "Ikke implementert ennå")
-
-
-@app.get("/api/jobs/{job_id}/section")
-def get_cross_section(job_id: str, station: float) -> dict:
-    """Returner tverrprofil ved gitt stasjon (i meter). TODO: implementer."""
-    if job_id not in JOBS:
-        raise HTTPException(404, "Jobb ikke funnet")
-    raise HTTPException(501, "Ikke implementert ennå")
+    return {
+        "status": state.status,
+        "progress_pct": state.progress_pct,
+        "message": state.message,
+        "centerline_url": state.centerline_url,
+        "sections_url": state.sections_url,
+        "error": state.error,
+    }

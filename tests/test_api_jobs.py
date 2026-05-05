@@ -108,3 +108,104 @@ def test_run_job_sets_failed_on_subprocess_error(tmp_path):
     state = get_job(job_id)
     assert state.status == "failed"
     assert "AGOL feilet" in state.error
+
+
+import io
+import os
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
+
+
+@pytest.fixture(autouse=True)
+def set_env_for_server(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key")
+    monkeypatch.setenv("AGOL_CLIENT_ID", "test_client")
+    monkeypatch.setenv("AGOL_ORG_URL", "https://test.maps.arcgis.com")
+
+
+@pytest.fixture
+def client():
+    from src.api.server import app
+    return TestClient(app)
+
+
+def _login(client):
+    """Simulate OAuth2 login via mocked AGOL callbacks."""
+    login_resp = client.get("/auth/login", follow_redirects=False)
+    params = dict(p.split("=", 1) for p in
+                  login_resp.headers["location"].split("?")[1].split("&"))
+    state = params["state"]
+    token_mock = MagicMock(raise_for_status=MagicMock(),
+                           json=MagicMock(return_value={"access_token": "tok", "refresh_token": "r"}))
+    user_mock = MagicMock(raise_for_status=MagicMock(),
+                          json=MagicMock(return_value={"username": "u", "fullName": "N"}))
+    with patch("src.api.auth_routes.httpx.post", return_value=token_mock), \
+         patch("src.api.auth_routes.httpx.get", return_value=user_mock):
+        client.get(f"/auth/callback?code=x&state={state}", follow_redirects=False)
+
+
+def test_health(client):
+    assert client.get("/api/health").status_code == 200
+
+
+def test_post_jobs_requires_auth(client):
+    resp = client.post(
+        "/api/jobs",
+        data={"name": "Test", "interval": "10"},
+        files={"ifc_file": ("m.ifc", io.BytesIO(b"fake")),
+               "xml_file": ("cl.xml", io.BytesIO(b"<x/>"))},
+    )
+    assert resp.status_code == 401
+
+
+def test_post_jobs_validates_file_type(client):
+    _login(client)
+    resp = client.post(
+        "/api/jobs",
+        data={"name": "Test", "interval": "10"},
+        files={"ifc_file": ("model.txt", io.BytesIO(b"bad")),
+               "xml_file": ("cl.xml", io.BytesIO(b"<x/>"))},
+    )
+    assert resp.status_code == 400
+
+
+def test_post_jobs_creates_job_and_returns_id(client):
+    _login(client)
+    with patch("src.api.job_runner.run_job"):  # prevent actual execution
+        resp = client.post(
+            "/api/jobs",
+            data={"name": "TestService", "interval": "10"},
+            files={"ifc_file": ("model.ifc", io.BytesIO(b"fake")),
+                   "xml_file": ("cl.xml", io.BytesIO(b"<xml/>"))},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "job_id" in data
+    assert data["status"] == "queued"
+
+
+def test_get_job_status_queued(client):
+    _login(client)
+    with patch("src.api.job_runner.run_job"):
+        create_resp = client.post(
+            "/api/jobs",
+            data={"name": "S", "interval": "10"},
+            files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
+                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+        )
+    job_id = create_resp.json()["job_id"]
+
+    status_resp = client.get(f"/api/jobs/{job_id}")
+    assert status_resp.status_code == 200
+    data = status_resp.json()
+    assert "status" in data
+    assert "progress_pct" in data
+    assert "message" in data
+    assert "centerline_url" in data
+    assert "sections_url" in data
+    assert "error" in data
+
+
+def test_get_job_404_for_unknown(client):
+    assert client.get("/api/jobs/does-not-exist").status_code == 404
