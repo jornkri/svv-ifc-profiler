@@ -44,3 +44,20 @@ def test_landxml_error_to_dict():
         "code": "LANDXML_PARSE_ERROR",
         "message": "EPSG mangler",
     }
+
+
+def test_connect_with_token():
+    """connect(token=...) passes token= keyword to GIS(), not username/password."""
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    gis_mock = MagicMock()
+    GIS_mock = MagicMock(return_value=gis_mock)
+
+    with patch.dict(sys.modules, {"arcgis.gis": MagicMock(GIS=GIS_mock)}):
+        import importlib
+        import src.arcpy_processor.auth as auth_module
+        importlib.reload(auth_module)
+        auth_module.connect(token="mytoken", org_url="https://test.maps.arcgis.com")
+
+    GIS_mock.assert_called_once_with("https://test.maps.arcgis.com", token="mytoken")

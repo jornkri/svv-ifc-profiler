@@ -10,13 +10,28 @@ if TYPE_CHECKING:
     from arcgis.gis import GIS
 
 
-def connect() -> GIS:
-    """Returner autentisert GIS-instans fra .env-variabler."""
+def connect(token: str | None = None, org_url: str | None = None) -> GIS:
+    """Returner autentisert GIS-instans.
+
+    Args:
+        token:   OAuth2 access_token fra brukerens innlogging. Overstyrer .env-credentials.
+        org_url: AGOL org-URL. Overstyrer AGOL_ORG_URL i .env.
+    """
     from arcgis.gis import GIS
+
+    url = org_url or os.getenv("AGOL_ORG_URL", "https://www.arcgis.com")
+
+    if token:
+        try:
+            return GIS(url, token=token)
+        except Exception as exc:
+            raise ArcpyProcessorError(
+                AUTH_FAILED,
+                f"Kunne ikke koble til ArcGIS Online med token ({url}): {exc}",
+            ) from exc
 
     username = os.getenv("AGOL_USERNAME")
     password = os.getenv("AGOL_PASSWORD")
-    org_url = os.getenv("AGOL_ORG_URL", "https://www.arcgis.com")
 
     if not (username and username.strip()) or not (password and password.strip()):
         raise ArcpyProcessorError(
@@ -25,9 +40,9 @@ def connect() -> GIS:
         )
 
     try:
-        return GIS(org_url, username, password)
+        return GIS(url, username, password)
     except Exception as exc:
         raise ArcpyProcessorError(
             AUTH_FAILED,
-            f"Kunne ikke logge inn på ArcGIS Online ({org_url}): {exc}",
+            f"Kunne ikke logge inn på ArcGIS Online ({url}): {exc}",
         ) from exc
