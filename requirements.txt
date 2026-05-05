@@ -22,6 +22,8 @@ pillow>=10.0
 fastapi>=0.110
 uvicorn[standard]>=0.27
 python-multipart>=0.0.9   # filopplasting
+httpx>=0.27             # OAuth2 token exchange + AGOL self endpoint
+itsdangerous>=2.1       # required by starlette SessionMiddleware
 pydantic>=2.6
 
 # Test og kvalitet
