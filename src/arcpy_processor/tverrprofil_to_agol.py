@@ -34,20 +34,24 @@ def create_point_fc(
     dataset_name: str,
     source_epsg: int = 25833,
 ) -> str:
-    """Opprett PointZ feature class og populer med stasjonsdata.
+    """Opprett PointZ feature class i EPSG:25833 og populer med stasjonsdata.
+
+    Koordinatene i stations kan være i et annet CRS (source_epsg). Hvis
+    source_epsg != 25833, reprosjekteres de automatisk med pyproj.
 
     Args:
         stations:     Liste med dicts {station_m, profil_nr, x, y, z}.
         gdb_path:     Full sti til .gdb-katalog.
         dataset_name: Navn på datasett (brukes som prefix for feature class).
-        source_epsg:  EPSG-kode for koordinatene i stations.
+        source_epsg:  EPSG-kode for koordinatene i stations (default: 25833).
 
     Returns:
-        Full sti til opprettet feature class.
+        Full sti til opprettet feature class (alltid i EPSG:25833).
     """
     import arcpy
+    from pyproj import Transformer
 
-    sr = arcpy.SpatialReference(source_epsg)
+    sr = arcpy.SpatialReference(25833)
     fc_name = f"{dataset_name}_tverrprofiler"
     fc_path = os.path.join(gdb_path, fc_name)
 
@@ -57,9 +61,18 @@ def create_point_fc(
     arcpy.management.AddField(fc_path, "stasjon_m", "DOUBLE")
     arcpy.management.AddField(fc_path, "profil_nr", "TEXT", field_length=20)
 
+    transformer = (
+        Transformer.from_crs(source_epsg, 25833, always_xy=True)
+        if source_epsg != 25833
+        else None
+    )
+
     with arcpy.da.InsertCursor(fc_path, ["stasjon_m", "profil_nr", "SHAPE@"]) as cur:
         for row in stations:
-            pt = arcpy.Point(row["x"], row["y"], row["z"])
+            x, y = row["x"], row["y"]
+            if transformer is not None:
+                x, y = transformer.transform(x, y)
+            pt = arcpy.Point(x, y, row["z"])
             geom = arcpy.PointGeometry(pt, sr)
             cur.insertRow((row["station_m"], row["profil_nr"], geom))
 
@@ -134,13 +147,6 @@ def main(argv: list[str] | None = None) -> None:
             raise ArcpyProcessorError(
                 PUBLISH_FAILED, f"Kunne ikke opprette feature class: {exc}"
             ) from exc
-
-        if source_epsg != 25833:
-            projected_path = fc_path + "_25833"
-            arcpy.management.Project(fc_path, projected_path, arcpy.SpatialReference(25833))
-            arcpy.management.Delete(fc_path)
-            fc_path = projected_path
-            logger.info("Reprosjektert fra EPSG:%d til EPSG:25833", source_epsg)
 
         arcpy.management.EnableAttachments(fc_path)
 

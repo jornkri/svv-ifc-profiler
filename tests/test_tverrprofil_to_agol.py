@@ -93,21 +93,41 @@ def test_create_point_fc_calls_insert_cursor(tmp_path):
     assert insert_cursor_ctx.insertRow.call_count == 2
 
 
-def test_create_point_fc_uses_source_epsg():
-    """create_point_fc skal bruke source_epsg, ikke hardkodet 25833."""
+def test_create_point_fc_reprojects_to_25833_when_source_epsg_5111():
+    """create_point_fc skal reprosjektere fra source_epsg til EPSG:25833 med pyproj."""
     arcpy_mock = sys.modules["arcpy"]
-    arcpy_mock.SpatialReference.reset_mock()
+    arcpy_mock.Point.reset_mock()
 
-    stations = [{"station_m": 0.0, "profil_nr": "0000.00", "x": 86098.0, "y": 1283548.0, "z": 129.0}]
+    stations = [{"station_m": 0.0, "profil_nr": "0000.00", "x": 86098.615, "y": 1283548.214, "z": 129.432}]
 
     from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
     create_point_fc(stations, "C:/scratch/test.gdb", "myservice", source_epsg=5111)
 
-    arcpy_mock.SpatialReference.assert_called_with(5111)
+    call_args = arcpy_mock.Point.call_args_list[0][0]
+    x_arg, y_arg = call_args[0], call_args[1]
+    # EPSG:5111 (E=86098.615, N=1283548.214) -> EPSG:25833 (E≈294178, N≈6717991)
+    assert abs(x_arg - 294178) < 10, f"X feil: {x_arg} (forventet ~294178 i EPSG:25833)"
+    assert abs(y_arg - 6717991) < 10, f"Y feil: {y_arg} (forventet ~6717991 i EPSG:25833)"
 
 
-def test_cli_reprojects_to_25833_when_source_epsg_differs(tmp_path, capsys):
-    """main() skal kalle arcpy.management.Project til 25833 når --source-epsg != 25833."""
+def test_create_point_fc_no_reprojection_when_source_is_25833():
+    """create_point_fc skal ikke reprosjektere når source_epsg allerede er 25833."""
+    arcpy_mock = sys.modules["arcpy"]
+    arcpy_mock.Point.reset_mock()
+
+    stations = [{"station_m": 0.0, "profil_nr": "0000.00", "x": 294178.0, "y": 6717991.0, "z": 129.0}]
+
+    from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
+    create_point_fc(stations, "C:/scratch/test.gdb", "myservice", source_epsg=25833)
+
+    call_args = arcpy_mock.Point.call_args_list[0][0]
+    x_arg, y_arg = call_args[0], call_args[1]
+    assert abs(x_arg - 294178.0) < 0.01
+    assert abs(y_arg - 6717991.0) < 0.01
+
+
+def test_cli_no_arcpy_project_when_source_epsg_differs(tmp_path, capsys):
+    """main() skal IKKE kalle arcpy.management.Project — reprosjeksjon skjer i Python."""
     stations_path = _stations_json(tmp_path)
     arcpy_mock = sys.modules["arcpy"]
     arcpy_mock.management.Project.reset_mock()
@@ -135,7 +155,7 @@ def test_cli_reprojects_to_25833_when_source_epsg_differs(tmp_path, capsys):
                   "--source-epsg", "5111"])
         assert exc_info.value.code == 0
 
-    arcpy_mock.management.Project.assert_called_once()
+    arcpy_mock.management.Project.assert_not_called()
 
 
 def test_cli_passes_token_to_connect(tmp_path):
