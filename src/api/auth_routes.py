@@ -48,6 +48,7 @@ def auth_callback(request: Request, code: str, state: str) -> RedirectResponse:
             "redirect_uri": _env("AGOL_REDIRECT_URI", "http://localhost:8000/auth/callback"),
             "grant_type": "authorization_code",
         },
+        timeout=10,
     )
     token_resp.raise_for_status()
     token_data = token_resp.json()
@@ -56,6 +57,7 @@ def auth_callback(request: Request, code: str, state: str) -> RedirectResponse:
     self_resp = httpx.get(
         f"{org_url}/sharing/rest/community/self",
         params={"f": "json", "token": access_token},
+        timeout=10,
     )
     self_resp.raise_for_status()
     user = self_resp.json()
