@@ -103,6 +103,8 @@ def run_job(
         )
         cl_result = json.loads(cl_proc.stdout)
         state.centerline_url = cl_result.get("url")
+        logger.info("[%s] senterlinje stdout: %s", job_id, cl_proc.stdout.strip())
+        logger.info("[%s] senterlinje stderr: %s", job_id, cl_proc.stderr.strip())
         _update(state, 70, "Senterlinje publisert til AGOL")
 
         _update(state, 75, "Publiserer tverrprofiler til AGOL…")
@@ -121,6 +123,8 @@ def run_job(
         )
         tp_result = json.loads(tp_proc.stdout)
         state.sections_url = tp_result.get("url")
+        logger.info("[%s] tverrprofil stdout: %s", job_id, tp_proc.stdout.strip())
+        logger.info("[%s] tverrprofil stderr: %s", job_id, tp_proc.stderr.strip())
         _update(state, 100, f"Ferdig — {n_sections} profiler publisert")
         state.status = "done"
 

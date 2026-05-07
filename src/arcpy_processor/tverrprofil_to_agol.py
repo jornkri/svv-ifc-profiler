@@ -173,6 +173,17 @@ def main(argv: list[str] | None = None) -> None:
             arcpy.management.AddAttachments(fc_path, "OBJECTID", match_tbl, "fc_oid", "svg_path")
 
         feature_count = int(arcpy.management.GetCount(fc_path)[0])
+
+        # Diagnostic: log first feature coords from GDB before upload
+        with arcpy.da.SearchCursor(fc_path, ["SHAPE@XY", "stasjon_m"]) as _cur:
+            _first = next(iter(_cur), None)
+            if _first:
+                logger.info(
+                    "GDB-koordinat før opplasting: X=%.3f Y=%.3f (stasjon=%.1f m) — "
+                    "forventer ~294178 / ~6717991 for Kleverud-data",
+                    _first[0][0], _first[0][1], _first[1],
+                )
+
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         result["feature_count"] = feature_count
         print(json.dumps(result))

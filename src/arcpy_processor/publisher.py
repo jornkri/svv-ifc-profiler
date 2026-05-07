@@ -82,6 +82,17 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
         logger.info("Publisert feature service: %s", fs_item.url)
 
+        # Diagnostic: query first feature to verify published coordinates
+        try:
+            from arcgis.features import FeatureLayer
+            _lyr = FeatureLayer(fs_item.url + "/0", gis=gis)
+            _q = _lyr.query(where="1=1", out_fields="*", result_record_count=1, out_sr=25833)
+            for _feat in _q.features:
+                logger.info("AGOL publiserte koordinater (EPSG:25833): %s", _feat.geometry)
+                break
+        except Exception as _exc:
+            logger.warning("Kunne ikke verifisere AGOL-koordinater: %s", _exc)
+
         layer_count = len(getattr(fs_item, "layers", []))
 
         return {
