@@ -13,7 +13,6 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-# Lazy module-level references so tests can patch them.
 try:
     from src.ifc_processor.pipeline import run_pipeline  # noqa: F401
 except Exception:  # pragma: no cover
@@ -24,7 +23,7 @@ try:
 except Exception:  # pragma: no cover
     parse_landxml = None  # type: ignore[assignment]
 
-JobStatus = Literal["queued", "running", "done", "failed"]
+JobStatus = Literal["queued", "running", "done", "done_with_warnings", "failed"]
 
 
 @dataclass
@@ -35,6 +34,7 @@ class JobState:
     message: str = "Venter…"
     centerline_url: str | None = None
     sections_url: str | None = None
+    bim_url: str | None = None
     error: str | None = None
 
 
@@ -42,7 +42,6 @@ _jobs: dict[str, JobState] = {}
 
 
 def create_job() -> str:
-    """Opprett ny jobb og returner job_id."""
     job_id = str(uuid.uuid4())
     _jobs[job_id] = JobState(job_id=job_id, message="Starter pipeline…")
     return job_id
@@ -67,6 +66,7 @@ def run_job(
     access_token: str,
     org_url: str,
     output_dir: Path,
+    publish_bim: bool = False,
 ) -> None:
     """Kjør full pipeline i bakgrunnen. Oppdaterer jobbstatus underveis."""
     state = _jobs[job_id]
@@ -125,8 +125,34 @@ def run_job(
         state.sections_url = tp_result.get("url")
         logger.info("[%s] tverrprofil stdout: %s", job_id, tp_proc.stdout.strip())
         logger.info("[%s] tverrprofil stderr: %s", job_id, tp_proc.stderr.strip())
-        _update(state, 100, f"Ferdig — {n_sections} profiler publisert")
-        state.status = "done"
+
+        if publish_bim:
+            _update(state, 80, "Publiserer BIM som 3D GIS-lag…")
+            try:
+                bim_proc = subprocess.run(
+                    [
+                        sys.executable, "-m", "src.arcpy_processor.bim_to_agol",
+                        "--ifc", str(ifc_path),
+                        "--name", f"{name}_bim",
+                        "--folder", "",
+                        "--token", access_token,
+                        "--org-url", org_url,
+                    ],
+                    check=True, capture_output=True, text=True,
+                )
+                bim_result = json.loads(bim_proc.stdout)
+                state.bim_url = bim_result.get("url")
+                logger.info("[%s] BIM stdout: %s", job_id, bim_proc.stdout.strip())
+                _update(state, 100, f"Ferdig — {n_sections} profiler + BIM-lag publisert")
+                state.status = "done"
+            except subprocess.CalledProcessError as exc:
+                logger.warning("[%s] BIM-publisering feilet: %s", job_id, exc.stderr)
+                state.error = exc.stderr or f"BIM-subprocess feilet med kode {exc.returncode}"
+                _update(state, 100, f"Ferdig — {n_sections} profiler publisert (BIM feilet)")
+                state.status = "done_with_warnings"
+        else:
+            _update(state, 100, f"Ferdig — {n_sections} profiler publisert")
+            state.status = "done"
 
     except subprocess.CalledProcessError as exc:
         state.status = "failed"

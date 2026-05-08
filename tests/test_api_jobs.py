@@ -147,6 +147,104 @@ def test_run_job_sets_failed_on_subprocess_error(tmp_path):
     assert "AGOL feilet" in state.error
 
 
+def test_run_job_with_publish_bim_success(tmp_path):
+    """publish_bim=True kjører tre subprocesser og setter bim_url."""
+    from src.api.job_runner import create_job, run_job, get_job
+
+    fake_ifc = tmp_path / "model.ifc"; fake_ifc.write_text("")
+    fake_xml = tmp_path / "cl.xml"; fake_xml.write_text("")
+    output_dir = tmp_path / "output"; output_dir.mkdir()
+    meta = {"stations": [{"station": 0.0}, {"station": 10.0}]}
+    (output_dir / "metadata.json").write_text(json.dumps(meta))
+
+    pipeline_result = {
+        "svgs": [],
+        "centerline": str(output_dir / "centerline.geojson"),
+        "metadata": str(output_dir / "metadata.json"),
+        "stations_json": str(output_dir / "stations.json"),
+    }
+
+    cl_stdout = json.dumps({"status": "ok", "url": "https://agol/cl/FeatureServer"})
+    tp_stdout = json.dumps({"status": "ok", "url": "https://agol/tp/FeatureServer"})
+    bim_stdout = json.dumps({"status": "ok", "url": "https://agol/bim/FeatureServer"})
+
+    mock_proc_cl = MagicMock(stdout=cl_stdout, returncode=0)
+    mock_proc_tp = MagicMock(stdout=tp_stdout, returncode=0)
+    mock_proc_bim = MagicMock(stdout=bim_stdout, returncode=0)
+
+    job_id = create_job()
+    with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
+         patch("src.api.job_runner.subprocess.run",
+               side_effect=[mock_proc_cl, mock_proc_tp, mock_proc_bim]), \
+         patch("src.api.job_runner.parse_landxml", return_value=({}, 25833)):
+        run_job(
+            job_id=job_id,
+            ifc_path=fake_ifc,
+            xml_path=fake_xml,
+            name="TestBIM",
+            interval=10.0,
+            access_token="tok",
+            org_url="https://test.arcgis.com",
+            output_dir=output_dir,
+            publish_bim=True,
+        )
+
+    state = get_job(job_id)
+    assert state.status == "done"
+    assert state.bim_url == "https://agol/bim/FeatureServer"
+    assert state.centerline_url == "https://agol/cl/FeatureServer"
+    assert state.sections_url == "https://agol/tp/FeatureServer"
+
+
+def test_run_job_with_publish_bim_bim_fails_gives_done_with_warnings(tmp_path):
+    """Når BIM-subprocess feiler settes done_with_warnings; senterlinje og tverrprofiler er ok."""
+    from src.api.job_runner import create_job, run_job, get_job
+
+    fake_ifc = tmp_path / "model.ifc"; fake_ifc.write_text("")
+    fake_xml = tmp_path / "cl.xml"; fake_xml.write_text("")
+    output_dir = tmp_path / "output"; output_dir.mkdir()
+    meta = {"stations": [{"station": 0.0}]}
+    (output_dir / "metadata.json").write_text(json.dumps(meta))
+
+    pipeline_result = {
+        "svgs": [],
+        "centerline": str(output_dir / "centerline.geojson"),
+        "metadata": str(output_dir / "metadata.json"),
+        "stations_json": str(output_dir / "stations.json"),
+    }
+
+    cl_stdout = json.dumps({"status": "ok", "url": "https://agol/cl"})
+    tp_stdout = json.dumps({"status": "ok", "url": "https://agol/tp"})
+
+    mock_proc_cl = MagicMock(stdout=cl_stdout, returncode=0)
+    mock_proc_tp = MagicMock(stdout=tp_stdout, returncode=0)
+    bim_error = subprocess.CalledProcessError(1, "cmd", stderr="BIM-konvertering feilet")
+
+    job_id = create_job()
+    with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
+         patch("src.api.job_runner.subprocess.run",
+               side_effect=[mock_proc_cl, mock_proc_tp, bim_error]), \
+         patch("src.api.job_runner.parse_landxml", return_value=({}, 25833)):
+        run_job(
+            job_id=job_id,
+            ifc_path=fake_ifc,
+            xml_path=fake_xml,
+            name="TestBIMFail",
+            interval=10.0,
+            access_token="tok",
+            org_url="https://test.arcgis.com",
+            output_dir=output_dir,
+            publish_bim=True,
+        )
+
+    state = get_job(job_id)
+    assert state.status == "done_with_warnings"
+    assert state.bim_url is None
+    assert state.centerline_url == "https://agol/cl"
+    assert state.sections_url == "https://agol/tp"
+    assert "BIM-konvertering feilet" in state.error
+
+
 import io
 import os
 import pytest
