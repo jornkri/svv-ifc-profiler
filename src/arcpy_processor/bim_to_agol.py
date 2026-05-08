@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--ifc", required=True, help="Sti til .ifc-fil")
     parser.add_argument("--name", required=True, help="Tjenestenavn i ArcGIS Online")
     parser.add_argument("--folder", required=True, help="Folder i ArcGIS Online")
+    parser.add_argument("--token", default=None, help="AGOL OAuth2-token")
+    parser.add_argument("--org-url", default=None, dest="org_url",
+                        help="ArcGIS Online organisasjons-URL")
     args = parser.parse_args(argv)
 
     def _fail(err: ArcpyProcessorError) -> NoReturn:
@@ -66,7 +69,7 @@ def main(argv: list[str] | None = None) -> None:
         from .converter import convert_bim, delete_empty_fcs
         from .publisher import check_name_available, upload_and_publish
 
-        gis = connect()
+        gis = connect(token=args.token, org_url=args.org_url)
         check_name_available(gis, args.name, args.folder)
 
         stem = Path(args.ifc).stem

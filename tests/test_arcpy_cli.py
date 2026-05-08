@@ -108,3 +108,33 @@ def test_cli_exits_1_when_ifc_not_found(capsys):
     captured = capsys.readouterr()
     error = json.loads(captured.err)
     assert error["code"] == "IFC_NOT_FOUND"
+
+
+def test_cli_passes_token_and_org_url_to_connect(capsys):
+    mock_gis = MagicMock()
+    success_meta = {"status": "ok", "url": "https://services.arcgis.com/xxx/FeatureServer"}
+
+    with patch("src.arcpy_processor.auth.connect", return_value=mock_gis) as mock_connect, \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.converter.convert_bim", return_value=["fc1"]), \
+         patch("src.arcpy_processor.converter.delete_empty_fcs", return_value=["fc1"]), \
+         patch("src.arcpy_processor.bim_to_agol._gdb_path_from_fcs",
+               return_value="/scratch/bim_temp.gdb"), \
+         patch("src.arcpy_processor.publisher.upload_and_publish",
+               return_value=success_meta), \
+         patch("pathlib.Path.exists", return_value=True):
+
+        from src.arcpy_processor.bim_to_agol import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main([
+                "--ifc", "test.ifc", "--name", "TestLag", "--folder", "SVV",
+                "--token", "mytoken123",
+                "--org-url", "https://myorg.maps.arcgis.com",
+            ])
+        assert exc_info.value.code == 0
+
+    mock_connect.assert_called_once_with(
+        token="mytoken123",
+        org_url="https://myorg.maps.arcgis.com",
+    )
