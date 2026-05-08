@@ -40,9 +40,10 @@ def _cross_fall(segs: list, left: bool) -> float:
     """Beregner gjennomsnittlig tverrfall i % fra segmenter på angitt side."""
     slopes = []
     for (u1, v1), (u2, v2) in segs:
-        if left and max(u1, u2) > 0:
+        mid_u = (u1 + u2) / 2
+        if left and mid_u > 0:
             continue
-        if not left and min(u1, u2) < 0:
+        if not left and mid_u < 0:
             continue
         du = abs(u2 - u1)
         dv = abs(v2 - v1)
@@ -55,9 +56,10 @@ def _slope_ratio(segs: list, left: bool) -> float:
     """Beregner gjennomsnittlig 1:x skråningsforhold fra segmenter på angitt side."""
     ratios = []
     for (u1, v1), (u2, v2) in segs:
-        if left and max(u1, u2) > 0:
+        mid_u = (u1 + u2) / 2
+        if left and mid_u > 0:
             continue
-        if not left and min(u1, u2) < 0:
+        if not left and mid_u < 0:
             continue
         du = abs(u2 - u1)
         dv = abs(v2 - v1)

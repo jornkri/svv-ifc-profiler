@@ -1,6 +1,5 @@
 # tests/test_normal_section.py
 import math
-import pytest
 from src.ifc_processor.cross_section import CrossSection
 from src.ifc_processor.normal_section import NormalSection, compute_normal_section
 
@@ -118,3 +117,14 @@ def test_normal_section_is_dataclass():
     assert isinstance(ns, NormalSection)
     assert ns.station == 100.0
     assert ns.elevation == 50.0
+
+
+def test_cross_fall_segment_spanning_centreline():
+    # IFC kan produsere kjørefelt-segment som krysser CL litt: midpoint avgjør siden
+    cs = _cs(kjørefelt=[
+        ((-3.5, -0.105), (0.1, 0.003)),  # midpoint u=-1.7 → venstre side
+        ((0.0, 0.0), (3.5, -0.105)),
+    ])
+    ns = compute_normal_section(cs)
+    assert not math.isnan(ns.left_cross_fall_pct)
+    assert not math.isnan(ns.right_cross_fall_pct)
