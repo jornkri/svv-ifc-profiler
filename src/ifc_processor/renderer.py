@@ -421,11 +421,11 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if left_pts:
             u_sl = sum(p[0] for p in left_pts) / len(left_pts)
             v_sl = sum(p[1] for p in left_pts) / len(left_pts)
-            # Beregn vinkel fra helningssegmentets retning
+            # Vinkel fra innerste til ytterste punkt (sortert på u, stabilt uavhengig av segmentrekkefølge)
             if len(left_pts) >= 2:
-                du_slope = left_pts[-1][0] - left_pts[0][0]
-                dv_slope = left_pts[-1][1] - left_pts[0][1]
-                angle_deg = math.degrees(math.atan2(dv_slope, du_slope))
+                p_inner = max(left_pts, key=lambda p: p[0])
+                p_outer = min(left_pts, key=lambda p: p[0])
+                angle_deg = math.degrees(math.atan2(p_outer[1] - p_inner[1], p_outer[0] - p_inner[0]))
             else:
                 angle_deg = 0
             ax.text(
@@ -444,11 +444,11 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if right_pts:
             u_sr = sum(p[0] for p in right_pts) / len(right_pts)
             v_sr = sum(p[1] for p in right_pts) / len(right_pts)
-            # Beregn vinkel fra helningssegmentets retning
+            # Vinkel fra innerste til ytterste punkt (sortert på u, stabilt uavhengig av segmentrekkefølge)
             if len(right_pts) >= 2:
-                du_slope = right_pts[-1][0] - right_pts[0][0]
-                dv_slope = right_pts[-1][1] - right_pts[0][1]
-                angle_deg = math.degrees(math.atan2(dv_slope, du_slope))
+                p_inner = min(right_pts, key=lambda p: p[0])
+                p_outer = max(right_pts, key=lambda p: p[0])
+                angle_deg = math.degrees(math.atan2(p_outer[1] - p_inner[1], p_outer[0] - p_inner[0]))
             else:
                 angle_deg = 0
             ax.text(
@@ -459,7 +459,8 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
             )
 
     # 4. Komponentetiketter (svart, 6pt) — én etikett per veiklasse
-    _COMPONENT_LABEL: dict[str, str] = {
+    # "planum" er IFC-overflategeometri-klassen som tilsvarer kjørefelt i R700
+    component_label = {
         "kjørefelt": "kjørefelt",
         "planum": "kjørefelt",
         "skulder": "skulder",
@@ -467,11 +468,11 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         "skjaering": ns.section_type if ns.section_type in ("skjæring", "kombinasjon") else "skjæring",
         "fylling": ns.section_type if ns.section_type in ("fylling", "kombinasjon") else "fylling",
     }
-    _labeled: set[str] = set()
+    labeled: set[str] = set()
     for road_class, segs in cs.segments.items():
-        if road_class not in _COMPONENT_LABEL or road_class in _labeled:
+        if road_class not in component_label or road_class in labeled:
             continue
-        label_text = _COMPONENT_LABEL[road_class]
+        label_text = component_label[road_class]
         pts = [p for (u1, v1), (u2, v2) in segs for p in [(u1, v1), (u2, v2)]]
         if not pts:
             continue
@@ -485,7 +486,7 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
             ha="center", va="bottom", fontsize=6, color="black",
             arrowprops=dict(arrowstyle="-", color="black", lw=0.4),
         )
-        _labeled.add(road_class)
+        labeled.add(road_class)
 
     # --- Titler og akseetiketter ---
     ax.set_title(
