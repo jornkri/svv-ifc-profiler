@@ -391,3 +391,33 @@ def test_get_job_status_queued(client):
 
 def test_get_job_404_for_unknown(client):
     assert client.get("/api/jobs/does-not-exist").status_code == 404
+
+
+def test_post_jobs_passes_publish_bim_true_to_run_job(client):
+    """publish_bim=true i skjemaet skal sendes videre til run_job."""
+    _login(client)
+    with patch("src.api.job_runner.run_job") as mock_run_job:
+        client.post(
+            "/api/jobs",
+            data={"name": "S", "interval": "10", "publish_bim": "true"},
+            files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
+                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+        )
+    mock_run_job.assert_called_once()
+    _, kwargs = mock_run_job.call_args
+    assert kwargs.get("publish_bim") is True
+
+
+def test_get_job_status_includes_bim_url(client):
+    """GET /api/jobs/{id} skal inneholde bim_url-feltet."""
+    _login(client)
+    with patch("src.api.job_runner.run_job"):
+        create_resp = client.post(
+            "/api/jobs",
+            data={"name": "S", "interval": "10"},
+            files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
+                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+        )
+    job_id = create_resp.json()["job_id"]
+    status_resp = client.get(f"/api/jobs/{job_id}")
+    assert "bim_url" in status_resp.json()

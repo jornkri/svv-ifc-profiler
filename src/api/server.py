@@ -62,6 +62,7 @@ async def create_job(
     xml_file: UploadFile = File(...),
     name: str = Form(...),
     interval: float = Form(10.0),
+    publish_bim: bool = Form(False),
 ) -> dict:
     """Motta IFC + LandXML, start pipeline-jobb i bakgrunnen."""
     if "access_token" not in request.session:
@@ -97,6 +98,7 @@ async def create_job(
         access_token=request.session["access_token"],
         org_url=request.session.get("org_url", "https://www.arcgis.com"),
         output_dir=job_dir / "output",
+        publish_bim=publish_bim,
     )
 
     return {"job_id": job_id, "status": "queued"}
@@ -113,5 +115,6 @@ def get_job(job_id: str) -> dict:
         "message": state.message,
         "centerline_url": state.centerline_url,
         "sections_url": state.sections_url,
+        "bim_url": state.bim_url,
         "error": state.error,
     }
