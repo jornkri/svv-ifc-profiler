@@ -162,12 +162,14 @@ def main(argv: list[str] | None = None) -> None:
         with arcpy.da.SearchCursor(fc_path, ["OID@", "stasjon_m"]) as cur:
             with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "svg_path"]) as ins:
                 for oid, station_m in cur:
-                    svg = svgs_dir / f"station_{station_m:07.1f}.svg"
-                    if svg.exists():
-                        ins.insertRow((oid, str(svg)))
-                        rows_added += 1
-                    else:
-                        logger.warning("SVG ikke funnet for stasjon %.1f m: %s", station_m, svg)
+                    tp_svg = svgs_dir / f"tverrprofil_{station_m:07.1f}.svg"
+                    np_svg = svgs_dir / f"normalprofil_{station_m:07.1f}.svg"
+                    for svg in (tp_svg, np_svg):
+                        if svg.exists():
+                            ins.insertRow((oid, str(svg)))
+                            rows_added += 1
+                        else:
+                            logger.warning("SVG ikke funnet: %s", svg)
 
         if rows_added > 0:
             arcpy.management.AddAttachments(fc_path, "OBJECTID", match_tbl, "fc_oid", "svg_path")

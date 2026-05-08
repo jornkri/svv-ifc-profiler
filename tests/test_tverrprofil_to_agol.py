@@ -181,3 +181,68 @@ def test_cli_passes_token_to_connect(tmp_path):
                   "--token", "tok999", "--org-url", "https://myorg.arcgis.com"])
 
     mock_connect.assert_called_once_with(token="tok999", org_url="https://myorg.arcgis.com")
+
+
+def test_two_attachments_per_station(tmp_path):
+    """Match-tabellen skal ha to rader per OID: tverrprofil og normalprofil."""
+    stations_path = tmp_path / "stations.json"
+    stations_path.write_text(json.dumps([
+        {"station_m": 10.0, "profil_nr": "0010.00", "x": 100.0, "y": 200.0, "z": 50.0}
+    ]))
+
+    svgs_dir = tmp_path / "svgs"
+    svgs_dir.mkdir()
+    tp_svg = svgs_dir / "tverrprofil_00010.0.svg"
+    np_svg = svgs_dir / "normalprofil_00010.0.svg"
+    tp_svg.write_text("<svg/>")
+    np_svg.write_text("<svg/>")
+
+    inserted_rows: list = []
+
+    arcpy_mock = sys.modules["arcpy"]
+
+    # InsertCursor context manager that records insertRow calls
+    ins_ctx = MagicMock()
+    ins_ctx.insertRow = lambda row: inserted_rows.append(row)
+    ins_cm = MagicMock()
+    ins_cm.__enter__ = lambda s: ins_ctx
+    ins_cm.__exit__ = MagicMock(return_value=False)
+
+    # SearchCursor context manager that yields one (OID, station_m) pair
+    search_ctx = iter([(1, 10.0)])
+    search_cm = MagicMock()
+    search_cm.__enter__ = lambda s: search_ctx
+    search_cm.__exit__ = MagicMock(return_value=False)
+
+    arcpy_mock.da.SearchCursor.return_value = search_cm
+    arcpy_mock.da.InsertCursor.return_value = ins_cm
+
+    success_meta = {
+        "status": "ok", "url": "https://x/FeatureServer",
+        "item_id": "i", "item_url": "https://x",
+        "layer_count": 1, "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
+        "published_at": "2026-05-04T10:00:00+00:00",
+    }
+
+    with patch("src.arcpy_processor.tverrprofil_to_agol.create_point_fc",
+               return_value="C:/scratch/t.gdb/t_tverrprofiler"), \
+         patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.publisher.upload_and_publish",
+               return_value=success_meta):
+
+        from src.arcpy_processor.tverrprofil_to_agol import main
+        with pytest.raises(SystemExit) as exc_info:
+            main([
+                "--stations-json", str(stations_path),
+                "--svgs-dir", str(svgs_dir),
+                "--name", "test_profiler",
+                "--folder", "",
+            ])
+        assert exc_info.value.code == 0
+
+    svg_rows = [r for r in inserted_rows if isinstance(r, tuple) and len(r) == 2]
+    assert len(svg_rows) == 2, f"Forventet 2 vedlegg, fikk {len(svg_rows)}: {svg_rows}"
+    paths = [r[1] for r in svg_rows]
+    assert any("tverrprofil" in p for p in paths)
+    assert any("normalprofil" in p for p in paths)
