@@ -370,7 +370,7 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
             label=f"{ns.right_shoulder_width:.2f} m",
         )
 
-    # 2. Tverrfall (%) — mørk grå tekst midt på kjørefeltflaten
+    # 2. Tverrfall (%) — mørk grå tekst midt på kjørefeltflaten + skråpil
     cf_color = "#555555"
     if not math.isnan(ns.left_cross_fall_pct) and not math.isnan(ns.left_carriageway_width):
         u_mid = -ns.left_carriageway_width / 2
@@ -379,12 +379,32 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
             f"{ns.left_cross_fall_pct:.1f}%",
             ha="center", va="top", fontsize=6, color=cf_color,
         )
+        # Skråpil: fallet går fra u=0 (kronepunkt) mot venstre kant
+        arrow_u_from = u_mid + 0.4   # closer to crown
+        arrow_u_to   = u_mid - 0.4   # toward edge
+        arrow_v      = -0.15          # on the road surface
+        ax.annotate(
+            "",
+            xy=(arrow_u_to, arrow_v),
+            xytext=(arrow_u_from, arrow_v - 0.05),
+            arrowprops=dict(arrowstyle="-|>", color=cf_color, lw=0.6),
+        )
     if not math.isnan(ns.right_cross_fall_pct) and not math.isnan(ns.right_carriageway_width):
         u_mid = ns.right_carriageway_width / 2
         ax.text(
             u_mid, -0.3,
             f"{ns.right_cross_fall_pct:.1f}%",
             ha="center", va="top", fontsize=6, color=cf_color,
+        )
+        # Skråpil: fallet går fra u=0 (kronepunkt) mot høyre kant
+        arrow_u_from = u_mid - 0.4
+        arrow_u_to   = u_mid + 0.4
+        arrow_v      = -0.15
+        ax.annotate(
+            "",
+            xy=(arrow_u_to, arrow_v),
+            xytext=(arrow_u_from, arrow_v - 0.05),
+            arrowprops=dict(arrowstyle="-|>", color=cf_color, lw=0.6),
         )
 
     # 3. Skråningsforhold (1:x) — grønn tekst langs skjæring/fylling
@@ -401,11 +421,18 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if left_pts:
             u_sl = sum(p[0] for p in left_pts) / len(left_pts)
             v_sl = sum(p[1] for p in left_pts) / len(left_pts)
+            # Beregn vinkel fra helningssegmentets retning
+            if len(left_pts) >= 2:
+                du_slope = left_pts[-1][0] - left_pts[0][0]
+                dv_slope = left_pts[-1][1] - left_pts[0][1]
+                angle_deg = math.degrees(math.atan2(dv_slope, du_slope))
+            else:
+                angle_deg = 0
             ax.text(
                 u_sl, v_sl,
                 f"1:{ns.left_slope_ratio:.1f}",
                 ha="center", va="center", fontsize=6, color=slope_color,
-                rotation=0,
+                rotation=angle_deg,
             )
     if not math.isnan(ns.right_slope_ratio):
         right_pts = [
@@ -417,11 +444,18 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if right_pts:
             u_sr = sum(p[0] for p in right_pts) / len(right_pts)
             v_sr = sum(p[1] for p in right_pts) / len(right_pts)
+            # Beregn vinkel fra helningssegmentets retning
+            if len(right_pts) >= 2:
+                du_slope = right_pts[-1][0] - right_pts[0][0]
+                dv_slope = right_pts[-1][1] - right_pts[0][1]
+                angle_deg = math.degrees(math.atan2(dv_slope, du_slope))
+            else:
+                angle_deg = 0
             ax.text(
                 u_sr, v_sr,
                 f"1:{ns.right_slope_ratio:.1f}",
                 ha="center", va="center", fontsize=6, color=slope_color,
-                rotation=0,
+                rotation=angle_deg,
             )
 
     # 4. Komponentetiketter (svart, 6pt) — én etikett per veiklasse
@@ -442,11 +476,14 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if not pts:
             continue
         u_rep = sum(p[0] for p in pts) / len(pts)
-        v_rep = max(p[1] for p in pts) + 0.15
-        ax.text(
-            u_rep, v_rep,
+        max_v = max(p[1] for p in pts)
+        # Lederlinje fra tekst (over geometrien) ned til høyeste punkt
+        ax.annotate(
             label_text,
+            xy=(u_rep, max_v),               # annotasjonsmål: høyeste punkt
+            xytext=(u_rep, max_v + 0.6),     # tekstposisjon: over
             ha="center", va="bottom", fontsize=6, color="black",
+            arrowprops=dict(arrowstyle="-", color="black", lw=0.4),
         )
         _labeled.add(road_class)
 

@@ -209,13 +209,14 @@ def test_render_normal_section_svg_contains_scale_1_50():
 
 
 def test_render_normal_section_svg_contains_normalprofil_title():
-    """SVG skal inneholde tittelen 'Normalprofil'."""
+    """SVG skal inneholde tittelen 'Normalprofil' og profilnummeret."""
     cs = _full_cross_section(station=123.45)
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "normalprofil_123.svg"
         render_normal_section_svg(cs, out)
         content = out.read_text()
         assert "Normalprofil" in content
+        assert "123" in content  # profilnummer i tittel eller tittelfelt
 
 
 def test_render_normal_section_svg_nan_safe():
