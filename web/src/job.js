@@ -10,6 +10,7 @@ const currentMessage = document.getElementById("current-message");
 const statusLog = document.getElementById("status-log");
 const errorBox = document.getElementById("error-box");
 const resultLinks = document.getElementById("result-links");
+const resultLinksHeader = document.querySelector("#result-links p");
 const linkCenterline = document.getElementById("link-centerline");
 const linkSections = document.getElementById("link-sections");
 const linkBim = document.getElementById("link-bim");
@@ -45,9 +46,8 @@ function updateUI(data) {
   statusBadge.className = `status-badge status-${data.status}`;
 
   progressBar.style.width = `${data.progress_pct}%`;
-  if (data.status === "done" || data.status === "done_with_warnings") {
-    progressBar.classList.add("done");
-  }
+  if (data.status === "done") progressBar.classList.add("done");
+  if (data.status === "done_with_warnings") progressBar.classList.add("warning");
   if (data.status === "failed") progressBar.classList.add("failed");
 
   currentMessage.textContent = data.message || "";
@@ -59,6 +59,10 @@ function updateUI(data) {
 
   if (data.status === "done" || data.status === "done_with_warnings") {
     resultLinks.style.display = "block";
+    if (data.status === "done_with_warnings") {
+      resultLinksHeader.style.color = "#e65100";
+      resultLinksHeader.textContent = "Senterlinje og tverrprofiler publisert — BIM feilet:";
+    }
     if (data.centerline_url) {
       linkCenterline.href = data.centerline_url;
     } else {
