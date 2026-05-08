@@ -88,3 +88,40 @@ def auth_me(request: Request) -> dict:
 def auth_logout(request: Request) -> dict:
     request.session.clear()
     return {"status": "ok"}
+
+
+def refresh_access_token(session: dict) -> str:
+    """Hent nytt access_token via refresh_token. Oppdaterer session in-place."""
+    refresh_token = session.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(401, "Ingen refresh_token — logg inn på nytt")
+
+    org_url = session.get("org_url") or _env("AGOL_ORG_URL", "https://www.arcgis.com")
+
+    try:
+        resp = httpx.post(
+            f"{org_url}/sharing/rest/oauth2/token",
+            data={
+                "client_id": _env("AGOL_CLIENT_ID"),
+                "client_secret": _env("AGOL_CLIENT_SECRET"),
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+                "f": "json",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(401, f"Token-fornyelse feilet — logg inn på nytt: {exc}") from exc
+
+    if "error" in data:
+        raise HTTPException(401, f"Token-fornyelse feilet — logg inn på nytt: {data['error']}")
+
+    session["access_token"] = data["access_token"]
+    if "refresh_token" in data:
+        session["refresh_token"] = data["refresh_token"]
+
+    return data["access_token"]

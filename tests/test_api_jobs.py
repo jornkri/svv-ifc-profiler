@@ -304,6 +304,8 @@ def set_env_for_server(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("AGOL_CLIENT_ID", "test_client")
     monkeypatch.setenv("AGOL_ORG_URL", "https://test.maps.arcgis.com")
+    monkeypatch.setattr("src.api.server.refresh_access_token",
+                        lambda session: session.get("access_token", "tok"))
 
 
 @pytest.fixture

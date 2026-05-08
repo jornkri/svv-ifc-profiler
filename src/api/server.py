@@ -22,7 +22,7 @@ from starlette.requests import Request
 
 load_dotenv()
 
-from .auth_routes import router as auth_router
+from .auth_routes import router as auth_router, refresh_access_token
 from . import job_runner
 
 UPLOAD_DIR = Path("uploads")
@@ -74,6 +74,8 @@ async def create_job(
     if not (1 <= interval <= 100):
         raise HTTPException(400, "interval må være mellom 1 og 100 meter")
 
+    fresh_token = refresh_access_token(request.session)
+
     job_id = job_runner.create_job()
     job_dir = UPLOAD_DIR / job_id
     job_dir.mkdir()
@@ -95,7 +97,7 @@ async def create_job(
         xml_path=xml_path,
         name=name,
         interval=interval,
-        access_token=request.session["access_token"],
+        access_token=fresh_token,
         org_url=request.session.get("org_url", "https://www.arcgis.com"),
         output_dir=job_dir / "output",
         publish_bim=publish_bim,
