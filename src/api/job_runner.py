@@ -143,11 +143,17 @@ def run_job(
                 bim_result = json.loads(bim_proc.stdout)
                 state.bim_url = bim_result.get("url")
                 logger.info("[%s] BIM stdout: %s", job_id, bim_proc.stdout.strip())
+                logger.info("[%s] BIM stderr: %s", job_id, bim_proc.stderr.strip())
                 _update(state, 100, f"Ferdig — {n_sections} profiler + BIM-lag publisert")
                 state.status = "done"
             except subprocess.CalledProcessError as exc:
                 logger.warning("[%s] BIM-publisering feilet: %s", job_id, exc.stderr)
                 state.error = exc.stderr or f"BIM-subprocess feilet med kode {exc.returncode}"
+                _update(state, 100, f"Ferdig — {n_sections} profiler publisert (BIM feilet)")
+                state.status = "done_with_warnings"
+            except Exception as exc:
+                logger.warning("[%s] BIM-publisering feilet uventet: %s", job_id, exc)
+                state.error = str(exc)
                 _update(state, 100, f"Ferdig — {n_sections} profiler publisert (BIM feilet)")
                 state.status = "done_with_warnings"
         else:
