@@ -12,6 +12,7 @@ const errorBox = document.getElementById("error-box");
 const resultLinks = document.getElementById("result-links");
 const linkCenterline = document.getElementById("link-centerline");
 const linkSections = document.getElementById("link-sections");
+const linkBim = document.getElementById("link-bim");
 
 const params = new URLSearchParams(window.location.search);
 const jobId = params.get("id");
@@ -35,12 +36,18 @@ function updateUI(data) {
   jobTitle.textContent = jobId.slice(0, 8) + "…";
 
   statusBadge.textContent = {
-    queued: "Venter", running: "Kjører", done: "Ferdig", failed: "Feilet",
+    queued: "Venter",
+    running: "Kjører",
+    done: "Ferdig",
+    done_with_warnings: "Ferdig",
+    failed: "Feilet",
   }[data.status] ?? data.status;
   statusBadge.className = `status-badge status-${data.status}`;
 
   progressBar.style.width = `${data.progress_pct}%`;
-  if (data.status === "done") progressBar.classList.add("done");
+  if (data.status === "done" || data.status === "done_with_warnings") {
+    progressBar.classList.add("done");
+  }
   if (data.status === "failed") progressBar.classList.add("failed");
 
   currentMessage.textContent = data.message || "";
@@ -50,7 +57,7 @@ function updateUI(data) {
     prevMessage = data.message;
   }
 
-  if (data.status === "done") {
+  if (data.status === "done" || data.status === "done_with_warnings") {
     resultLinks.style.display = "block";
     if (data.centerline_url) {
       linkCenterline.href = data.centerline_url;
@@ -62,6 +69,19 @@ function updateUI(data) {
     } else {
       linkSections.style.display = "none";
     }
+    if (data.bim_url) {
+      linkBim.href = data.bim_url;
+    } else {
+      linkBim.style.display = "none";
+    }
+  }
+
+  if (data.status === "done_with_warnings") {
+    errorBox.style.display = "block";
+    errorBox.style.background = "#fff8e1";
+    errorBox.style.borderColor = "#ffcc02";
+    errorBox.style.color = "#e65100";
+    errorBox.textContent = `BIM-publisering feilet: ${data.error || "Ukjent feil"}`;
   }
 
   if (data.status === "failed") {
@@ -84,7 +104,7 @@ async function pollJob() {
     const data = await resp.json();
     updateUI(data);
 
-    if (data.status === "done" || data.status === "failed") {
+    if (data.status === "done" || data.status === "done_with_warnings" || data.status === "failed") {
       clearInterval(pollHandle);
     }
   } catch (err) {

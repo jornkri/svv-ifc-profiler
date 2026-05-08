@@ -18,6 +18,7 @@ const runBtn = document.getElementById("run-btn");
 const formError = document.getElementById("form-error");
 const serviceNameInput = document.getElementById("service-name");
 const intervalInput = document.getElementById("interval");
+const publishBimCheckbox = document.getElementById("publish-bim");
 
 function sanitizeName(filename) {
   return filename.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 60);
@@ -97,6 +98,7 @@ runBtn.addEventListener("click", async () => {
   fd.append("xml_file", xmlFile.files[0]);
   fd.append("name", name);
   fd.append("interval", String(interval));
+  fd.append("publish_bim", publishBimCheckbox.checked ? "true" : "false");
 
   try {
     const resp = await fetch(`${API_BASE}/api/jobs`, {
