@@ -32,7 +32,8 @@ def test_stations_json_keys_with_mocks(tmp_path):
 
     with patch("src.ifc_processor.pipeline.read_ifc_tins", return_value=[]), \
          patch("src.ifc_processor.pipeline.cut_cross_section", return_value=fake_cs), \
-         patch("src.ifc_processor.pipeline.render_cross_section_svg"):
+         patch("src.ifc_processor.pipeline.render_cross_section_svg"), \
+         patch("src.ifc_processor.pipeline.render_normal_section_svg"):
         result = run_pipeline(
             ifc_path=fake_ifc,
             centerline_path=cl_path,
@@ -63,7 +64,8 @@ def test_stations_json_profil_nr_format(tmp_path):
 
     with patch("src.ifc_processor.pipeline.read_ifc_tins", return_value=[]), \
          patch("src.ifc_processor.pipeline.cut_cross_section", return_value=fake_cs), \
-         patch("src.ifc_processor.pipeline.render_cross_section_svg"):
+         patch("src.ifc_processor.pipeline.render_cross_section_svg"), \
+         patch("src.ifc_processor.pipeline.render_normal_section_svg"):
         result = run_pipeline(
             ifc_path=fake_ifc,
             centerline_path=cl_path,
@@ -74,6 +76,35 @@ def test_stations_json_profil_nr_format(tmp_path):
     stations = json.loads(Path(result["stations_json"]).read_text())
     for row in stations:
         assert row["profil_nr"] == f"{row['station_m']:07.2f}"
+
+
+def test_pipeline_svg_filenames_use_new_prefix(tmp_path):
+    """SVGer skal hete tverrprofil_* og normalprofil_*, ikke station_*."""
+    fake_cs = CrossSection(station=0.0, elevation=100.0, segments={})
+    cl_path = _cl_geojson(tmp_path)
+    fake_ifc = tmp_path / "fake.ifc"
+    fake_ifc.write_text("")
+
+    with patch("src.ifc_processor.pipeline.read_ifc_tins", return_value=[]), \
+         patch("src.ifc_processor.pipeline.cut_cross_section", return_value=fake_cs), \
+         patch("src.ifc_processor.pipeline.render_cross_section_svg") as mock_tp, \
+         patch("src.ifc_processor.pipeline.render_normal_section_svg") as mock_np:
+        result = run_pipeline(
+            ifc_path=fake_ifc,
+            centerline_path=cl_path,
+            output_dir=tmp_path / "out",
+            interval_m=50.0,
+        )
+
+    called_tp = mock_tp.call_args[0][1]
+    assert "tverrprofil_" in called_tp.name
+    assert "station_" not in called_tp.name
+
+    called_np = mock_np.call_args[0][1]
+    assert "normalprofil_" in called_np.name
+
+    meta = json.loads((tmp_path / "out" / "metadata.json").read_text())
+    assert "normal_svg" in meta["stations"][0]
 
 
 @pytest.mark.skipif(not SAMPLE_IFC.exists(), reason="testfil mangler")

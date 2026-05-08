@@ -10,7 +10,8 @@ import numpy as np
 from .centerline import Centerline, load_centerline
 from .cross_section import cut_cross_section, sample_stations
 from .ifc_reader import TINLayer, read_ifc_tins
-from .renderer import render_cross_section_svg
+from .renderer import render_cross_section_svg, render_normal_section_svg
+from .terrain_sampler import fetch_terrain_profile, terrain_to_segments
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ def run_pipeline(
     centerline_path: Path | None = None,
     output_dir: Path = Path("output"),
     interval_m: float = 10.0,
+    include_terrain: bool = True,
 ) -> dict:
     """Kjør full pipeline: IFC → tverrprofil-SVGer + metadata.
 
@@ -90,7 +92,8 @@ def run_pipeline(
         centerline_path: Sti til senterlinje (GeoJSON eller CSV). Hvis None,
                          forsøker IfcAlignment, deretter medialakse-fallback.
         output_dir:      Katalog for SVG-er og metadata.
-        interval_m:      Stasjoneringsintervall i meter (default 10).
+        interval_m:          Stasjoneringsintervall i meter (default 10).
+        include_terrain:     Hent eksisterende terreng fra Kartverkets DTM1-API.
 
     Returns:
         Dict med nøklene "svgs", "centerline", "metadata", "stations_json".
@@ -117,23 +120,37 @@ def run_pipeline(
     logger.info("Genererer %d tverrprofiler (intervall: %.1f m)", len(stations), interval_m)
 
     svg_paths: list[str] = []
+    normal_svg_paths: list[str] = []
     metadata_rows: list[dict] = []
     station_rows: list[dict] = []
+
+    if include_terrain:
+        logger.info("Terrengsampling aktivert (Kartverket DTM1)")
 
     for s in stations:
         try:
             cs = cut_cross_section(tins, s)
-            svg_path = output_dir / f"station_{s.distance:07.1f}.svg"
+
+            if include_terrain:
+                terrain_pts = fetch_terrain_profile(s.position, s.tangent)
+                if terrain_pts:
+                    cs.segments["terreng"] = terrain_to_segments(terrain_pts)
+
+            svg_path = output_dir / f"tverrprofil_{s.distance:07.1f}.svg"
+            normal_svg_path = output_dir / f"normalprofil_{s.distance:07.1f}.svg"
             render_cross_section_svg(cs, svg_path)
+            render_normal_section_svg(cs, normal_svg_path)
         except Exception as exc:
             logger.warning("Hopper over stasjon %.1f m: %s", s.distance, exc)
             continue
 
         svg_paths.append(str(svg_path))
+        normal_svg_paths.append(str(normal_svg_path))
         metadata_rows.append({
             "station": round(s.distance, 3),
             "elevation": round(cs.elevation, 3),
             "svg": str(svg_path),
+            "normal_svg": str(normal_svg_path),
             "segment_classes": list(cs.segments.keys()),
         })
         station_rows.append({
@@ -156,6 +173,7 @@ def run_pipeline(
     logger.info("Pipeline ferdig. %d SVGer → %s", len(svg_paths), output_dir)
     return {
         "svgs": svg_paths,
+        "normal_svgs": normal_svg_paths,
         "centerline": str(cl_path),
         "metadata": str(meta_path),
         "stations_json": str(stations_json_path),
