@@ -458,8 +458,10 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
                 rotation=angle_deg,
             )
 
-    # 4. Komponentetiketter (svart, 6pt) — én etikett per veiklasse
+    # 4. Komponentetiketter (svart, 6pt) — én etikett per side per veiklasse
     # "planum" er IFC-overflategeometri-klassen som tilsvarer kjørefelt i R700
+    # Rank styrer etikett-høyde: kjørefelt lavest (nærmest geometrien), skjæring/fylling høyest
+    _LABEL_RANK = {"kjørefelt": 0, "planum": 0, "skulder": 1, "groft": 2, "skjaering": 3, "fylling": 3}
     component_label = {
         "kjørefelt": "kjørefelt",
         "planum": "kjørefelt",
@@ -473,10 +475,12 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         if road_class not in component_label or road_class in labeled:
             continue
         label_text = component_label[road_class]
+        rank = _LABEL_RANK.get(road_class, 0)
+        v_offset = 0.4 + rank * 0.65
         pts = [p for (u1, v1), (u2, v2) in segs for p in [(u1, v1), (u2, v2)]]
         if not pts:
             continue
-        # Plasser én etikett per side — unngår klynge ved CL når segmenter finnes på begge sider
+        # Plasser én etikett per side med rank-basert høyde-stagger
         for side_pts in (
             [p for p in pts if p[0] < -0.1],   # venstre
             [p for p in pts if p[0] > 0.1],    # høyre
@@ -488,7 +492,7 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
             ax.annotate(
                 label_text,
                 xy=(u_rep, max_v),
-                xytext=(u_rep, max_v + 0.6),
+                xytext=(u_rep, max_v + v_offset),
                 ha="center", va="bottom", fontsize=6, color="black",
                 arrowprops=dict(arrowstyle="-", color="black", lw=0.4),
             )
