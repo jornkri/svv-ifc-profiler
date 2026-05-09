@@ -476,16 +476,22 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
         pts = [p for (u1, v1), (u2, v2) in segs for p in [(u1, v1), (u2, v2)]]
         if not pts:
             continue
-        u_rep = sum(p[0] for p in pts) / len(pts)
-        max_v = max(p[1] for p in pts)
-        # Lederlinje fra tekst (over geometrien) ned til høyeste punkt
-        ax.annotate(
-            label_text,
-            xy=(u_rep, max_v),               # annotasjonsmål: høyeste punkt
-            xytext=(u_rep, max_v + 0.6),     # tekstposisjon: over
-            ha="center", va="bottom", fontsize=6, color="black",
-            arrowprops=dict(arrowstyle="-", color="black", lw=0.4),
-        )
+        # Plasser én etikett per side — unngår klynge ved CL når segmenter finnes på begge sider
+        for side_pts in (
+            [p for p in pts if p[0] < -0.1],   # venstre
+            [p for p in pts if p[0] > 0.1],    # høyre
+        ):
+            if not side_pts:
+                continue
+            u_rep = sum(p[0] for p in side_pts) / len(side_pts)
+            max_v = max(p[1] for p in side_pts)
+            ax.annotate(
+                label_text,
+                xy=(u_rep, max_v),
+                xytext=(u_rep, max_v + 0.6),
+                ha="center", va="bottom", fontsize=6, color="black",
+                arrowprops=dict(arrowstyle="-", color="black", lw=0.4),
+            )
         labeled.add(road_class)
 
     # --- Titler og akseetiketter ---
