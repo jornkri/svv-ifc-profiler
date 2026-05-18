@@ -67,6 +67,10 @@ def run_job(
     org_url: str,
     output_dir: Path,
     publish_bim: bool = False,
+    bim_input_wkid: int | None = None,
+    bim_output_wkid: int = 25833,
+    include_tverrprofil: bool = True,
+    include_lengdeprofil: bool = True,
 ) -> None:
     """Kjør full pipeline i bakgrunnen. Oppdaterer jobbstatus underveis."""
     state = _jobs[job_id]
@@ -76,68 +80,121 @@ def run_job(
         _update(state, 0, "Starter pipeline…")
         _update(state, 5, "Kjører IFC-prosessering…")
 
+        profile_labels = [
+            lbl for lbl, flag in [
+                ("tverrprofil", include_tverrprofil),
+                ("lengdeprofil", include_lengdeprofil),
+            ] if flag
+        ]
+        _update(state, 5, f"Kjører IFC-prosessering ({', '.join(profile_labels)})…")
+
         pipeline_result = run_pipeline(
             ifc_path=ifc_path,
             centerline_path=xml_path,
             output_dir=output_dir,
             interval_m=interval,
+            include_terrain=True,
+            include_tverrprofil=include_tverrprofil,
+            include_lengdeprofil=include_lengdeprofil,
         )
 
         meta = json.loads(Path(pipeline_result["metadata"]).read_text())
         n_sections = len(meta["stations"])
-        _update(state, 50, f"Genererte {n_sections} tverrprofiler")
+        _update(state, 50, f"Genererte {n_sections} stasjoner")
 
         _, source_epsg = parse_landxml(xml_path)
 
-        _update(state, 55, "Publiserer senterlinje til AGOL…")
-        cl_proc = subprocess.run(
-            [
-                sys.executable, "-m", "src.arcpy_processor.landxml_to_agol",
-                "--xml", str(xml_path),
-                "--name", f"{name}_senterlinje",
-                "--folder", "",
-                "--token", access_token,
-                "--org-url", org_url,
-            ],
-            check=True, capture_output=True, text=True,
-        )
+        lp_svg = pipeline_result.get("lengdeprofil")
+        cl_cmd = [
+            sys.executable, "-m", "src.arcpy_processor.landxml_to_agol",
+            "--xml", str(xml_path),
+            "--name", f"{name}_senterlinje",
+            "--folder", "",
+            "--token", access_token,
+            "--org-url", org_url,
+        ]
+        if lp_svg:
+            cl_cmd += ["--lengdeprofil", lp_svg]
+        lp_label = " + lengdeprofil" if lp_svg else ""
+        _update(state, 55, f"Publiserer senterlinje{lp_label} til AGOL…")
+        cl_proc = subprocess.run(cl_cmd, check=True, capture_output=True, text=True)
         cl_result = json.loads(cl_proc.stdout)
         state.centerline_url = cl_result.get("url")
         logger.info("[%s] senterlinje stdout: %s", job_id, cl_proc.stdout.strip())
         logger.info("[%s] senterlinje stderr: %s", job_id, cl_proc.stderr.strip())
-        _update(state, 70, "Senterlinje publisert til AGOL")
 
-        _update(state, 75, "Publiserer tverrprofiler til AGOL…")
-        tp_proc = subprocess.run(
-            [
-                sys.executable, "-m", "src.arcpy_processor.tverrprofil_to_agol",
-                "--stations-json", pipeline_result["stations_json"],
-                "--svgs-dir", str(output_dir),
-                "--name", f"{name}_tverrprofiler",
-                "--folder", "",
-                "--source-epsg", str(source_epsg),
-                "--token", access_token,
-                "--org-url", org_url,
-            ],
-            check=True, capture_output=True, text=True,
-        )
-        tp_result = json.loads(tp_proc.stdout)
-        state.sections_url = tp_result.get("url")
-        logger.info("[%s] tverrprofil stdout: %s", job_id, tp_proc.stdout.strip())
-        logger.info("[%s] tverrprofil stderr: %s", job_id, tp_proc.stderr.strip())
+        # Persist UTM33 centerline queried back from AGOL
+        if "utm33_centerline_paths" in cl_result and cl_result["utm33_centerline_paths"]:
+            cl_utm33 = {
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {"type": "MultiLineString",
+                                 "coordinates": cl_result["utm33_centerline_paths"]},
+                    "properties": {},
+                }],
+            }
+            (output_dir / "centerline_utm33.geojson").write_text(
+                json.dumps(cl_utm33), encoding="utf-8"
+            )
+            logger.info("[%s] Lagret UTM33-senterlinje lokalt", job_id)
+
+        _update(state, 70, f"Senterlinje{lp_label} publisert til AGOL")
+
+        if include_tverrprofil:
+            _update(state, 75, "Publiserer tverrprofiler til AGOL…")
+            tp_proc = subprocess.run(
+                [
+                    sys.executable, "-m", "src.arcpy_processor.tverrprofil_to_agol",
+                    "--stations-json", pipeline_result["stations_json"],
+                    "--svgs-dir", str(output_dir),
+                    "--name", f"{name}_tverrprofiler",
+                    "--folder", "",
+                    "--source-epsg", str(source_epsg),
+                    "--token", access_token,
+                    "--org-url", org_url,
+                ],
+                check=True, capture_output=True, text=True,
+            )
+            tp_result = json.loads(tp_proc.stdout)
+            state.sections_url = tp_result.get("url")
+            logger.info("[%s] tverrprofil stdout: %s", job_id, tp_proc.stdout.strip())
+            logger.info("[%s] tverrprofil stderr: %s", job_id, tp_proc.stderr.strip())
+
+            # Persist UTM33 station coordinates queried back from AGOL
+            if "utm33_stations" in tp_result and tp_result["utm33_stations"]:
+                (output_dir / "stations_utm33.json").write_text(
+                    json.dumps(tp_result["utm33_stations"]), encoding="utf-8"
+                )
+                logger.info("[%s] Lagret %d UTM33-stasjoner lokalt",
+                            job_id, len(tp_result["utm33_stations"]))
+
+        # Persist AGOL service URLs so the viewer can load them later
+        _agol = {k: v for k, v in {
+            "centerline_url": state.centerline_url,
+            "sections_url": state.sections_url,
+        }.items() if v}
+        if _agol:
+            (output_dir / "agol_urls.json").write_text(
+                json.dumps(_agol), encoding="utf-8"
+            )
 
         if publish_bim:
             _update(state, 80, "Publiserer BIM som 3D GIS-lag…")
             try:
+                bim_cmd = [
+                    sys.executable, "-m", "src.arcpy_processor.bim_to_agol",
+                    "--ifc", str(ifc_path),
+                    "--name", f"{name}_bim",
+                    "--folder", "",
+                    "--token", access_token,
+                    "--org-url", org_url,
+                    "--output-wkid", str(bim_output_wkid),
+                ]
+                if bim_input_wkid:
+                    bim_cmd += ["--input-wkid", str(bim_input_wkid)]
                 bim_proc = subprocess.run(
-                    [
-                        sys.executable, "-m", "src.arcpy_processor.bim_to_agol",
-                        "--ifc", str(ifc_path),
-                        "--name", f"{name}_bim",
-                        "--folder", "",
-                        "--token", access_token,
-                        "--org-url", org_url,
-                    ],
+                    bim_cmd,
                     check=True, capture_output=True, text=True,
                 )
                 bim_result = json.loads(bim_proc.stdout)
@@ -154,10 +211,11 @@ def run_job(
             except Exception as exc:
                 logger.warning("[%s] BIM-publisering feilet uventet: %s", job_id, exc)
                 state.error = str(exc)
-                _update(state, 100, f"Ferdig — {n_sections} profiler publisert (BIM feilet)")
+                _update(state, 100, f"Ferdig — {n_sections} stasjoner publisert (BIM feilet)")
                 state.status = "done_with_warnings"
         else:
-            _update(state, 100, f"Ferdig — {n_sections} profiler publisert")
+            done_labels = ", ".join(profile_labels)
+            _update(state, 100, f"Ferdig — {n_sections} stasjoner · {done_labels}")
             state.status = "done"
 
     except subprocess.CalledProcessError as exc:

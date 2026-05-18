@@ -12,8 +12,21 @@ from .errors import ArcpyProcessorError, BIM_CONVERSION_FAILED, NO_FEATURES
 logger = logging.getLogger(__name__)
 
 
-def convert_bim(ifc_path: str, dataset_name: str, wkid: int = 25833) -> list[str]:
+def convert_bim(
+    ifc_path: str,
+    dataset_name: str,
+    input_wkid: int | None = None,
+    output_wkid: int = 25833,
+) -> list[str]:
     """Konverter IFC-fil til feature classes i scratchGDB.
+
+    Args:
+        ifc_path:     Sti til .ifc-fil.
+        dataset_name: Navn på feature dataset i GDB.
+        input_wkid:   EPSG-kode for IFC-filens koordinatsystem. Hvis oppgitt og
+                      ulik output_wkid, reprosjekteres datasettetet etterpå.
+                      Bruk når IFC mangler IfcProjectedCRS eller har feil CRS.
+        output_wkid:  EPSG-kode for ønsket utdata-CRS (default: 25833 = UTM33N).
 
     Returns:
         Liste med fulle stier til feature classes.
@@ -25,12 +38,14 @@ def convert_bim(ifc_path: str, dataset_name: str, wkid: int = 25833) -> list[str
     gdb_name = "bim_temp.gdb"
     gdb_path = os.path.join(scratch, gdb_name)
 
+    bim_sr_wkid = input_wkid if input_wkid else output_wkid
+
     try:
         if arcpy.Exists(gdb_path):
             arcpy.management.Delete(gdb_path)
             logger.debug("Slettet eksisterende scratchGDB: %s", gdb_path)
         arcpy.management.CreateFileGDB(scratch, gdb_name)
-        sr = arcpy.SpatialReference(wkid)
+        sr = arcpy.SpatialReference(bim_sr_wkid)
         arcpy.conversion.BIMFileToGeodatabase(
             str(ifc_path), gdb_path, dataset_name, spatial_reference=sr
         )
@@ -41,14 +56,62 @@ def convert_bim(ifc_path: str, dataset_name: str, wkid: int = 25833) -> list[str
         ) from exc
 
     dataset_path = os.path.join(gdb_path, dataset_name)
+
+    # Slett tomme feature classes før eventuell reprosjektering
     old_ws = arcpy.env.workspace
     try:
         arcpy.env.workspace = dataset_path
-        fcs = arcpy.ListFeatureClasses() or []
+        all_fcs = arcpy.ListFeatureClasses() or []
     finally:
         arcpy.env.workspace = old_ws
-    logger.info("BIMFileToGeodatabase produserte %d feature classes", len(fcs))
-    return [os.path.join(dataset_path, fc) for fc in fcs]
+
+    for fc in all_fcs:
+        fc_path = os.path.join(dataset_path, fc)
+        count = int(arcpy.management.GetCount(fc_path)[0])
+        if count == 0:
+            arcpy.management.Delete(fc_path)
+            logger.debug("Slettet tom FC: %s", fc)
+        else:
+            logger.debug("Beholder FC med %d features: %s", count, fc)
+
+    old_ws = arcpy.env.workspace
+    try:
+        arcpy.env.workspace = dataset_path
+        remaining_fcs = arcpy.ListFeatureClasses() or []
+    finally:
+        arcpy.env.workspace = old_ws
+
+    if not remaining_fcs:
+        raise ArcpyProcessorError(
+            NO_FEATURES,
+            "Alle feature classes var tomme etter BIMFileToGeodatabase. "
+            "Sjekk at IFC-filen inneholder geometri.",
+        )
+    logger.info("BIMFileToGeodatabase: %d av %d feature classes har data",
+                len(remaining_fcs), len(all_fcs))
+
+    if input_wkid and input_wkid != output_wkid:
+        projected_path = dataset_path + "_out"
+        try:
+            arcpy.management.Project(
+                dataset_path, projected_path, arcpy.SpatialReference(output_wkid)
+            )
+            logger.debug("Reprosjekterte datasett fra EPSG:%d til EPSG:%d", input_wkid, output_wkid)
+        except Exception as exc:
+            raise ArcpyProcessorError(
+                BIM_CONVERSION_FAILED,
+                f"Reprosjektering fra EPSG:{input_wkid} til EPSG:{output_wkid} feilet: {exc}",
+            ) from exc
+        dataset_path = projected_path
+
+        old_ws = arcpy.env.workspace
+        try:
+            arcpy.env.workspace = dataset_path
+            remaining_fcs = arcpy.ListFeatureClasses() or []
+        finally:
+            arcpy.env.workspace = old_ws
+
+    return [os.path.join(dataset_path, fc) for fc in remaining_fcs]
 
 
 def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:  # noqa: ARG001

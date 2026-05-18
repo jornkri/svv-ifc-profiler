@@ -1,0 +1,1933 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SVV Profilutforsker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://js.arcgis.com/5.0/esri/themes/light/main.css">
+<style>
+:root {
+  --svv-navy-900: #062948;
+  --svv-navy-800: #0b3a63;
+  --svv-navy-700: #134a7a;
+  --svv-navy-50:  #eef3f8;
+
+  --paper:        #f4f3ee;
+  --paper-2:      #ecebe5;
+  --ink:          #0e1a26;
+  --ink-2:        #2c3a47;
+  --ink-3:        #5b6773;
+  --ink-4:        #8a96a2;
+  --line:         #d8d6cf;
+  --line-2:       #e6e4dc;
+  --card:         #ffffff;
+
+  --accent:       #1f8a4a;
+  --accent-ink:   #0d3a20;
+  --accent-soft:  #def0e3;
+  --accent-line:  #b9dcc4;
+
+  --signal-pink:  #e0228e;
+  --warn:         #c25a1f;
+
+  --map-bg:       #e8ebe4;
+
+  --road-gray:    #b0b5b8;
+  --road-yellow:  #e8c94a;
+  --road-existing:#9aac98;
+
+  --r-sm: 5px;
+  --r:    8px;
+  --r-lg: 12px;
+  --topbar-h: 52px;
+  --sidebar-w: 280px;
+  --drawer-right-w: 460px;
+  --drawer-bottom-h: 340px;
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  --paper:        #0b1218;
+  --paper-2:      #0f1820;
+  --ink:          #e8edf2;
+  --ink-2:        #c2ccd6;
+  --ink-3:        #94a1ad;
+  --ink-4:        #6a7682;
+  --line:         #1f2a35;
+  --line-2:       #16202a;
+  --card:         #121c25;
+  --svv-navy-50:  #0f1c28;
+  --accent-soft:  #0e2a1a;
+  --accent-line:  #1d4a2e;
+  --map-bg:       #0d1a24;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+  height: var(--topbar-h);
+  background: var(--svv-navy-900);
+  color: #fff;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.brand { display:flex; align-items:center; gap:10px; flex-shrink: 0; }
+.brand-mark {
+  width: 26px; height: 26px; border-radius: 4px;
+  background: #fff; color: var(--svv-navy-900);
+  display: grid; place-items: center; font-weight: 800; font-size: 12px;
+  letter-spacing: -0.02em;
+}
+.brand-name { font-size: 12.5px; opacity: .92; white-space: nowrap; }
+.brand-name strong { font-weight: 700; }
+.brand-name span { opacity: .65; }
+.top-divider { width: 1px; height: 22px; background: rgba(255,255,255,.12); flex-shrink: 0; }
+
+.project-pick {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 6px;
+  background: rgba(255,255,255,.06);
+  font-size: 12.5px; cursor: pointer;
+  min-width: 0; flex: 0 1 320px;
+  transition: background .15s;
+}
+.project-pick:hover { background: rgba(255,255,255,.10); }
+.project-pick select {
+  background: transparent; border: 0; color: #fff;
+  flex: 1; min-width: 0; font: inherit; font-size: 12px;
+  outline: none; cursor: pointer;
+}
+.project-pick select option { background: var(--svv-navy-900); color: #fff; }
+.project-chip {
+  font-family: var(--font-mono); font-size: 10px;
+  background: rgba(255,255,255,.10); padding: 2px 6px; border-radius: 3px;
+  color: rgba(255,255,255,.75); flex-shrink: 0; white-space: nowrap;
+  display: none;
+}
+.project-chip.visible { display: inline; }
+
+.top-search {
+  flex: 1; max-width: 280px;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.08);
+  border-radius: 6px; padding: 6px 10px;
+  font-size: 12px; color: rgba(255,255,255,.5);
+}
+.top-search input {
+  background: transparent; border: 0; color: #fff;
+  flex: 1; font: inherit; font-family: var(--font-mono); font-size: 11.5px; outline: none;
+}
+.top-search input::placeholder { color: rgba(255,255,255,.4); }
+
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.top-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 11px; border-radius: 6px;
+  background: rgba(255,255,255,.06); color: #fff;
+  border: 0; font: inherit; font-size: 12px; cursor: pointer;
+  transition: background .15s; white-space: nowrap;
+}
+.top-btn:hover { background: rgba(255,255,255,.12); }
+.top-btn.is-on { background: var(--accent); }
+.top-btn.is-on:hover { filter: brightness(1.08); }
+.top-btn.icon-only { width: 30px; padding: 0; justify-content: center; }
+
+#top-loading {
+  display: none; align-items: center; gap: 7px;
+  font-size: 11px; color: rgba(255,255,255,.55);
+}
+.spin {
+  width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.2);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.top-user {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 600;
+  margin-left: 4px; cursor: pointer;
+  transition: filter .15s; flex-shrink: 0;
+}
+.top-user:hover { filter: brightness(1.1); }
+
+/* ── STAGE ── */
+.stage {
+  position: absolute; inset: var(--topbar-h) 0 0 0;
+  display: flex; flex-direction: row;
+}
+.map-area {
+  position: relative; flex: 1; overflow: hidden;
+  background: var(--map-bg);
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+  background: var(--card);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+  z-index: 5;
+  transition: width .25s, flex-basis .25s;
+}
+.sidebar.collapsed { width: 0; flex: 0 0 0; overflow: hidden; border-right: 0; }
+
+.sb-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line-2);
+  flex-shrink: 0;
+}
+.sb-head h2 {
+  margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.005em;
+  display: flex; align-items: center; justify-content: space-between;
+  white-space: nowrap;
+}
+.sb-head .pill {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent);
+  text-transform: uppercase; flex-shrink: 0;
+}
+.sb-head p { margin: 4px 0 0; font-size: 11px; color: var(--ink-3); }
+
+.sb-group { padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+.sb-group:last-child { border-bottom: 0; }
+.sb-grp-title {
+  padding: 0 16px 5px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.09em;
+  color: var(--ink-4); text-transform: uppercase;
+}
+.layer-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 16px; cursor: default;
+  transition: background .1s;
+}
+.layer-row:hover { background: var(--paper); }
+.layer-row.active { background: var(--svv-navy-50); }
+html[data-theme="dark"] .layer-row.active { background: rgba(255,255,255,.04); }
+.layer-toggle {
+  width: 16px; height: 16px; border-radius: 3px;
+  border: 1.5px solid var(--ink-4);
+  display: grid; place-items: center;
+  flex: 0 0 16px; background: transparent; cursor: pointer;
+  font-size: 10px; color: transparent;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.layer-toggle.on { background: var(--svv-navy-900); border-color: var(--svv-navy-900); color: #fff; }
+.layer-swatch {
+  flex: 0 0 auto;
+  border: 1px solid rgba(0,0,0,.1);
+}
+.layer-name { flex: 1; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-row.muted .layer-name { color: var(--ink-4); }
+.layer-count {
+  font-family: var(--font-mono); font-size: 10px; color: var(--ink-4);
+  background: var(--paper-2); padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+}
+
+/* ── MAP OVERLAYS ── */
+#map-container { position: absolute; inset: 0; }
+
+.map-info {
+  position: absolute; top: 14px; left: 14px; z-index: 6;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 12px;
+  font-size: 11.5px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.map-info.hidden { display: none; }
+.info-grp { display: flex; align-items: center; gap: 5px; }
+.info-lbl { color: var(--ink-4); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; }
+.info-val { font-family: var(--font-mono); font-size: 11px; color: var(--ink); }
+.info-pipe { width: 1px; height: 13px; background: var(--line); }
+.kbd-hint { display: flex; align-items: center; gap: 4px; }
+kbd {
+  font: inherit; font-family: var(--font-mono); font-size: 10px;
+  background: var(--paper-2); border: 1px solid var(--line);
+  border-radius: 3px; padding: 1px 4px; color: var(--ink-3);
+}
+
+.map-tools {
+  position: absolute; top: 14px; right: 14px; z-index: 6;
+  display: flex; flex-direction: column; gap: 7px;
+  transition: right .28s cubic-bezier(.2,.7,.2,1);
+}
+.map-area.with-right-drawer .map-tools { right: calc(var(--drawer-right-w) + 14px); }
+.map-area.with-right-drawer.xp-max .map-tools { right: calc(min(1000px, 100vw - 320px) + 14px); }
+.map-tool-group {
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden;
+}
+.map-tool {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 0; border-bottom: 1px solid var(--line-2);
+  background: transparent; color: var(--ink-2); cursor: pointer;
+  transition: background .1s, color .1s; font-size: 13px;
+}
+.map-tool:last-child { border-bottom: 0; }
+.map-tool:hover { background: var(--paper); color: var(--ink); }
+.map-tool.active { background: var(--svv-navy-900); color: #fff; border-color: transparent; }
+
+.map-legend {
+  position: absolute; right: 14px; bottom: 14px; z-index: 4;
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  padding: 9px 12px; font-size: 11.5px; min-width: 175px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  transition: right .28s cubic-bezier(.2,.7,.2,1);
+}
+.map-area.with-right-drawer .map-legend { right: calc(var(--drawer-right-w) + 14px); }
+.map-area.with-right-drawer.xp-max .map-legend { right: calc(min(1000px, 100vw - 320px) + 14px); }
+.map-legend h3 {
+  margin: 0 0 6px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--ink-4); text-transform: uppercase;
+}
+.map-legend.hidden { display: none; }
+.legend-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.legend-row .sw { width: 16px; height: 8px; border-radius: 1px; flex: 0 0 16px; }
+.legend-row .sw.line { height: 0; border-top: 2px dashed currentColor; }
+.legend-row .sw.dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; margin-left: 3.5px; }
+.legend-row span { font-size: 11px; color: var(--ink-2); }
+
+/* Map tooltip */
+.map-tooltip {
+  position: absolute; z-index: 9; pointer-events: none;
+  background: var(--svv-navy-900); color: #fff;
+  padding: 6px 9px; border-radius: 4px; font-size: 11.5px; line-height: 1.35;
+  transform: translate(-50%, -100%) translateY(-10px);
+  white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  display: none;
+}
+.map-tooltip::after {
+  content: ""; position: absolute; left: 50%; bottom: -4px;
+  transform: translateX(-50%);
+  border: 4px solid transparent; border-top-color: var(--svv-navy-900); border-bottom: 0;
+}
+.map-tooltip .ttp-title { font-weight: 600; font-size: 12px; }
+.map-tooltip .ttp-meta { color: rgba(255,255,255,.65); font-family: var(--font-mono); font-size: 10.5px; }
+
+/* Empty state */
+#empty {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 8px; pointer-events: none;
+}
+#empty.gone { display: none; }
+.empty-icon { font-size: 48px; opacity: .15; }
+.empty-title { font-size: 16px; font-weight: 600; color: var(--ink-3); opacity: .7; }
+.empty-sub { font-size: 12px; color: var(--ink-3); opacity: .5; }
+
+/* ── DRAWER RIGHT (tverrprofil) ── */
+.drawer-right {
+  position: absolute; right: 0; top: 0; bottom: 0;
+  width: var(--drawer-right-w);
+  background: var(--card); border-left: 1px solid var(--line);
+  box-shadow: -4px 0 14px rgba(0,0,0,.06);
+  display: flex; flex-direction: column; z-index: 7;
+  transition: transform .28s cubic-bezier(.2,.7,.2,1), width .28s cubic-bezier(.2,.7,.2,1);
+}
+.drawer-right.closed { transform: translateX(100%); }
+.drawer-right.maximized { width: min(1000px, calc(100vw - 320px)); }
+
+.dr-head {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-2);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.dr-head .num {
+  font-family: var(--font-mono); font-size: 10.5px;
+  padding: 2px 7px; border-radius: 3px;
+  background: var(--svv-navy-900); color: #fff; flex-shrink: 0;
+}
+.dr-head-text { flex: 1; min-width: 0; }
+.dr-head-text h3 {
+  margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.005em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dr-head-text .meta { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.dr-close {
+  width: 26px; height: 26px; border-radius: 4px; border: 0;
+  background: transparent; color: var(--ink-3); cursor: pointer;
+  display: grid; place-items: center; font-size: 13px; flex-shrink: 0;
+  transition: background .1s, color .1s;
+}
+.dr-close:hover { background: var(--paper); color: var(--ink); }
+
+.dr-svg-area {
+  flex-shrink: 0; background: var(--paper-2); position: relative;
+  border-bottom: 1px solid var(--line-2); min-height: 220px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; cursor: grab;
+}
+.dr-svg-area.panning { cursor: grabbing; }
+.drawer-right.maximized .dr-svg-area { min-height: 42vh; }
+#cs-img {
+  position: absolute; top: 0; left: 0;
+  max-width: none; display: none;
+  transform-origin: 0 0; user-select: none; pointer-events: none;
+  background: var(--card);
+}
+.svg-zoom-ctrl {
+  position: absolute; top: 7px; right: 7px; z-index: 5;
+  display: none; flex-direction: column; gap: 2px;
+}
+.svg-zoom-ctrl.visible { display: flex; }
+.svg-zoom-btn {
+  width: 24px; height: 24px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-sm); color: var(--ink-2);
+  font-size: 15px; line-height: 1; cursor: pointer;
+  display: grid; place-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+.svg-zoom-btn:hover { background: var(--paper); color: var(--ink); }
+#cs-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
+#cs-loading .spin { border-color: var(--line); border-top-color: var(--accent); width: 18px; height: 18px; }
+#cs-placeholder {
+  font-size: 12px; color: var(--ink-4); text-align: center; padding: 16px;
+  line-height: 1.5;
+}
+
+.dr-body {
+  flex: 1; overflow-y: auto; padding: 12px 14px 16px;
+}
+.panel-meta {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px;
+  font-size: 11.5px; margin-top: 2px;
+}
+.panel-meta dt { color: var(--ink-3); font-weight: 400; }
+.panel-meta dd { margin: 0; font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.dr-section { margin-top: 14px; }
+.dr-section h4 {
+  margin: 0 0 7px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3);
+}
+
+.dr-nav {
+  padding: 9px 14px;
+  border-top: 1px solid var(--line-2);
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0; background: var(--paper);
+}
+.nav-btn {
+  padding: 5px 10px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--ink-2); font: inherit; font-size: 11.5px; cursor: pointer;
+  transition: background .1s, color .1s;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.nav-btn:hover { background: var(--paper-2); color: var(--ink); }
+.nav-btn:disabled { opacity: .4; cursor: not-allowed; }
+#cs-lbl {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--ink); flex: 1; text-align: center;
+}
+#cs-count { font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
+
+/* ── SNAP PREVIEW CARD ── */
+.snap-preview {
+  position: absolute; pointer-events: none; z-index: 10;
+  opacity: 1; transition: opacity .13s ease;
+}
+.snap-preview.hidden { opacity: 0; }
+.snap-preview-card {
+  width: 204px;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px 8px;
+  box-shadow: 0 4px 14px rgba(8,20,36,.10), 0 1px 3px rgba(8,20,36,.06);
+  transform: translateY(-50%);
+}
+html[data-theme="dark"] .snap-preview-card { background: rgba(18,28,37,0.95); }
+.snap-preview-hd {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 6px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+.snap-preview-hd .num {
+  font-family: var(--font-mono); font-size: 12.5px;
+  font-weight: 600; color: var(--ink); letter-spacing: 0.02em;
+}
+.snap-preview-hd .km {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--ink-4); font-variant-numeric: tabular-nums;
+}
+.snap-preview-svg-el {
+  display: block; width: 100%; height: 52px;
+  border-radius: 3px; background: var(--paper);
+}
+html[data-theme="dark"] .snap-preview-svg-el { background: var(--paper-2); }
+.snap-preview-ft {
+  margin-top: 6px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10.5px; color: var(--ink-3);
+}
+.snap-preview-ft kbd {
+  font-family: var(--font-mono); font-size: 9.5px;
+  padding: 1px 5px; border: 1px solid var(--line);
+  border-radius: 3px; background: var(--card); color: var(--ink-2); line-height: 1.2;
+}
+
+/* ── DRAWER BOTTOM (lengdeprofil) ── */
+.drawer-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: var(--drawer-bottom-h);
+  background: var(--card); border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 14px rgba(0,0,0,.06);
+  display: flex; flex-direction: column; z-index: 8;
+  transition: transform .28s cubic-bezier(.2,.7,.2,1), right .28s cubic-bezier(.2,.7,.2,1);
+}
+.drawer-bottom.closed { transform: translateY(calc(100% - 36px)); }
+.map-area.with-right-drawer .drawer-bottom { right: var(--drawer-right-w); }
+.map-area.with-right-drawer.xp-max .drawer-bottom { right: min(1000px, calc(100vw - 320px)); }
+
+.drawer-handle {
+  height: 36px; flex-shrink: 0;
+  border-bottom: 1px solid var(--line-2);
+  display: flex; align-items: center; padding: 0 14px;
+  cursor: ns-resize; user-select: none;
+  background: linear-gradient(to bottom, var(--card), var(--paper));
+}
+.drawer-handle .grip {
+  width: 30px; height: 3px; border-radius: 2px;
+  background: var(--line); margin-right: 12px; flex-shrink: 0;
+}
+.handle-title {
+  font-size: 12px; font-weight: 600; letter-spacing: -0.005em;
+  display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0;
+}
+.handle-title .num {
+  font-family: var(--font-mono); font-size: 9.5px;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent); flex-shrink: 0;
+}
+.handle-title .range { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.handle-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.btn-mini {
+  border: 1px solid var(--line); background: var(--card); border-radius: 4px;
+  padding: 3px 8px; font: inherit; font-size: 11px; color: var(--ink-2);
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  transition: background .1s, color .1s;
+}
+.btn-mini:hover { background: var(--paper); }
+.btn-mini.active { background: var(--svv-navy-900); color: #fff; border-color: var(--svv-navy-900); }
+
+.lp-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 11px; background: var(--paper);
+  flex-shrink: 0;
+}
+.lp-toolbar .grp { display: flex; align-items: center; gap: 5px; }
+.lp-toolbar .lbl { color: var(--ink-4); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; }
+.lp-toolbar .val { font-family: var(--font-mono); font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.lp-toolbar .pipe { width: 1px; height: 12px; background: var(--line); }
+
+.lp-area { flex: 1; overflow: hidden; position: relative; }
+#lp-canvas { display: block; }
+
+/* ── ESRI OVERRIDES ── */
+.esri-view .esri-view-surface--inset-outline:focus::after { outline: none; }
+.esri-attribution { background: rgba(244,243,238,.85) !important; border-radius: 4px 0 0 0 !important; }
+.esri-attribution__powered-by { display: none !important; }
+html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !important; }
+
+/* ── ANIMATIONS ── */
+@keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.anim-in { animation: fadein .2s ease-out; }
+
+/* ── AUTH ── */
+#auth-info {
+  font-size: 11px; color: rgba(255,255,255,.55);
+  display: flex; align-items: center; gap: 6px;
+}
+#auth-info a { color: rgba(255,255,255,.7); text-decoration: none; cursor: pointer; }
+#auth-info a:hover { color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">SV</div>
+    <div class="brand-name"><strong>Statens vegvesen</strong> · <span>Profilutforsker</span></div>
+  </div>
+  <div class="top-divider"></div>
+
+  <div class="project-pick">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="flex-shrink:0">
+      <circle cx="6.5" cy="6.5" r="5" stroke="rgba(255,255,255,.5)" stroke-width="1.2"/>
+      <path d="M6.5 3.5v3l1.8 1.3" stroke="rgba(255,255,255,.5)" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <select id="job-select" title="Velg prosjekt">
+      <option value="">— Velg publisert prosjekt —</option>
+    </select>
+    <span class="project-chip" id="project-chip"></span>
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style="flex-shrink:0;opacity:.5">
+      <path d="M2 4l3.5 3.5L9 4" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="top-divider"></div>
+
+  <div class="top-search">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M8 8l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <input id="station-search" placeholder="Hopp til stasjon… (f.eks. 5460)" type="text">
+  </div>
+
+  <div class="top-actions">
+    <div id="top-loading">
+      <div class="spin"></div>
+      <span id="load-txt">Laster…</span>
+    </div>
+    <div class="top-divider"></div>
+    <button class="top-btn" id="btn-lp" onclick="toggleLp()" title="Lengdeprofil">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" class="icon">
+        <path d="M1 9 Q3 3 6 5 Q9 7 12 2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+        <line x1="1" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      </svg>
+      Lengdeprofil
+    </button>
+    <button class="top-btn" id="btn-cs" onclick="openCs()" title="Tverrprofil">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" class="icon">
+        <path d="M1 10V3M4 10V6M7 10V4M10 10V7M12 10V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      Tverrprofil
+    </button>
+    <div class="top-divider"></div>
+    <button class="top-btn icon-only" id="btn-theme" onclick="toggleTheme()" title="Lys/mørk modus">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <circle cx="6.5" cy="6.5" r="3" stroke="currentColor" stroke-width="1.3"/>
+        <path d="M6.5 1v1M6.5 11v1M1 6.5h1M11 6.5h1M2.9 2.9l.7.7M9.4 9.4l.7.7M2.9 10.1l.7-.7M9.4 3.6l.7-.7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <div id="auth-info">
+      <span id="auth-name"></span>
+      <a id="auth-action" href="#">Logg inn</a>
+    </div>
+    <div class="top-user" id="top-user" style="display:none" title="Bruker"></div>
+  </div>
+</header>
+
+<!-- STAGE -->
+<div class="stage">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <h2>Kartlag <span class="pill" id="sb-pill" style="display:none">Live</span></h2>
+      <p id="sb-sub">Velg et prosjekt for å se lag</p>
+    </div>
+    <div class="sb-group">
+      <div class="sb-grp-title">Prosjekterte</div>
+      <div class="layer-row active" id="row-centerline" onclick="toggleLayer('centerline')">
+        <button class="layer-toggle on" id="tog-centerline">✓</button>
+        <div class="layer-swatch" style="width:18px;height:3px;border-radius:1px;background:var(--accent);border:0;margin:5px 0"></div>
+        <span class="layer-name">Senterlinje</span>
+        <span class="layer-count" id="cnt-centerline" style="display:none">—</span>
+      </div>
+      <div class="layer-row active" id="row-stations" onclick="toggleLayer('stations')">
+        <button class="layer-toggle on" id="tog-stations">✓</button>
+        <div class="layer-swatch" style="width:9px;height:9px;border-radius:50%;border:1.5px solid var(--svv-navy-900);background:transparent;flex:0 0 9px;margin:0 4.5px"></div>
+        <span class="layer-name">Tverrprofilpunkter</span>
+        <span class="layer-count" id="cnt-stations" style="display:none">—</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAP AREA -->
+  <div class="map-area" id="map-area">
+    <div id="map-container"></div>
+
+    <!-- Empty state -->
+    <div id="empty">
+      <div class="empty-icon">🛣</div>
+      <div class="empty-title">Ingen prosjekt valgt</div>
+      <div class="empty-sub">Velg et publisert prosjekt i nedtrekksmenyen</div>
+    </div>
+
+    <!-- Map info overlay -->
+    <div class="map-info hidden" id="map-info">
+      <div class="info-grp">
+        <span class="info-lbl">Lengde</span>
+        <span class="info-val" id="info-length">—</span>
+      </div>
+      <div class="info-pipe"></div>
+      <div class="info-grp">
+        <span class="info-lbl">Profiler</span>
+        <span class="info-val" id="info-count">—</span>
+      </div>
+      <div class="info-pipe"></div>
+      <div class="info-grp kbd-hint">
+        <span class="info-lbl">Nav</span>
+        <kbd>←</kbd><kbd>→</kbd>
+        <span style="color:var(--ink-4);font-size:10px">shift ×10</span>
+      </div>
+    </div>
+
+    <!-- Map tools -->
+    <div class="map-tools" id="map-tools">
+      <div class="map-tool-group">
+        <button class="map-tool" onclick="mapZoom(1)" title="Zoom inn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M4 6h4M6 4v4M9.5 9.5l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="map-tool" onclick="mapZoom(-1)" title="Zoom ut">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M4 6h4M9.5 9.5l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="map-tool" onclick="mapHome()" title="Vis hele prosjektet">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 6.5L7 2l5 4.5V12H9.5V9H4.5v3H2V6.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="map-tool-group">
+        <button class="map-tool" onclick="toggleSidebar()" title="Vis/skjul lag">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M5 1v12" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="map-legend hidden" id="map-legend">
+      <h3>Tegnforklaring</h3>
+      <div class="legend-row">
+        <span class="sw line" style="color:var(--accent)"></span>
+        <span>Senterlinje (prosjektert)</span>
+      </div>
+      <div class="legend-row">
+        <span class="sw dot" style="border:1.5px solid var(--svv-navy-900);background:transparent;box-sizing:border-box"></span>
+        <span>Tverrprofilpunkt</span>
+      </div>
+      <div class="legend-row" id="legend-selected" style="display:none">
+        <span class="sw dot" style="background:var(--signal-pink)"></span>
+        <span>Valgt stasjon</span>
+      </div>
+    </div>
+
+    <!-- Snap preview card (follows cursor near stations) -->
+    <div class="snap-preview hidden" id="snap-preview">
+      <div class="snap-preview-card">
+        <div class="snap-preview-hd">
+          <span class="num" id="sp-num">PR —</span>
+          <span class="km" id="sp-km">—</span>
+        </div>
+        <svg class="snap-preview-svg-el" viewBox="0 0 204 52" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="spgrid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 H 0 V 10" fill="none" stroke="rgba(11,58,99,0.07)" stroke-width="0.5"/>
+            </pattern>
+          </defs>
+          <rect width="204" height="52" fill="url(#spgrid)"/>
+          <path id="sp-terrain" fill="none" stroke="var(--ink-3)" stroke-width="0.9"/>
+          <line id="sp-road" x1="72" x2="132" y1="26" y2="26" stroke="var(--ink)" stroke-width="2"/>
+          <line id="sp-cl" x1="102" x2="102" y1="6" y2="46" stroke="var(--signal-pink)" stroke-width="0.9" stroke-dasharray="2.5 2"/>
+        </svg>
+        <div class="snap-preview-ft">
+          <span>Klikk for tverrprofil</span>
+          <kbd>↵</kbd>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT DRAWER (tverrprofil) -->
+    <aside class="drawer-right closed" id="cs">
+      <div class="dr-head">
+        <span class="num" id="dr-num">U101</span>
+        <div class="dr-head-text">
+          <h3 id="cs-title">Tverrprofil</h3>
+          <div class="meta" id="cs-meta-line">Klikk på et punkt i kartet</div>
+        </div>
+        <button class="dr-close" id="btn-cs-max" onclick="toggleCsMax()" title="Maksimer">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M1 4.5V1h3.5M7.5 1H11v3.5M11 7.5V11H7.5M4.5 11H1V7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="dr-close" onclick="closeCs()" title="Lukk">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="dr-svg-area">
+        <div id="cs-placeholder">Klikk på et punkt i kartet</div>
+        <div id="cs-loading"><div class="spin"></div></div>
+        <img id="cs-img" alt="Tverrprofil">
+        <div class="svg-zoom-ctrl" id="svg-zoom-ctrl">
+          <button class="svg-zoom-btn" onclick="svgZoomBtn(1.25)" title="Zoom inn">+</button>
+          <button class="svg-zoom-btn" onclick="svgZoomBtn(0.8)" title="Zoom ut">−</button>
+          <button class="svg-zoom-btn" onclick="resetCsZoom()" title="Tilpass til vindu">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+              <path d="M1 4.5V1h3.5M7.5 1H11v3.5M11 7.5V11H7.5M4.5 11H1V7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="dr-body">
+        <dl class="panel-meta" id="panel-meta">
+          <dt>Profil nr.</dt><dd id="mv-profil">—</dd>
+          <dt>Terrenghøyde (CL)</dt><dd id="mv-elev">—</dd>
+          <dt>Stasjon</dt><dd id="mv-station">—</dd>
+          <dt>Tverrfall H / V</dt><dd id="mv-tverrfall">—</dd>
+          <dt>Bredde, vei</dt><dd id="mv-bredde">—</dd>
+          <dt>Skjæring / Fylling</dt><dd id="mv-skj-fyl">—</dd>
+        </dl>
+
+        <div class="dr-section" id="dr-naboprofiler" style="display:none">
+          <h4>Naboprofiler</h4>
+          <div style="display:flex;gap:6px">
+            <button class="btn-mini" onclick="nav(-1)" id="nav-prev">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M7 1L3 5l4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              <span id="nav-prev-lbl">Forrige</span>
+            </button>
+            <button class="btn-mini" onclick="nav(+1)" id="nav-next">
+              <span id="nav-next-lbl">Neste</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dr-nav">
+        <button class="nav-btn" onclick="nav(-1)">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M7 1L3 5l4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Forrige
+        </button>
+        <span id="cs-lbl">—</span>
+        <button class="nav-btn" onclick="nav(+1)">
+          Neste
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <span id="cs-count"></span>
+      </div>
+    </aside>
+
+    <!-- BOTTOM DRAWER (lengdeprofil) -->
+    <section class="drawer-bottom closed" id="lp">
+      <div class="drawer-handle" onclick="toggleLp()">
+        <div class="grip"></div>
+        <div class="handle-title">
+          <span class="num">C-plan</span>
+          Lengdeprofil
+          <span class="range" id="lp-range"></span>
+        </div>
+        <div class="handle-actions" onclick="event.stopPropagation()">
+          <button class="btn-mini" onclick="drawLp()">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1h8v8H1z" stroke="currentColor" stroke-width="1.2"/><path d="M3 3h4v4H3z" stroke="currentColor" stroke-width="1"/></svg>
+            Tilpass
+          </button>
+          <button class="btn-mini" onclick="toggleLp()">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" id="lp-toggle-icon"><path d="M2 3l3.5 4 3.5-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="lp-toolbar" id="lp-toolbar">
+        <div class="grp"><span class="lbl">Profiler</span><span class="val" id="lp-count-lbl">—</span></div>
+        <div class="pipe"></div>
+        <div class="grp"><span class="lbl">Valgt</span><span class="val" id="lp-selected-lbl">—</span></div>
+        <div class="pipe"></div>
+        <div class="grp"><span class="lbl">H.o.h.</span><span class="val" id="lp-elev-lbl">— m</span></div>
+        <div class="pipe" id="lp-terreng-pipe" style="display:none"></div>
+        <div class="grp" id="lp-terreng-grp" style="display:none"><span class="lbl">Terreng</span><span class="val" id="lp-terreng-lbl">— m</span></div>
+      </div>
+      <div class="lp-area"><canvas id="lp-canvas"></canvas></div>
+    </section>
+
+  </div><!-- /map-area -->
+</div><!-- /stage -->
+
+<script type="module" src="https://js.arcgis.com/5.0/"></script>
+<script type="module">
+'use strict';
+
+const API = 'http://localhost:8000';
+const GEODATA_KANVAS = 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer';
+
+// ── STATE ──────────────────────────────────────────────────────────────
+let view = null;
+let clLayer = null;
+let stLayer = null;
+let hoverLayer = null;
+let selectedLayer = null;
+let stations = [];
+let currentIdx = -1;
+let currentJobId = null;
+let lpOpen = false;
+let csOpen = false;
+let csMaximized = false;
+let layerVis = { centerline: true, stations: true };
+let currentToken = null;
+let orgUrl = 'https://www.arcgis.com';
+let darkMode = false;
+let svgScale = 1, svgPanX = 0, svgPanY = 0;
+let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
+let hoverIdx = -1;
+
+// ── THEME ──────────────────────────────────────────────────────────────
+function toggleTheme() {
+  darkMode = !darkMode;
+  document.documentElement.dataset.theme = darkMode ? 'dark' : '';
+}
+
+// ── AUTH ───────────────────────────────────────────────────────────────
+async function initAuth() {
+  try {
+    const r = await fetch(API + '/auth/token', { credentials: 'include' });
+    if (r.ok) {
+      const d = await r.json();
+      currentToken = d.access_token;
+      orgUrl = d.org_url || orgUrl;
+      const name = d.username || '';
+      document.getElementById('auth-name').textContent = name;
+      document.getElementById('auth-action').textContent = 'Logg ut';
+      document.getElementById('auth-action').onclick = logout;
+      document.getElementById('auth-action').href = '#';
+      const initials = name.split('.').map(p => p[0] || '').join('').toUpperCase().slice(0, 2);
+      const userEl = document.getElementById('top-user');
+      userEl.textContent = initials || '?';
+      userEl.style.display = 'grid';
+      userEl.title = name;
+      if (window._esriId) {
+        window._esriId.registerToken({
+          server: orgUrl + '/sharing/rest',
+          token: currentToken,
+          expires: Date.now() + 3600 * 1000,
+        });
+      }
+    }
+  } catch (e) { /* not logged in */ }
+}
+
+function loginUrl() {
+  return API + '/auth/login?next=' + encodeURIComponent(window.location.href);
+}
+document.getElementById('auth-action').href = loginUrl();
+
+async function logout() {
+  await fetch(API + '/auth/logout', { method: 'POST', credentials: 'include' });
+  currentToken = null;
+  document.getElementById('auth-name').textContent = '';
+  document.getElementById('auth-action').textContent = 'Logg inn';
+  document.getElementById('auth-action').href = loginUrl();
+  document.getElementById('auth-action').onclick = null;
+  document.getElementById('top-user').style.display = 'none';
+}
+
+// ── SYMBOL HELPERS ─────────────────────────────────────────────────────
+const DARK_GREEN = [27, 94, 32];
+const MAGENTA    = [224, 34, 142];
+
+function cimCircleRings(r = 4.5, n = 32) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * 2 * Math.PI;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  return [pts];
+}
+
+// Parse x-axis tick values from a matplotlib SVG (labels are HTML comments)
+function parseSvgXTicks(svgText) {
+  const ticks = [];
+  const re = /id="xtick_\d+"[\s\S]*?<!-- (−?[\d.]+) -->/g;
+  let m;
+  while ((m = re.exec(svgText)) !== null) {
+    const val = parseFloat(m[1].replace('−', '-'));
+    if (!isNaN(val)) ticks.push(val);
+  }
+  return ticks;
+}
+
+// Draw perpendicular cross-section extent line on the map
+function drawCrossSectionLine(s, idx, xTicks) {
+  if (!selectedLayer || !window._Graphic) return;
+  const xMin = (xTicks && xTicks.length >= 2) ? Math.min(...xTicks) : -15;
+  const xMax = (xTicks && xTicks.length >= 2) ? Math.max(...xTicks) : 15;
+
+  // Centerline tangent at this station (using neighbours for smoother direction)
+  let dx, dy;
+  if (idx > 0 && idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx - 1].x;
+    dy = stations[idx + 1].y - stations[idx - 1].y;
+  } else if (idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx].x;
+    dy = stations[idx + 1].y - stations[idx].y;
+  } else {
+    dx = stations[idx].x - stations[idx - 1].x;
+    dy = stations[idx].y - stations[idx - 1].y;
+  }
+  const len = Math.hypot(dx, dy);
+  const tx = dx / len, ty = dy / len;   // unit tangent along CL
+  const px = -ty, py = tx;              // unit perpendicular (cross-section direction)
+
+  const SR = { wkid: 25833 };
+  const p1 = [s.x + px * xMin, s.y + py * xMin];
+  const p2 = [s.x + px * xMax, s.y + py * xMax];
+  const TICK = 3; // end-cap half-length in metres, runs parallel to CL
+
+  const lineSym = { type: 'simple-line', color: [...MAGENTA, 180], width: 1.5 };
+
+  // Main cross-section line
+  selectedLayer.add(new window._Graphic({
+    geometry: { type: 'polyline', paths: [[p1, p2]], spatialReference: SR },
+    symbol: lineSym,
+  }));
+  // End-cap ticks (I-beam ends)
+  for (const [ex, ey] of [p1, p2]) {
+    selectedLayer.add(new window._Graphic({
+      geometry: {
+        type: 'polyline',
+        paths: [[[ex - tx * TICK, ey - ty * TICK], [ex + tx * TICK, ey + ty * TICK]]],
+        spatialReference: SR,
+      },
+      symbol: lineSym,
+    }));
+  }
+}
+
+function makePillUrl(text) {
+  const pw = Math.round(text.length * 7.6 + 22);
+  const ph = 26;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}" viewBox="0 0 ${pw} ${ph}">` +
+    `<rect width="${pw}" height="${ph}" rx="13" fill="#1B5E20"/>` +
+    `<text x="${pw / 2}" y="17" font-family="system-ui,ui-sans-serif,sans-serif" font-size="11" font-weight="700" fill="white" text-anchor="middle">${text}</text>` +
+    `</svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+// ── MAP INIT ───────────────────────────────────────────────────────────
+try {
+  const [Map, MapView, VectorTileLayer, FeatureLayer, Basemap, esriId, GraphicsLayer, Graphic] =
+    await $arcgis.import([
+      '@arcgis/core/Map.js',
+      '@arcgis/core/views/MapView.js',
+      '@arcgis/core/layers/VectorTileLayer.js',
+      '@arcgis/core/layers/FeatureLayer.js',
+      '@arcgis/core/Basemap.js',
+      '@arcgis/core/identity/IdentityManager.js',
+      '@arcgis/core/layers/GraphicsLayer.js',
+      '@arcgis/core/Graphic.js',
+    ]);
+
+  window._esriId = esriId;
+  window._FeatureLayer = FeatureLayer;
+
+  const basemap = new Basemap({
+    baseLayers: [new VectorTileLayer({ url: GEODATA_KANVAS })],
+    title: 'Geodata Kanvas',
+  });
+
+  const map = new Map({ basemap });
+
+  view = new MapView({
+    container: document.getElementById('map-container'),
+    map,
+    center: [10.75, 59.9],
+    zoom: 5,
+  });
+
+  view.when(async () => {
+    await initAuth();
+    loadJobs();
+  });
+
+  hoverLayer = new GraphicsLayer({ listMode: 'hide' });
+  selectedLayer = new GraphicsLayer({ listMode: 'hide' });
+  map.add(hoverLayer);
+  map.add(selectedLayer);
+  window._Graphic = Graphic;
+
+  window._map = map;
+  window._view = view;
+
+  view.on('click', async (event) => {
+    if (hoverIdx >= 0) {
+      selectStation(hoverIdx);
+      return;
+    }
+    if (!stLayer) return;
+    const resp = await view.hitTest(event, { include: [stLayer] });
+    if (resp.results.length > 0) {
+      const feat = resp.results[0].graphic;
+      const idx = stations.findIndex(s => s.oid === feat.attributes.OBJECTID);
+      if (idx >= 0) selectStation(idx);
+    }
+  });
+
+  view.on('pointer-move', (event) => {
+    if (!stations.length) return;
+    const mapPt = view.toMap({ x: event.x, y: event.y });
+    if (!mapPt) return;
+
+    const SNAP_PX = 90;
+    const threshold = SNAP_PX * (view.resolution || 1);
+
+    let nearestIdx = -1, nearestDist = Infinity;
+    for (let i = 0; i < stations.length; i++) {
+      const s = stations[i];
+      const d = Math.hypot(mapPt.x - s.x, mapPt.y - s.y);
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+
+    const sp = document.getElementById('snap-preview');
+    if (nearestIdx >= 0 && nearestDist < threshold) {
+      hoverIdx = nearestIdx;
+      updateSnapPreview(stations[nearestIdx], event.x, event.y);
+      sp.classList.remove('hidden');
+      view.surface.style.cursor = 'pointer';
+      // Draw hover symbol: outer targeting ring + white inner dot + PR callout label
+      const hs = stations[nearestIdx];
+      if (hoverLayer) {
+        hoverLayer.removeAll();
+        const geom = { type: 'point', x: hs.x, y: hs.y, spatialReference: { wkid: 25833 } };
+        hoverLayer.add(new Graphic({
+          geometry: geom,
+          symbol: { type: 'simple-marker', color: [224, 34, 142, 0], size: 22,
+            outline: { color: [224, 34, 142, 0.4], width: 1.5 } },
+        }));
+        hoverLayer.add(new Graphic({
+          geometry: geom,
+          symbol: { type: 'simple-marker', color: [255, 255, 255, 0.95], size: 13,
+            outline: { color: [224, 34, 142], width: 2 } },
+        }));
+        const pillText = 'PR ' + hs.stasjon_m.toFixed(0);
+        const pillW = Math.round(pillText.length * 7.6 + 22);
+        hoverLayer.add(new Graphic({
+          geometry: geom,
+          symbol: {
+            type: 'picture-marker',
+            url: makePillUrl(pillText),
+            width: pillW,
+            height: 26,
+            yoffset: 26,
+          },
+        }));
+      }
+    } else {
+      hoverIdx = -1;
+      sp.classList.add('hidden');
+      view.surface.style.cursor = '';
+      if (hoverLayer) hoverLayer.removeAll();
+    }
+  });
+
+  view.on('pointer-leave', () => {
+    hoverIdx = -1;
+    document.getElementById('snap-preview').classList.add('hidden');
+    if (hoverLayer) hoverLayer.removeAll();
+  });
+
+} catch (err) {
+  console.error('[Profilutforsker] Map init failed:', err);
+}
+
+// ── KEYBOARD NAV ───────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!stations.length) return;
+  const step = e.shiftKey ? 10 : 1;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (currentIdx + step < stations.length) selectStation(currentIdx + step);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (currentIdx - step >= 0) selectStation(currentIdx - step);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    selectStation(0);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    selectStation(stations.length - 1);
+  }
+});
+
+// Station search
+document.getElementById('station-search').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = parseFloat(e.target.value);
+  if (isNaN(val)) return;
+  const idx = stations.reduce((best, s, i) => {
+    return Math.abs(s.stasjon_m - val) < Math.abs(stations[best].stasjon_m - val) ? i : best;
+  }, 0);
+  if (stations.length) { selectStation(idx); e.target.blur(); }
+});
+
+// ── JOBS ───────────────────────────────────────────────────────────────
+async function loadJobs() {
+  try {
+    const r = await fetch(API + '/api/jobs', { credentials: 'include' });
+    const jobs = await r.json();
+    const sel = document.getElementById('job-select');
+    sel.innerHTML = '<option value="">— Velg publisert prosjekt —</option>';
+    for (const j of jobs) {
+      const d = new Date(j.modified * 1000);
+      const ds = d.toLocaleDateString('no-NO', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const hasAgol = j.centerline_url && j.sections_url;
+      const opt = document.createElement('option');
+      opt.value = j.job_id;
+      opt.dataset.centerlineUrl = j.centerline_url || '';
+      opt.dataset.sectionsUrl = j.sections_url || '';
+      opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
+      if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
+      sel.appendChild(opt);
+    }
+  } catch (err) { console.warn('loadJobs:', err); }
+}
+
+document.getElementById('job-select').addEventListener('change', async e => {
+  const sel = e.target;
+  const jobId = sel.value;
+  if (!jobId) return;
+  const opt = sel.options[sel.selectedIndex];
+  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl);
+});
+
+async function loadJob(jobId, centerlineUrl, sectionsUrl) {
+  currentJobId = jobId;
+  stations = [];
+  currentIdx = -1;
+  setLoading(true, 'Laster veidata fra AGOL…');
+
+  if (clLayer && window._map) window._map.remove(clLayer);
+  if (stLayer && window._map) window._map.remove(stLayer);
+  clLayer = null; stLayer = null;
+
+  const emptyEl = document.getElementById('empty');
+
+  if (!centerlineUrl || !sectionsUrl) {
+    setLoading(false);
+    emptyEl.classList.remove('gone');
+    emptyEl.querySelector('.empty-title').textContent = 'Ingen AGOL-lenker for denne jobben';
+    emptyEl.querySelector('.empty-sub').textContent = 'Kjør opplastning på nytt for å publisere til AGOL';
+    return;
+  }
+
+  const FeatureLayer = window._FeatureLayer;
+  const map = window._map;
+
+  clLayer = new FeatureLayer({
+    url: centerlineUrl + '/0',
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'cim',
+        data: {
+          type: 'CIMSymbolReference',
+          symbol: {
+            type: 'CIMLineSymbol',
+            symbolLayers: [
+              // Outer glow
+              {
+                type: 'CIMSolidStroke', enable: true,
+                width: 10, capStyle: 'Round', joinStyle: 'Round',
+                color: [...DARK_GREEN, 30],
+              },
+              // Mid glow
+              {
+                type: 'CIMSolidStroke', enable: true,
+                width: 5, capStyle: 'Round', joinStyle: 'Round',
+                color: [...DARK_GREEN, 70],
+              },
+              // Core dashed line
+              {
+                type: 'CIMSolidStroke', enable: true,
+                width: 2, capStyle: 'Butt', joinStyle: 'Round',
+                color: [...DARK_GREEN, 255],
+                effects: [{
+                  type: 'CIMGeometricEffectDashes',
+                  dashTemplate: [8, 4],
+                  lineDashEnding: 'NoConstraint',
+                  offsetAlongLine: 0,
+                }],
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+
+  stLayer = new FeatureLayer({
+    url: sectionsUrl + '/0',
+    outFields: ['*'],
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'simple-marker', color: [255, 255, 255, 0.9], size: 8,
+        outline: { color: [...DARK_GREEN, 1], width: 1.5 }
+      },
+    },
+    labelsVisible: true,
+    labelingInfo: [{
+      labelExpressionInfo: { expression: '"PR " + Text($feature.stasjon_m, "#")' },
+      labelPlacement: 'above-right',
+      minScale: 25000,
+      symbol: {
+        type: 'text',
+        color: [...DARK_GREEN],
+        haloColor: [255, 255, 255, 220],
+        haloSize: 1.5,
+        font: { size: 9, family: 'system-ui, ui-sans-serif, sans-serif', weight: 'bold' },
+        yoffset: 4,
+      },
+    }],
+  });
+
+  map.addMany([clLayer, stLayer]);
+  // Keep graphics layers above feature layers
+  map.reorder(selectedLayer, map.layers.length - 1);
+  map.reorder(hoverLayer, map.layers.length - 1);
+  if (selectedLayer) selectedLayer.removeAll();
+
+  try {
+    await Promise.all([clLayer.load(), stLayer.load()]);
+    emptyEl.classList.add('gone');
+
+    const fset = await stLayer.queryFeatures({
+      where: '1=1',
+      outFields: ['OBJECTID', 'stasjon_m', 'profil_nr', 'z_moh', 'z_terreng'],
+      returnGeometry: true,
+      returnZ: true,
+      orderByFields: ['stasjon_m ASC'],
+      outSpatialReference: { wkid: 25833 },
+    });
+
+    stations = fset.features.map(f => ({
+      oid: f.attributes.OBJECTID,
+      stasjon_m: f.attributes.stasjon_m,
+      profil_nr: f.attributes.profil_nr || '',
+      z: f.attributes.z_moh ?? (f.geometry?.z ?? 0),
+      z_terreng: f.attributes.z_terreng ?? null,
+      x: f.geometry?.x ?? 0,
+      y: f.geometry?.y ?? 0,
+    }));
+
+    // Update UI
+    const shortId = jobId.slice(0, 8) + '…';
+    document.getElementById('project-chip').textContent = shortId;
+    document.getElementById('project-chip').classList.add('visible');
+    document.getElementById('sb-pill').style.display = 'inline';
+    document.getElementById('sb-sub').textContent = 'Publisert · ' + new Date().toLocaleDateString('nb-NO');
+
+    const stMin = stations[0]?.stasjon_m || 0;
+    const stMax = stations[stations.length - 1]?.stasjon_m || 0;
+    const lengdeM = Math.round(stMax - stMin);
+
+    document.getElementById('info-length').textContent = lengdeM >= 1000
+      ? (lengdeM / 1000).toFixed(2) + ' km'
+      : lengdeM + ' m';
+    document.getElementById('info-count').textContent = stations.length + ' stk';
+    document.getElementById('cnt-stations').textContent = stations.length;
+    document.getElementById('cnt-stations').style.display = '';
+    document.getElementById('cnt-centerline').textContent = lengdeM >= 1000
+      ? (lengdeM / 1000).toFixed(1) + ' km'
+      : lengdeM + ' m';
+    document.getElementById('cnt-centerline').style.display = '';
+
+    document.getElementById('map-info').classList.remove('hidden');
+    document.getElementById('map-legend').classList.remove('hidden');
+
+    const extent = stLayer.fullExtent;
+    if (extent && view) {
+      view.goTo({ target: extent.expand(1.5) }, { duration: 700 });
+    }
+
+    openLp();
+  } catch (err) {
+    console.error('loadJob:', err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function setLoading(on, txt) {
+  const el = document.getElementById('top-loading');
+  el.style.display = on ? 'flex' : 'none';
+  if (txt) document.getElementById('load-txt').textContent = txt;
+}
+
+// ── STATION SELECTION ──────────────────────────────────────────────────
+async function selectStation(idx) {
+  if (idx < 0 || idx >= stations.length) return;
+  currentIdx = idx;
+  if (hoverLayer) hoverLayer.removeAll();
+  const s = stations[idx];
+
+  document.getElementById('mv-profil').textContent = s.profil_nr || '—';
+  document.getElementById('mv-elev').textContent = s.z.toFixed(2) + ' m.o.h.';
+  document.getElementById('mv-station').textContent = s.stasjon_m.toFixed(1) + ' m';
+  // Tverrfall, bredde, skjæring/fylling not in AGOL — show dash
+  document.getElementById('mv-tverrfall').textContent = '—';
+  document.getElementById('mv-bredde').textContent = '—';
+  document.getElementById('mv-skj-fyl').textContent = '—';
+  const pr = s.stasjon_m.toFixed(0);
+  const lbl = s.profil_nr ? s.profil_nr : pr;
+  document.getElementById('cs-title').textContent = 'Tverrprofil · PR ' + pr;
+  document.getElementById('cs-meta-line').textContent =
+    (s.stasjon_m / 1000).toFixed(3) + ' km · ' + s.z.toFixed(1) + ' m.o.h.';
+  document.getElementById('cs-lbl').textContent = 'PR ' + pr;
+  document.getElementById('cs-count').textContent = (idx + 1) + ' / ' + stations.length;
+  const prevLbl = idx > 0
+    ? '← PR ' + stations[idx - 1].stasjon_m.toFixed(0)
+    : '← Forrige';
+  const nextLbl = idx < stations.length - 1
+    ? 'PR ' + stations[idx + 1].stasjon_m.toFixed(0) + ' →'
+    : 'Neste →';
+  document.getElementById('nav-prev-lbl').textContent = prevLbl;
+  document.getElementById('nav-next-lbl').textContent = nextLbl;
+  document.getElementById('dr-naboprofiler').style.display = '';
+  document.getElementById('lp-selected-lbl').textContent = lbl;
+  document.getElementById('lp-elev-lbl').textContent = s.z.toFixed(1) + ' m';
+  document.getElementById('lp-count-lbl').textContent = stations.length + ' stk';
+  const hasTerreng = s.z_terreng != null;
+  document.getElementById('lp-terreng-pipe').style.display = hasTerreng ? '' : 'none';
+  document.getElementById('lp-terreng-grp').style.display = hasTerreng ? '' : 'none';
+  if (hasTerreng) document.getElementById('lp-terreng-lbl').textContent = s.z_terreng.toFixed(1) + ' m';
+
+  if (lpOpen) drawLp();
+  if (!csOpen) openCs();
+  const xTicks = await loadSvg(s.stasjon_m);
+
+  // Draw all selectedLayer graphics: CS line first (bottom), then station marker on top
+  if (selectedLayer && window._Graphic) {
+    selectedLayer.removeAll();
+    drawCrossSectionLine(s, idx, xTicks);
+    const geom = { type: 'point', x: s.x, y: s.y, spatialReference: { wkid: 25833 } };
+    const rings = cimCircleRings();
+    // Static inner white dot
+    selectedLayer.add(new window._Graphic({
+      geometry: geom,
+      symbol: {
+        type: 'simple-marker', color: [255, 255, 255, 0.95], size: 14,
+        outline: { color: MAGENTA, width: 2 },
+      },
+    }));
+    // Animated pulsing ring
+    selectedLayer.add(new window._Graphic({
+      geometry: geom,
+      symbol: {
+        type: 'cim',
+        data: {
+          type: 'CIMSymbolReference',
+          symbol: {
+            type: 'CIMPointSymbol',
+            symbolLayers: [{
+              type: 'CIMVectorMarker',
+              enable: true,
+              size: 16,
+              frame: { xmin: -5, ymin: -5, xmax: 5, ymax: 5 },
+              markerGraphics: [{
+                type: 'CIMMarkerGraphic',
+                geometry: { rings },
+                symbol: {
+                  type: 'CIMPolygonSymbol',
+                  symbolLayers: [
+                    { type: 'CIMSolidFill', enable: true, color: [...MAGENTA, 0] },
+                    { type: 'CIMSolidStroke', enable: true, width: 1.5, color: [...MAGENTA, 255] },
+                  ],
+                },
+              }],
+              animations: [
+                {
+                  type: 'CIMSymbolAnimationScale',
+                  scaleFactor: 3,
+                  animatedSymbolProperties: {
+                    type: 'CIMAnimatedSymbolProperties',
+                    playAnimation: true,
+                    randomizeStartTime: false,
+                    repeatType: 'Loop',
+                    repeatDelay: 0.5,
+                    duration: 1.5,
+                  },
+                },
+                {
+                  type: 'CIMSymbolAnimationTransparency',
+                  toTransparency: 100,
+                  animatedSymbolProperties: {
+                    type: 'CIMAnimatedSymbolProperties',
+                    playAnimation: true,
+                    randomizeStartTime: false,
+                    repeatType: 'Loop',
+                    repeatDelay: 0.5,
+                    duration: 1.5,
+                    easing: 'EaseIn',
+                  },
+                },
+              ],
+            }],
+          },
+        },
+      },
+    }));
+    document.getElementById('legend-selected').style.display = 'flex';
+  }
+
+  // Pan to station
+  if (view && stations[idx]) {
+    stLayer.queryFeatures({
+      objectIds: [s.oid], returnGeometry: true, outSpatialReference: { wkid: 25833 }
+    }).then(fset => {
+      if (fset.features[0]?.geometry) {
+        view.goTo({ target: fset.features[0].geometry }, { duration: 250, easing: 'ease-in-out' });
+      }
+    }).catch(() => {});
+  }
+}
+
+async function loadSvg(stasjon_m) {
+  const img = document.getElementById('cs-img');
+  const loading = document.getElementById('cs-loading');
+  const ph = document.getElementById('cs-placeholder');
+  const zoomCtrl = document.getElementById('svg-zoom-ctrl');
+
+  ph.style.display = 'none';
+  img.style.display = 'none';
+  zoomCtrl.classList.remove('visible');
+  loading.style.display = 'flex';
+
+  const formatted = stasjon_m.toFixed(1).padStart(7, '0');
+  const url = API + '/api/jobs/' + currentJobId + '/svg/tverrprofil_' + formatted + '.svg';
+  img.onload = () => {
+    loading.style.display = 'none';
+    img.style.display = 'block';
+    zoomCtrl.classList.add('visible');
+    resetCsZoom();
+  };
+  img.onerror = () => {
+    loading.style.display = 'none';
+    ph.textContent = 'SVG ikke funnet for stasjon ' + stasjon_m.toFixed(1);
+    ph.style.display = 'flex';
+  };
+  img.src = url;
+
+  // Fetch SVG as text in parallel to extract actual x-axis extent
+  try {
+    const resp = await fetch(url);
+    if (resp.ok) return parseSvgXTicks(await resp.text());
+  } catch (_) {}
+  return null;
+}
+
+// ── SNAP PREVIEW ───────────────────────────────────────────────────────
+function updateSnapPreview(s, screenX, screenY) {
+  document.getElementById('sp-num').textContent = 'PR ' + s.stasjon_m.toFixed(0);
+  document.getElementById('sp-km').textContent = (s.stasjon_m / 1000).toFixed(3) + ' km';
+
+  // Terrain sketch varies slightly per station for visual variety
+  const seed = s.stasjon_m * 0.0017;
+  const t = (x) => Math.sin(seed + x * 0.05) * 5;
+  const roadY = 26;
+  const terrain = [
+    `M 4 ${38 + t(0)}`,
+    `C 30 ${34 + t(20)}, 55 ${roadY + 4 + t(55)}, 72 ${roadY}`,
+    `L 132 ${roadY}`,
+    `C 149 ${roadY + t(149)}, 174 ${34 + t(174)}, 200 ${38 - t(200)}`,
+  ].join(' ');
+  document.getElementById('sp-terrain').setAttribute('d', terrain);
+  document.getElementById('sp-road').setAttribute('y1', roadY);
+  document.getElementById('sp-road').setAttribute('y2', roadY);
+
+  // Position card to the right, flip left if near right edge
+  const sp = document.getElementById('snap-preview');
+  const mapArea = document.getElementById('map-area');
+  const areaW = mapArea.clientWidth;
+  const isRight = screenX < areaW - 250;
+  sp.style.left = (screenX + (isRight ? 22 : -226)) + 'px';
+  sp.style.top = screenY + 'px';
+}
+
+// ── SVG PAN / ZOOM ─────────────────────────────────────────────────────
+function applyTransform() {
+  document.getElementById('cs-img').style.transform =
+    `translate(${svgPanX}px,${svgPanY}px) scale(${svgScale})`;
+}
+
+function resetCsZoom() {
+  const area = document.querySelector('.dr-svg-area');
+  const img = document.getElementById('cs-img');
+  const cw = area.clientWidth, ch = area.clientHeight;
+  const iw = img.naturalWidth || 1058, ih = img.naturalHeight || 751;
+  svgScale = Math.min(cw / iw, ch / ih) * 0.95;
+  svgPanX = (cw - iw * svgScale) / 2;
+  svgPanY = (ch - ih * svgScale) / 2;
+  applyTransform();
+}
+
+function svgZoomBtn(factor) {
+  const area = document.querySelector('.dr-svg-area');
+  const cx = area.clientWidth / 2, cy = area.clientHeight / 2;
+  const newScale = Math.min(Math.max(svgScale * factor, 0.05), 20);
+  svgPanX = cx - (cx - svgPanX) * (newScale / svgScale);
+  svgPanY = cy - (cy - svgPanY) * (newScale / svgScale);
+  svgScale = newScale;
+  applyTransform();
+}
+
+const svgArea = document.querySelector('.dr-svg-area');
+
+svgArea.addEventListener('wheel', (e) => {
+  if (document.getElementById('cs-img').style.display === 'none') return;
+  e.preventDefault();
+  const rect = svgArea.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newScale = Math.min(Math.max(svgScale * factor, 0.05), 20);
+  svgPanX = cx - (cx - svgPanX) * (newScale / svgScale);
+  svgPanY = cy - (cy - svgPanY) * (newScale / svgScale);
+  svgScale = newScale;
+  applyTransform();
+}, { passive: false });
+
+svgArea.addEventListener('pointerdown', (e) => {
+  if (document.getElementById('cs-img').style.display === 'none' || e.button !== 0) return;
+  if (e.target.closest('.svg-zoom-ctrl')) return;
+  e.preventDefault();
+  svgDragging = true;
+  svgDragStartX = e.clientX - svgPanX;
+  svgDragStartY = e.clientY - svgPanY;
+  svgArea.setPointerCapture(e.pointerId);
+  svgArea.classList.add('panning');
+});
+
+svgArea.addEventListener('pointermove', (e) => {
+  if (!svgDragging) return;
+  svgPanX = e.clientX - svgDragStartX;
+  svgPanY = e.clientY - svgDragStartY;
+  applyTransform();
+});
+
+svgArea.addEventListener('pointerup', () => {
+  svgDragging = false;
+  svgArea.classList.remove('panning');
+});
+
+function nav(delta) {
+  const next = currentIdx + delta;
+  if (next >= 0 && next < stations.length) selectStation(next);
+}
+
+// ── CS DRAWER ──────────────────────────────────────────────────────────
+function openCs() {
+  csOpen = true;
+  document.getElementById('cs').classList.remove('closed');
+  document.getElementById('cs').classList.add('anim-in');
+  document.getElementById('map-area').classList.add('with-right-drawer');
+  document.getElementById('btn-cs').classList.add('is-on');
+  if (lpOpen) updateLpRight();
+}
+function closeCs() {
+  csOpen = false;
+  document.getElementById('cs').classList.add('closed');
+  document.getElementById('map-area').classList.remove('with-right-drawer', 'xp-max');
+  document.getElementById('btn-cs').classList.remove('is-on');
+  csMaximized = false;
+  if (lpOpen) updateLpRight();
+}
+function toggleCsMax() {
+  csMaximized = !csMaximized;
+  document.getElementById('cs').classList.toggle('maximized', csMaximized);
+  document.getElementById('map-area').classList.toggle('xp-max', csMaximized);
+  const icon = document.getElementById('btn-cs-max');
+  icon.title = csMaximized ? 'Minimer' : 'Maksimer';
+  if (lpOpen) updateLpRight();
+}
+function updateLpRight() {
+  // The CSS handles this via .with-right-drawer and .xp-max on .map-area
+}
+
+// ── LP DRAWER ──────────────────────────────────────────────────────────
+function openLp() {
+  lpOpen = true;
+  document.getElementById('lp').classList.remove('closed');
+  document.getElementById('btn-lp').classList.add('is-on');
+  const icon = document.getElementById('lp-toggle-icon');
+  icon.querySelector('path').setAttribute('d', 'M2 7l3.5-4 3.5 4');
+  if (stations.length) {
+    const s0 = stations[0], sN = stations[stations.length - 1];
+    document.getElementById('lp-range').textContent =
+      'PR ' + s0.stasjon_m.toFixed(0) + ' – ' + sN.stasjon_m.toFixed(0);
+  }
+  setTimeout(drawLp, 280);
+}
+function toggleLp() {
+  lpOpen = !lpOpen;
+  document.getElementById('lp').classList.toggle('closed', !lpOpen);
+  document.getElementById('btn-lp').classList.toggle('is-on', lpOpen);
+  const icon = document.getElementById('lp-toggle-icon');
+  icon.querySelector('path').setAttribute('d', lpOpen ? 'M2 7l3.5-4 3.5 4' : 'M2 3l3.5 4 3.5-4');
+  if (lpOpen) setTimeout(drawLp, 280);
+}
+
+// ── LP CHART ───────────────────────────────────────────────────────────
+function drawLp() {
+  if (!stations.length) return;
+  const area = document.querySelector('.lp-area');
+  const cnv = document.getElementById('lp-canvas');
+  const W = area.clientWidth, H = area.clientHeight;
+  if (!W || !H) return;
+  cnv.width = W; cnv.height = H;
+  const ctx = cnv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,.04)' : 'rgba(6,41,72,.05)';
+  const axisColor = isDark ? 'rgba(255,255,255,.15)' : 'rgba(6,41,72,.15)';
+  const labelColor = isDark ? '#6a7682' : '#8a96a2';
+  const lineColor = '#1f8a4a';          // R700: prosjektert profil — solid tung
+  const fillColor = isDark ? 'rgba(31,138,74,.08)' : 'rgba(31,138,74,.1)';
+  const terrengColor = isDark ? '#9b7a2e' : '#8b5e1a';  // R700: eksisterende terreng
+  const cursorColor = '#e0228e';
+
+  const PAD = { t: 10, r: 18, b: 28, l: 50 };
+  const iW = W - PAD.l - PAD.r, iH = H - PAD.t - PAD.b;
+
+  const stMin = stations[0].stasjon_m;
+  const stMax = stations[stations.length - 1].stasjon_m;
+  const elevs = stations.map(s => s.z);
+  const terrengElevs = stations.map(s => s.z_terreng).filter(z => z != null);
+  const hasTerreng = terrengElevs.length > 0;
+
+  // Y-range encompasses both design and terrain elevations
+  const allElevs = [...elevs, ...terrengElevs];
+  const elMin = Math.min(...allElevs) - 2, elMax = Math.max(...allElevs) + 2;
+
+  const xOf = st => PAD.l + ((st - stMin) / (stMax - stMin)) * iW;
+  const yOf = el => PAD.t + iH - ((el - elMin) / (elMax - elMin)) * iH;
+
+  // Grid Y
+  const yStep = niceStep((elMax - elMin) / Math.max(3, Math.floor(iH / 32)));
+  ctx.strokeStyle = gridColor; ctx.lineWidth = 1;
+  ctx.fillStyle = labelColor;
+  ctx.font = '10px "JetBrains Mono", monospace'; ctx.textAlign = 'right';
+  for (let el = Math.ceil(elMin / yStep) * yStep; el <= elMax; el += yStep) {
+    const y = yOf(el);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillText(el.toFixed(0), PAD.l - 5, y + 3.5);
+  }
+
+  // Grid X
+  const xStep = niceStep((stMax - stMin) / Math.max(3, Math.floor(iW / 80)));
+  ctx.textAlign = 'center';
+  for (let st = Math.ceil(stMin / xStep) * xStep; st <= stMax; st += xStep) {
+    const x = xOf(st);
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b + 4); ctx.stroke();
+    ctx.fillText(st.toFixed(0), x, H - PAD.b + 16);
+  }
+
+  // Axes
+  ctx.strokeStyle = axisColor; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, PAD.t); ctx.lineTo(PAD.l, H - PAD.b);
+  ctx.lineTo(W - PAD.r, H - PAD.b);
+  ctx.stroke();
+
+  // Y label
+  ctx.save();
+  ctx.translate(13, PAD.t + iH / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = labelColor; ctx.font = '10px "Inter Tight", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('H.o.h. (m)', 0, 0);
+  ctx.restore();
+
+  // R700 Eksisterende terreng — stiplet tynn linje (tegnes under prosjektert profil)
+  if (hasTerreng) {
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = terrengColor; ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    let started = false;
+    for (const s of stations) {
+      if (s.z_terreng == null) { started = false; continue; }
+      const x = xOf(s.stasjon_m), y = yOf(s.z_terreng);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Fill under design profile
+  ctx.beginPath();
+  ctx.moveTo(xOf(stMin), H - PAD.b);
+  for (const s of stations) ctx.lineTo(xOf(s.stasjon_m), yOf(s.z));
+  ctx.lineTo(xOf(stMax), H - PAD.b);
+  ctx.closePath();
+  ctx.fillStyle = fillColor; ctx.fill();
+
+  // R700 Prosjektert profil — solid tung linje
+  ctx.beginPath(); ctx.strokeStyle = lineColor; ctx.lineWidth = 2.0;
+  stations.forEach((s, i) => {
+    if (i === 0) ctx.moveTo(xOf(s.stasjon_m), yOf(s.z));
+    else ctx.lineTo(xOf(s.stasjon_m), yOf(s.z));
+  });
+  ctx.stroke();
+
+  // Profilhøyde-etiketter ved 100 m-intervaller (R700 rubrikk-lignende)
+  const labelInterval = niceStep((stMax - stMin) / Math.max(2, Math.floor(iW / 60)));
+  ctx.fillStyle = lineColor;
+  ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+  for (let st = Math.ceil(stMin / labelInterval) * labelInterval; st <= stMax; st += labelInterval) {
+    const s = stations.reduce((a, b) =>
+      Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
+    const x = xOf(s.stasjon_m), y = yOf(s.z);
+    ctx.fillText(s.z.toFixed(1), x, y - 5);
+  }
+
+  // Terrenghøyde-etiketter ved samme intervaller
+  if (hasTerreng) {
+    ctx.fillStyle = terrengColor;
+    ctx.font = '8px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    for (let st = Math.ceil(stMin / labelInterval) * labelInterval; st <= stMax; st += labelInterval) {
+      const s = stations.reduce((a, b) =>
+        Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
+      if (s.z_terreng == null) continue;
+      const x = xOf(s.stasjon_m), y = yOf(s.z_terreng);
+      ctx.fillText(s.z_terreng.toFixed(1), x, y + 12);
+    }
+  }
+
+  // Liten forklaring øvre høyre (R700: tegnforklaring)
+  const legX = W - PAD.r - 4, legY = PAD.t + 10;
+  ctx.font = '9px "Inter Tight", sans-serif'; ctx.textAlign = 'right';
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 2.0; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(legX - 28, legY); ctx.lineTo(legX - 8, legY); ctx.stroke();
+  ctx.fillStyle = lineColor; ctx.fillText('Prosjektert profil', legX - 32, legY + 3.5);
+  if (hasTerreng) {
+    ctx.strokeStyle = terrengColor; ctx.lineWidth = 1.0; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(legX - 28, legY + 14); ctx.lineTo(legX - 8, legY + 14); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = terrengColor; ctx.fillText('Eksisterende terreng', legX - 32, legY + 17.5);
+  }
+  ctx.setLineDash([]);
+
+  // Station ticks
+  ctx.strokeStyle = 'rgba(224,34,142,.25)'; ctx.lineWidth = 1;
+  for (const s of stations) {
+    const x = xOf(s.stasjon_m);
+    ctx.beginPath(); ctx.moveTo(x, H - PAD.b - 1); ctx.lineTo(x, H - PAD.b + 3); ctx.stroke();
+  }
+
+  // Cursor
+  if (currentIdx >= 0 && currentIdx < stations.length) {
+    const s = stations[currentIdx];
+    const x = xOf(s.stasjon_m), y = yOf(s.z);
+    ctx.strokeStyle = cursorColor; ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = cursorColor;
+    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(224,34,142,.2)';
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+    // Terreng-prikk ved cursor
+    if (s.z_terreng != null) {
+      const yt = yOf(s.z_terreng);
+      ctx.fillStyle = terrengColor;
+      ctx.beginPath(); ctx.arc(x, yt, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Click
+  cnv.onclick = e => {
+    const rect = cnv.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < stations.length; i++) {
+      const d = Math.abs(xOf(stations[i].stasjon_m) - mx);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    selectStation(best);
+  };
+}
+
+function niceStep(raw) {
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  if (n < 1.5) return mag;
+  if (n < 3.5) return 2 * mag;
+  if (n < 7.5) return 5 * mag;
+  return 10 * mag;
+}
+
+// ── LAYER TOGGLES ──────────────────────────────────────────────────────
+function toggleLayer(name) {
+  layerVis[name] = !layerVis[name];
+  const tog = document.getElementById('tog-' + name);
+  const row = document.getElementById('row-' + name);
+  tog.classList.toggle('on', layerVis[name]);
+  tog.textContent = layerVis[name] ? '✓' : '';
+  row.classList.toggle('active', layerVis[name]);
+  row.classList.toggle('muted', !layerVis[name]);
+  const layer = name === 'centerline' ? clLayer : stLayer;
+  if (layer) layer.visible = layerVis[name];
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ── MAP CONTROLS ───────────────────────────────────────────────────────
+function mapZoom(delta) {
+  if (view) view.zoom += delta;
+}
+function mapHome() {
+  if (stLayer && stLayer.fullExtent) {
+    view.goTo({ target: stLayer.fullExtent.expand(1.5) }, { duration: 500 });
+  }
+}
+
+window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(); });
+
+// Expose functions used by inline onclick handlers (required in ES module context)
+Object.assign(window, {
+  toggleTheme, toggleLp, openCs, closeCs, toggleCsMax,
+  toggleLayer, toggleSidebar, mapZoom, mapHome,
+  nav, drawLp, svgZoomBtn, resetCsZoom,
+});
+</script>
+</body>
+</html>

@@ -60,6 +60,8 @@ def create_point_fc(
     )
     arcpy.management.AddField(fc_path, "stasjon_m", "DOUBLE")
     arcpy.management.AddField(fc_path, "profil_nr", "TEXT", field_length=20)
+    arcpy.management.AddField(fc_path, "z_moh", "DOUBLE")
+    arcpy.management.AddField(fc_path, "z_terreng", "DOUBLE")
 
     transformer = (
         Transformer.from_crs(source_epsg, 25833, always_xy=True)
@@ -67,14 +69,14 @@ def create_point_fc(
         else None
     )
 
-    with arcpy.da.InsertCursor(fc_path, ["stasjon_m", "profil_nr", "SHAPE@"]) as cur:
+    with arcpy.da.InsertCursor(fc_path, ["stasjon_m", "profil_nr", "z_moh", "z_terreng", "SHAPE@"]) as cur:
         for row in stations:
             x, y = row["x"], row["y"]
             if transformer is not None:
                 x, y = transformer.transform(x, y)
             pt = arcpy.Point(x, y, row["z"])
             geom = arcpy.PointGeometry(pt, sr)
-            cur.insertRow((row["station_m"], row["profil_nr"], geom))
+            cur.insertRow((row["station_m"], row["profil_nr"], row["z"], row.get("z_terreng"), geom))
 
     logger.info("Opprettet FC '%s' med %d punkt(er)", fc_name, len(stations))
     return fc_path
@@ -162,14 +164,12 @@ def main(argv: list[str] | None = None) -> None:
         with arcpy.da.SearchCursor(fc_path, ["OID@", "stasjon_m"]) as cur:
             with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "svg_path"]) as ins:
                 for oid, station_m in cur:
-                    tp_svg = svgs_dir / f"tverrprofil_{station_m:07.1f}.svg"
-                    np_svg = svgs_dir / f"normalprofil_{station_m:07.1f}.svg"
-                    for svg in (tp_svg, np_svg):
-                        if svg.exists():
-                            ins.insertRow((oid, str(svg)))
-                            rows_added += 1
-                        else:
-                            logger.warning("SVG ikke funnet: %s", svg)
+                    svg = svgs_dir / f"tverrprofil_{station_m:07.1f}.svg"
+                    if svg.exists():
+                        ins.insertRow((oid, str(svg)))
+                        rows_added += 1
+                    else:
+                        logger.warning("SVG ikke funnet: %s", svg)
 
         if rows_added > 0:
             arcpy.management.AddAttachments(fc_path, "OBJECTID", match_tbl, "fc_oid", "svg_path")
@@ -188,6 +188,31 @@ def main(argv: list[str] | None = None) -> None:
 
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         result["feature_count"] = feature_count
+
+        # Query back from AGOL in UTM33 (EPSG:25833) for local map display
+        try:
+            from arcgis.features import FeatureLayer
+            lyr = FeatureLayer(result["url"] + "/0", gis=gis)
+            fset = lyr.query(
+                where="1=1", out_fields="stasjon_m,profil_nr,z_moh,z_terreng",
+                out_sr=25833, return_geometry=True,
+            )
+            result["utm33_stations"] = [
+                {
+                    "station_m": f.attributes.get("stasjon_m"),
+                    "profil_nr": f.attributes.get("profil_nr", ""),
+                    "x": f.geometry["x"],
+                    "y": f.geometry["y"],
+                    "z_moh": f.attributes.get("z_moh"),
+                    "z_terreng": f.attributes.get("z_terreng"),
+                }
+                for f in fset.features
+                if f.geometry
+            ]
+            logger.info("Hentet %d UTM33-stasjoner fra AGOL", len(result["utm33_stations"]))
+        except Exception as exc:
+            logger.warning("Kunne ikke hente UTM33-stasjoner fra AGOL: %s", exc)
+
         print(json.dumps(result))
         sys.exit(0)
 

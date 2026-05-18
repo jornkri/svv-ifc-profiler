@@ -54,6 +54,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--token", default=None, help="AGOL OAuth2-token")
     parser.add_argument("--org-url", default=None, dest="org_url",
                         help="ArcGIS Online organisasjons-URL")
+    parser.add_argument("--input-wkid", type=int, default=None, dest="input_wkid",
+                        help="EPSG-kode for IFC-filens koordinatsystem (brukes når IFC mangler georef)")
+    parser.add_argument("--output-wkid", type=int, default=25833, dest="output_wkid",
+                        help="EPSG-kode for ønsket utdata-CRS (default: 25833 = UTM33N)")
     args = parser.parse_args(argv)
 
     def _fail(err: ArcpyProcessorError) -> NoReturn:
@@ -77,7 +81,9 @@ def main(argv: list[str] | None = None) -> None:
         if dataset_name and dataset_name[0].isdigit():
             dataset_name = "_" + dataset_name[:49]
 
-        fc_paths = convert_bim(args.ifc, dataset_name, wkid=25833)
+        fc_paths = convert_bim(args.ifc, dataset_name,
+                               input_wkid=args.input_wkid,
+                               output_wkid=args.output_wkid)
         if not fc_paths:
             raise ArcpyProcessorError(
                 NO_FEATURES,

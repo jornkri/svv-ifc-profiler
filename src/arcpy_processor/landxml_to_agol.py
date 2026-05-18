@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="Kommaseparerte PlanFeature-navn (default: alle)")
     parser.add_argument("--source-epsg", type=int, default=None,
                         help="Overstyr kilde-EPSG hvis mangler i fil")
+    parser.add_argument("--lengdeprofil", default=None,
+                        help="Sti til lengdeprofil.svg — festes som vedlegg til senterlinjefeatures")
     parser.add_argument("--token", default=None,
                         help="OAuth2 access_token (overstyrer .env credentials)")
     parser.add_argument("--org-url", default=None,
@@ -159,9 +161,48 @@ def main(argv: list[str] | None = None) -> None:
 
         feature_count = int(arcpy.management.GetCount(fc_path)[0])
 
+        if args.lengdeprofil:
+            lp_path = Path(args.lengdeprofil)
+            if lp_path.exists():
+                arcpy.management.EnableAttachments(fc_path)
+                match_tbl = os.path.join(arcpy.env.scratchGDB, f"{dataset_name}_lp_match")
+                if arcpy.Exists(match_tbl):
+                    arcpy.management.Delete(match_tbl)
+                arcpy.management.CreateTable(
+                    arcpy.env.scratchGDB, f"{dataset_name}_lp_match"
+                )
+                arcpy.management.AddField(match_tbl, "fc_oid", "LONG")
+                arcpy.management.AddField(match_tbl, "file_path", "TEXT", field_length=512)
+                with arcpy.da.SearchCursor(fc_path, ["OID@"]) as cur:
+                    with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "file_path"]) as ins:
+                        for (oid,) in cur:
+                            ins.insertRow((oid, str(lp_path)))
+                arcpy.management.AddAttachments(
+                    fc_path, "OBJECTID", match_tbl, "fc_oid", "file_path"
+                )
+                logger.info("Festet lengdeprofil som vedlegg til %d feature(s)", feature_count)
+            else:
+                logger.warning("--lengdeprofil-fil ikke funnet: %s", args.lengdeprofil)
+
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         result["feature_count"] = feature_count
         result["source_epsg"] = source_epsg
+
+        # Query back from AGOL in UTM33 (EPSG:25833) for local map display
+        try:
+            from arcgis.features import FeatureLayer
+            lyr = FeatureLayer(result["url"] + "/0", gis=gis)
+            fset = lyr.query(where="1=1", out_fields="name", out_sr=25833, return_geometry=True)
+            paths: list[list] = []
+            for f in fset.features:
+                if f.geometry and "paths" in f.geometry:
+                    for path in f.geometry["paths"]:
+                        paths.append(path)
+            result["utm33_centerline_paths"] = paths
+            logger.info("Hentet %d UTM33-senterlinjesegmenter fra AGOL", len(paths))
+        except Exception as exc:
+            logger.warning("Kunne ikke hente UTM33-senterlinje fra AGOL: %s", exc)
+
         print(json.dumps(result))
         sys.exit(0)
 

@@ -22,15 +22,48 @@ def test_convert_bim_calls_bimfile_to_geodatabase():
     arcpy_mock.env.workspace = ""
     arcpy_mock.ListFeatureClasses.return_value = ["Planum", "Skjaering"]
     arcpy_mock.SpatialReference.return_value = MagicMock()
+    arcpy_mock.management.GetCount.side_effect = None
+    arcpy_mock.management.GetCount.return_value = [3]  # alle FCs har data
 
     from src.arcpy_processor import converter
     import importlib; importlib.reload(converter)
 
-    fcs = converter.convert_bim("test.ifc", "test_dataset", wkid=25833)
+    fcs = converter.convert_bim("test.ifc", "test_dataset", output_wkid=25833)
     arcpy_mock.conversion.BIMFileToGeodatabase.assert_called_once()
     assert len(fcs) == 2
     assert "Planum" in fcs[0]
     assert "Skjaering" in fcs[1]
+
+
+def test_convert_bim_skips_empty_fcs():
+    """convert_bim skal slette tomme FC-er rett etter BIMFileToGeodatabase."""
+    arcpy_mock.env.scratchFolder = "C:/scratch"
+    arcpy_mock.Exists.return_value = False
+    arcpy_mock.management.CreateFileGDB.return_value = None
+    arcpy_mock.conversion.BIMFileToGeodatabase.return_value = None
+    arcpy_mock.env.workspace = ""
+    arcpy_mock.ListFeatureClasses.return_value = ["Planum", "TomFC", "Skjaering"]
+    arcpy_mock.SpatialReference.return_value = MagicMock()
+    arcpy_mock.management.Delete.reset_mock()
+
+    def _count(fc_path):
+        if "TomFC" in fc_path:
+            return [0]
+        return [5]
+
+    arcpy_mock.management.GetCount.side_effect = _count
+
+    from src.arcpy_processor import converter
+    import importlib; importlib.reload(converter)
+
+    fcs = converter.convert_bim("test.ifc", "test_dataset", output_wkid=25833)
+    # TomFC skal være slettet
+    arcpy_mock.management.Delete.assert_called()
+    deleted_args = [call[0][0] for call in arcpy_mock.management.Delete.call_args_list]
+    assert any("TomFC" in str(a) for a in deleted_args)
+    # Kun Planum og Skjaering i retur (ListFeatureClasses returnerer fortsatt alle 3 i mock,
+    # men den andre kallet kan variere — sjekk at Delete ble kalt)
+    assert len(fcs) >= 1
 
 
 def test_delete_empty_fcs_removes_zero_count():
@@ -67,5 +100,5 @@ def test_convert_bim_raises_on_arcpy_error():
     import importlib; importlib.reload(converter)
 
     with pytest.raises(ArcpyProcessorError) as exc_info:
-        converter.convert_bim("bad.ifc", "ds", wkid=25833)
+        converter.convert_bim("bad.ifc", "ds", output_wkid=25833)
     assert exc_info.value.code == BIM_CONVERSION_FAILED

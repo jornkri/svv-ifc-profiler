@@ -18,9 +18,11 @@ def _env(name: str, default: str = "") -> str:
 
 
 @router.get("/login")
-def auth_login(request: Request) -> RedirectResponse:
+def auth_login(request: Request, next: str = "") -> RedirectResponse:
     state = str(uuid.uuid4())
     request.session["oauth_state"] = state
+    if next:
+        request.session["oauth_next"] = next
     org_url = _env("AGOL_ORG_URL", "https://www.arcgis.com")
     url = (
         f"{org_url}/sharing/rest/oauth2/authorize"
@@ -69,7 +71,8 @@ def auth_callback(request: Request, code: str, state: str) -> RedirectResponse:
         "full_name": user.get("fullName", ""),
         "org_url": org_url,
     })
-    frontend_url = _env("FRONTEND_URL", "http://localhost:5173")
+    next_url = request.session.pop("oauth_next", None)
+    frontend_url = next_url or _env("FRONTEND_URL", "http://localhost:5173")
     return RedirectResponse(frontend_url)
 
 
@@ -81,6 +84,17 @@ def auth_me(request: Request) -> dict:
         "username": request.session.get("username"),
         "full_name": request.session.get("full_name"),
         "org_url": request.session.get("org_url"),
+    }
+
+
+@router.get("/token")
+def auth_token(request: Request) -> dict:
+    if "access_token" not in request.session:
+        raise HTTPException(401, "Ikke innlogget")
+    return {
+        "access_token": request.session["access_token"],
+        "org_url": request.session.get("org_url", "https://www.arcgis.com"),
+        "username": request.session.get("username", ""),
     }
 
 

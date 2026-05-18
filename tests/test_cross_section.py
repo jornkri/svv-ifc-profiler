@@ -27,6 +27,7 @@ def _flat_road_tin(y_min=-5.0, y_max=5.0, z=0.0) -> TINLayer:
     return TINLayer(
         element_id="test-planum",
         name="Planum",
+        label="Planum",
         layer="3D_D_Planum_Test",
         road_class="planum",
         triangles=triangles,

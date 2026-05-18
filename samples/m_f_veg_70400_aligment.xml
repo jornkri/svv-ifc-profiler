@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.landxml.org/schema/LandXML-1.2 http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" date="2026-05-08+02:00" time="15:16:35+02:00" version="1.2" language="Norwegian" readOnly="false">
+  <Project name="E39_Rige-Grauthelleren-mindre_tiltak_C17568" desc="En kort prosjektbeskrivelse, ett navn eller en kode." state="proposed"/>
+  <Application name="Quadri" manufacturer="Trimble Solutions Sandvika AS" manufacturerURL="http://www.novapoint.com" version="Quadri(28.0.440.0)" timeStamp="2026-03-04T13:28:27">
+    <Author createdBy="jonups"/>
+  </Application>
+  <Units>
+    <Metric angularUnit="radians" areaUnit="squareMeter" diameterUnit="meter" directionUnit="radians" elevationUnit="meter" flowUnit="cubicMeterSecond" heightUnit="meter" latLongAngularUnit="radians" linearUnit="meter" pressureUnit="mmHG" temperatureUnit="celsius" velocityUnit="kilometersPerHour" volumeUnit="cubicMeter" widthUnit="meter"/>
+  </Units>
+  <CoordinateSystem rotationAngle="0.000000" epsgCode="5947" horizontalDatum="EPSG:5107" verticalDatum="EPSG:5941"/>
+  <Alignments name="Mapdata">
+    <Alignment name="70400" state="proposed" staStart="0.000000" length="128.768015">
+      <CoordGeom>
+        <Curve delta="0.255369" radius="50.000000" rot="cw" chord="12.733793" dirStart="4.609796" dirEnd="4.865165" staStart="0.000000" length="12.768460">
+          <Start>1016247.465000 124417.302000</Start>
+          <End>1016247.784477 124404.572215</End>
+          <Center>1016297.202097 124412.181341</Center>
+        </Curve>
+        <Line dir="4.865165" staStart="12.768460" length="44.772356">
+          <Start>1016247.784477 124404.572215</Start>
+          <End>1016254.598047 124360.321349</End>
+        </Line>
+        <Curve delta="-1.161004" radius="25.000000" rot="ccw" chord="27.422184" dirStart="4.865165" dirEnd="3.704161" staStart="57.540816" length="29.025095">
+          <Start>1016254.598047 124360.321349</Start>
+          <End>1016243.223256 124335.369590</End>
+          <Center>1016229.889237 124356.516786</Center>
+        </Curve>
+        <Line dir="3.704161" staStart="86.565910" length="5.910425">
+          <Start>1016243.223256 124335.369590</Start>
+          <End>1016238.223699 124332.217201</End>
+        </Line>
+        <Curve delta="0.745540" radius="25.000000" rot="cw" chord="18.209825" dirStart="3.704161" dirEnd="4.449701" staStart="92.476336" length="18.638495">
+          <Start>1016238.223699 124332.217201</Start>
+          <End>1016227.415331 124317.561932</End>
+          <Center>1016251.557718 124311.070004</Center>
+        </Curve>
+        <Line dir="4.449701" staStart="111.114831" length="17.653184">
+          <Start>1016227.415331 124317.561932</Start>
+          <End>1016222.831203 124300.514332</End>
+        </Line>
+      </CoordGeom>
+      <Profile name="70400" staStart="0.000000">
+        <ProfAlign name="70400">
+          <PVI>-0.067900 90.912900</PVI>
+          <CircCurve length="23.830050" radius="400.000000">55.851812 89.411718</CircCurve>
+          <CircCurve length="7.660598" radius="250.000000">103.143508 90.960424</CircCurve>
+          <PVI>127.755651 91.011959</PVI>
+        </ProfAlign>
+      </Profile>
+    </Alignment>
+  </Alignments>
+</LandXML>

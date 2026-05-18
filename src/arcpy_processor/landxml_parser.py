@@ -1,10 +1,37 @@
 # src/arcpy_processor/landxml_parser.py
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .errors import ArcpyProcessorError, LANDXML_PARSE_ERROR
+
+
+def _sample_arc(
+    s: tuple[float, float, float],
+    e: tuple[float, float, float],
+    c: tuple[float, float, float],
+    rot: str,
+    arc_len: float,
+) -> list[tuple[float, float, float]]:
+    cx, cy = c[0], c[1]
+    r = math.hypot(s[0] - cx, s[1] - cy)
+    theta_s = math.atan2(s[1] - cy, s[0] - cx)
+    theta_e = math.atan2(e[1] - cy, e[0] - cx)
+    if rot == "cw":
+        if theta_e > theta_s:
+            theta_e -= 2 * math.pi
+    else:
+        if theta_e < theta_s:
+            theta_e += 2 * math.pi
+    n = max(2, int(arc_len / 5))
+    pts: list[tuple[float, float, float]] = []
+    for i in range(1, n + 1):
+        t = i / n
+        theta = theta_s + t * (theta_e - theta_s)
+        pts.append((cx + r * math.cos(theta), cy + r * math.sin(theta), s[2] + t * (e[2] - s[2])))
+    return pts
 
 
 def parse_landxml(
@@ -79,16 +106,17 @@ def parse_landxml(
                 LANDXML_PARSE_ERROR, f"Ugyldig koordinat '{text.strip()}': {exc}"
             ) from exc
 
-    plan_features = find_all(root, "PlanFeature")
-    result: dict[str, list[tuple[float, float, float]]] = {}
-    for pf in plan_features:
-        name = pf.get("name", "")
-        if features is not None and name not in features:
-            continue
+    def _extract_pts_from_geom(parent: ET.Element) -> list[tuple[float, float, float]]:
+        """Ekstraherer punkter fra CoordGeom Line- og Curve-elementer.
+        Curve-buer samples med ~5 m oppløsning via sentrum og rotasjonsretning.
+        """
         pts: list[tuple[float, float, float]] = []
-        for line in find_all(pf, "Line"):
-            start_el = find_one(line, "Start")
-            end_el = find_one(line, "End")
+        for seg in list(parent):
+            tag = seg.tag.split("}")[-1] if "}" in seg.tag else seg.tag
+            if tag not in ("Line", "Curve"):
+                continue
+            start_el = find_one(seg, "Start")
+            end_el = find_one(seg, "End")
             if start_el is None or end_el is None:
                 continue
             if start_el.text is None or end_el.text is None:
@@ -97,18 +125,56 @@ def parse_landxml(
             e_pt = parse_coord(end_el.text)
             if not pts:
                 pts.append(s)
-            # tuple float-equality OK: adjacent End/Start share bit-identical text values
+            if tag == "Curve":
+                center_el = find_one(seg, "Center")
+                if center_el is not None and center_el.text:
+                    c = parse_coord(center_el.text)
+                    rot = seg.get("rot", "ccw")
+                    arc_len = float(seg.get("length") or
+                                    math.hypot(e_pt[0] - s[0], e_pt[1] - s[1]))
+                    for pt in _sample_arc(s, e_pt, c, rot, arc_len):
+                        if pt != pts[-1]:
+                            pts.append(pt)
+                    continue
             if e_pt != pts[-1]:
                 pts.append(e_pt)
+        return pts
+
+    result: dict[str, list[tuple[float, float, float]]] = {}
+
+    # --- PlanFeatures (FV229 / Gemini-format) ---
+    plan_features = find_all(root, "PlanFeature")
+    for pf in plan_features:
+        name = pf.get("name", "")
+        if features is not None and name not in features:
+            continue
+        geom_el = find_one(pf, "CoordGeom")
+        parent = geom_el if geom_el is not None else pf
+        pts = _extract_pts_from_geom(parent)
         if len(pts) >= 2:
             result[name] = pts
 
+    # --- Alignments (Quadri / Novapoint-format) ---
     if not result:
-        available = [pf.get("name", "") for pf in plan_features]
-        hint = f" Tilgjengelige PlanFeatures: {available}." if available else ""
+        for al in find_all(root, "Alignment"):
+            name = al.get("name", "")
+            if features is not None and name not in features:
+                continue
+            geom_el = find_one(al, "CoordGeom")
+            if geom_el is None:
+                continue
+            pts = _extract_pts_from_geom(geom_el)
+            if len(pts) >= 2:
+                result[name] = pts
+
+    if not result:
+        available_pf = [pf.get("name", "") for pf in plan_features]
+        available_al = [al.get("name", "") for al in find_all(root, "Alignment")]
+        available = available_pf or available_al
+        hint = f" Tilgjengelige features: {available}." if available else ""
         raise ArcpyProcessorError(
             LANDXML_PARSE_ERROR,
-            f"Ingen matchende PlanFeatures funnet i '{Path(path).name}'.{hint}",
+            f"Ingen matchende PlanFeatures eller Alignments funnet i '{Path(path).name}'.{hint}",
         )
 
     return result, epsg
