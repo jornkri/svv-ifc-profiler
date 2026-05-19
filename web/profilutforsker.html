@@ -1287,6 +1287,28 @@ function copyMeasure() {
   navigator.clipboard.writeText(row).catch(() => {});
 }
 
+function remeasureAfterLoad() {
+  if (!measurement || !currentCoordMap) return;
+  const svg = csSvgEl();
+  if (!svg) return;
+
+  ['a', 'b'].forEach(key => {
+    const pt = measurement[key];
+    if (!pt) return;
+    const {svgX, svgY} = currentCoordMap.realToSvg(pt.x_m, pt.z_m);
+    const snap = snapToPath(svg, svgX, svgY, 999);
+    if (snap) {
+      const real = currentCoordMap.svgToReal(snap.x, snap.y);
+      const dist = Math.hypot(real.x_m - pt.x_m, real.z_m - pt.z_m);
+      measurement[key] = {svgX: snap.x, svgY: snap.y, x_m: real.x_m, z_m: real.z_m, loose: dist > 2};
+    } else {
+      measurement[key] = {...pt, svgX, svgY, loose: true};
+    }
+  });
+
+  if (measureMode === 'result') renderMeasureOverlay();
+}
+
 // Draw perpendicular cross-section extent line on the map
 function drawCrossSectionLine(s, idx, xTicks) {
   if (!selectedLayer || !window._Graphic) return;
@@ -1975,6 +1997,7 @@ async function loadSvg(stasjon_m) {
     currentCoordMap = buildCoordMap(svgEl, elev);
 
     resetCsZoom();
+    remeasureAfterLoad();
     return parseSvgXTicks(svgText);
   } catch (_) {
     loading.style.display = 'none';
