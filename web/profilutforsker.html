@@ -1021,12 +1021,7 @@ function parseSvgXTicks(svgText) {
 }
 
 function _findCommentIn(el) {
-  for (const n of el.childNodes) {
-    if (n.nodeType === 8) return n;
-    const found = _findCommentIn(n);
-    if (found) return found;
-  }
-  return null;
+  return Array.from(el.childNodes).find(n => n.nodeType === 8) || null;
 }
 
 function buildCoordMap(svgEl, stationElevation) {
@@ -1734,6 +1729,7 @@ async function loadSvg(stasjon_m) {
 
     const parser = new DOMParser();
     const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+    if (svgDoc.querySelector('parsererror')) throw new Error('SVG parse error');
     const svgEl = svgDoc.documentElement;
     svgEl.removeAttribute('width');
     svgEl.removeAttribute('height');
@@ -1752,6 +1748,7 @@ async function loadSvg(stasjon_m) {
 
     // Build coord map after SVG is in DOM (comment nodes accessible)
     const stIdx = stations.findIndex(s => Math.abs(s.stasjon_m - stasjon_m) < 0.01);
+    if (stIdx < 0) console.warn('buildCoordMap: stasjon ikke funnet for', stasjon_m, '— høyde settes til 0');
     const elev = stIdx >= 0 ? stations[stIdx].z : 0;
     currentCoordMap = buildCoordMap(svgEl, elev);
 
