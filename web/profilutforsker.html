@@ -309,7 +309,9 @@ kbd {
 .legend-row .sw { width: 16px; height: 8px; border-radius: 1px; flex: 0 0 16px; }
 .legend-row .sw.line { height: 0; border-top: 2px dashed currentColor; }
 .legend-row .sw.dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; margin-left: 3.5px; }
+.legend-row .sw.rect { width: 14px; height: 10px; border-radius: 2px; flex: 0 0 14px; border: 0.5px solid rgba(0,0,0,.2); }
 .legend-row span { font-size: 11px; color: var(--ink-2); }
+.legend-divider { margin: 5px 0 3px; border: none; border-top: 1px solid var(--line-2); }
 
 /* Map tooltip */
 .map-tooltip {
@@ -384,11 +386,18 @@ kbd {
 }
 .dr-svg-area.panning { cursor: grabbing; }
 .drawer-right.maximized .dr-svg-area { min-height: 42vh; }
-#cs-img {
+#cs-svg-host {
   position: absolute; top: 0; left: 0;
-  max-width: none; display: none;
-  transform-origin: 0 0; user-select: none; pointer-events: none;
-  background: var(--card);
+  width: 100%; height: 100%;
+}
+#cs-svg-host > svg {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0; user-select: none;
+  display: block; background: var(--card);
+  overflow: visible;
+}
+html[data-theme="dark"] #cs-svg-host > svg {
+  filter: invert(0.88) hue-rotate(180deg);
 }
 .svg-zoom-ctrl {
   position: absolute; top: 7px; right: 7px; z-index: 5;
@@ -664,6 +673,15 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <span class="layer-count" id="cnt-stations" style="display:none">—</span>
       </div>
     </div>
+    <div class="sb-group" id="grp-bim" style="display:none">
+      <div class="sb-grp-title">BIM-modell</div>
+      <div class="layer-row active" id="row-bim" onclick="toggleLayer('bim')">
+        <button class="layer-toggle on" id="tog-bim">✓</button>
+        <div class="layer-swatch" style="width:14px;height:10px;border-radius:2px;background:#646468;border:0.5px solid #3c3c46;flex:0 0 14px;margin:0 2px"></div>
+        <span class="layer-name">Vegmodell (2D)</span>
+        <span class="layer-count" id="cnt-bim" style="display:none">—</span>
+      </div>
+    </div>
   </aside>
 
   <!-- MAP AREA -->
@@ -742,6 +760,26 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <span class="sw dot" style="background:var(--signal-pink)"></span>
         <span>Valgt stasjon</span>
       </div>
+      <div id="legend-bim" style="display:none">
+        <hr class="legend-divider">
+        <div class="legend-row" style="opacity:.6;margin-bottom:1px"><span style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4)">R700 · BIM</span></div>
+        <div class="legend-row">
+          <span class="sw rect" style="background:rgba(100,100,108,.87)"></span>
+          <span>Kjørefelt / vegbane</span>
+        </div>
+        <div class="legend-row">
+          <span class="sw rect" style="background:rgba(255,140,0,.78)"></span>
+          <span>Skulder</span>
+        </div>
+        <div class="legend-row">
+          <span class="sw rect" style="background:rgba(245,212,0,.78)"></span>
+          <span>Grøft / Skjæring / Fylling</span>
+        </div>
+        <div class="legend-row">
+          <span class="sw rect" style="background:rgba(220,40,120,.78)"></span>
+          <span>Gang-/sykkelveg</span>
+        </div>
+      </div>
     </div>
 
     <!-- Snap preview card (follows cursor near stations) -->
@@ -792,7 +830,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
       <div class="dr-svg-area">
         <div id="cs-placeholder">Klikk på et punkt i kartet</div>
         <div id="cs-loading"><div class="spin"></div></div>
-        <img id="cs-img" alt="Tverrprofil">
+        <div id="cs-svg-host"></div>
         <div class="svg-zoom-ctrl" id="svg-zoom-ctrl">
           <button class="svg-zoom-btn" onclick="svgZoomBtn(1.25)" title="Zoom inn">+</button>
           <button class="svg-zoom-btn" onclick="svgZoomBtn(0.8)" title="Zoom ut">−</button>
@@ -889,6 +927,7 @@ const GEODATA_KANVAS = 'https://vector.services.geodataonline.no/arcgis/rest/ser
 let view = null;
 let clLayer = null;
 let stLayer = null;
+let bimLayers = [];
 let hoverLayer = null;
 let selectedLayer = null;
 let stations = [];
@@ -897,12 +936,13 @@ let currentJobId = null;
 let lpOpen = false;
 let csOpen = false;
 let csMaximized = false;
-let layerVis = { centerline: true, stations: true };
+let layerVis = { centerline: true, stations: true, bim: true };
 let currentToken = null;
 let orgUrl = 'https://www.arcgis.com';
 let darkMode = false;
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
+let currentCoordMap = null;
 let hoverIdx = -1;
 
 // ── THEME ──────────────────────────────────────────────────────────────
@@ -978,6 +1018,60 @@ function parseSvgXTicks(svgText) {
     if (!isNaN(val)) ticks.push(val);
   }
   return ticks;
+}
+
+function _findCommentIn(el) {
+  for (const n of el.childNodes) {
+    if (n.nodeType === 8) return n;
+    const found = _findCommentIn(n);
+    if (found) return found;
+  }
+  return null;
+}
+
+function buildCoordMap(svgEl, stationElevation) {
+  const xTickEls = [...svgEl.querySelectorAll('[id^="xtick_"]')];
+  const yTickEls = [...svgEl.querySelectorAll('[id^="ytick_"]')];
+  if (xTickEls.length < 2 || yTickEls.length < 2) return null;
+
+  const parseTick = (els, attr) => els.map(g => {
+    const tspan = g.querySelector('tspan');
+    const comment = _findCommentIn(g);
+    if (!tspan || !comment) return null;
+    const svgPos = parseFloat(tspan.getAttribute(attr));
+    const realVal = parseFloat(comment.textContent.trim().replace(/−/g, '-'));
+    return (isNaN(svgPos) || isNaN(realVal)) ? null : {svgPos, realVal};
+  }).filter(Boolean);
+
+  const xTicks = parseTick(xTickEls, 'x').sort((a, b) => a.svgPos - b.svgPos);
+  // y-ticks: realVal is relative v; convert to absolute z using stationElevation
+  const yTicksRaw = parseTick(yTickEls, 'y').sort((a, b) => a.svgPos - b.svgPos);
+  const yTicks = yTicksRaw.map(t => ({svgPos: t.svgPos, realVal: t.realVal + stationElevation}));
+
+  if (xTicks.length < 2 || yTicks.length < 2) return null;
+
+  const x0 = xTicks[0], x1 = xTicks[xTicks.length - 1];
+  const y0 = yTicks[0], y1 = yTicks[yTicks.length - 1];
+
+  return {
+    svgToReal(svgX, svgY) {
+      const x_m = x0.realVal + (svgX - x0.svgPos) / (x1.svgPos - x0.svgPos) * (x1.realVal - x0.realVal);
+      const z_m = y0.realVal + (svgY - y0.svgPos) / (y1.svgPos - y0.svgPos) * (y1.realVal - y0.realVal);
+      return {x_m, z_m};
+    },
+    realToSvg(x_m, z_m) {
+      const svgX = x0.svgPos + (x_m - x0.realVal) / (x1.realVal - x0.realVal) * (x1.svgPos - x0.svgPos);
+      const svgY = y0.svgPos + (z_m - y0.realVal) / (y1.realVal - y0.realVal) * (y1.svgPos - y0.svgPos);
+      return {svgX, svgY};
+    },
+  };
+}
+
+function tagDataCsElements(svgEl) {
+  svgEl.querySelectorAll('[id^="cs:"]').forEach(g => {
+    const cls = g.id.slice(3);
+    g.querySelectorAll('path').forEach(p => { p.dataset.cs = cls; });
+  });
 }
 
 // Draw perpendicular cross-section extent line on the map
@@ -1211,6 +1305,7 @@ async function loadJobs() {
       opt.value = j.job_id;
       opt.dataset.centerlineUrl = j.centerline_url || '';
       opt.dataset.sectionsUrl = j.sections_url || '';
+      opt.dataset.bimUrl = j.bim_url || '';
       opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
       if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
       sel.appendChild(opt);
@@ -1223,10 +1318,10 @@ document.getElementById('job-select').addEventListener('change', async e => {
   const jobId = sel.value;
   if (!jobId) return;
   const opt = sel.options[sel.selectedIndex];
-  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl);
+  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '');
 });
 
-async function loadJob(jobId, centerlineUrl, sectionsUrl) {
+async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
   currentJobId = jobId;
   stations = [];
   currentIdx = -1;
@@ -1234,7 +1329,12 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl) {
 
   if (clLayer && window._map) window._map.remove(clLayer);
   if (stLayer && window._map) window._map.remove(stLayer);
-  clLayer = null; stLayer = null;
+  for (const l of bimLayers) { if (window._map) window._map.remove(l); }
+  clLayer = null; stLayer = null; bimLayers = [];
+
+  document.getElementById('grp-bim').style.display = 'none';
+  document.getElementById('legend-bim').style.display = 'none';
+  document.getElementById('cnt-bim').style.display = 'none';
 
   const emptyEl = document.getElementById('empty');
 
@@ -1377,6 +1477,10 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl) {
     }
 
     openLp();
+
+    // Load BIM layer in background — non-blocking
+    if (bimUrl) loadBimLayers(bimUrl).catch(e => console.warn('BIM-lag:', e));
+
   } catch (err) {
     console.error('loadJob:', err);
   } finally {
@@ -1388,6 +1492,96 @@ function setLoading(on, txt) {
   const el = document.getElementById('top-loading');
   el.style.display = on ? 'flex' : 'none';
   if (txt) document.getElementById('load-txt').textContent = txt;
+}
+
+// ── BIM LAYER ──────────────────────────────────────────────────────────
+function makeBimRenderer() {
+  // Arcade expression normalizes raw IFC Name to R700 category
+  const valueExpression = `
+    var n = Lower(IIF(HasValue($feature, "Name"), $feature["Name"], ""));
+    if (Find("bindlag", n) > -1 || Find("slitelag", n) > -1 ||
+        Find("baerelag", n) > -1 || Find("bærelag", n) > -1 ||
+        Find("forsterkningslag", n) > -1 || Find("vegbane", n) > -1 ||
+        Find("kjørefelt", n) > -1 || Find("kjorefelt", n) > -1)
+      return "kjørefelt";
+    if (Find("skulder", n) > -1) return "skulder";
+    if (Find("grøft", n) > -1 || Find("groft", n) > -1) return "grøft";
+    if (Find("skjæring", n) > -1 || Find("skjaering", n) > -1) return "skjæring";
+    if (Find("fylling", n) > -1) return "fylling";
+    if (Find("gangveg", n) > -1 || Find("sykkelveg", n) > -1 ||
+        Find("fortau", n) > -1 || Find("gang-", n) > -1) return "gang_sykkel";
+    if (Find("rekkverk", n) > -1) return "rekkverk";
+    if (Find("vegkant", n) > -1 || Find("kantstein", n) > -1) return "vegkant";
+    return "other";
+  `;
+  const fill = (r, g, b, a, or, og, ob) => ({
+    type: 'simple-fill',
+    color: [r, g, b, a],
+    outline: { color: [or, og, ob, 200], width: 0.5 },
+  });
+  return {
+    type: 'unique-value',
+    valueExpression,
+    defaultLabel: 'Annet',
+    defaultSymbol: fill(160, 160, 160, 80, 100, 100, 100),
+    uniqueValueInfos: [
+      { value: 'kjørefelt', label: 'Kjørefelt / vegbane',     symbol: fill(100, 100, 108, 220,  60,  60,  70) },
+      { value: 'skulder',   label: 'Skulder',                  symbol: fill(255, 140,   0, 200, 200, 100,   0) },
+      { value: 'grøft',     label: 'Grøft',                    symbol: fill(245, 212,   0, 200, 180, 150,   0) },
+      { value: 'skjæring',  label: 'Skjæring',                 symbol: fill(245, 212,   0, 160, 180, 150,   0) },
+      { value: 'fylling',   label: 'Fylling',                  symbol: fill(245, 200,  60, 160, 180, 140,   0) },
+      { value: 'gang_sykkel', label: 'Gang-/sykkelveg',        symbol: fill(220,  40, 120, 200, 160,   0,  80) },
+      { value: 'rekkverk',  label: 'Rekkverk',
+        symbol: { type: 'simple-line', color: [0, 160, 50, 220], width: 2, style: 'short-dash' } },
+      { value: 'vegkant',   label: 'Vegkant / kantstein',      symbol: fill(140, 100,  50, 180, 100,  70,  30) },
+    ],
+  };
+}
+
+async function loadBimLayers(bimUrl) {
+  const map = window._map;
+  const FeatureLayer = window._FeatureLayer;
+  if (!map || !FeatureLayer || !bimUrl) return;
+
+  // Fetch FeatureServer service info to enumerate layers
+  const tokenParam = currentToken ? `&token=${encodeURIComponent(currentToken)}` : '';
+  const resp = await fetch(`${bimUrl}?f=json${tokenParam}`);
+  if (!resp.ok) { console.warn('BIM service info feilet', resp.status); return; }
+  const info = await resp.json();
+
+  const layerList = (info.layers || []);
+  if (!layerList.length) { console.warn('BIM service: ingen lag funnet'); return; }
+
+  const renderer = makeBimRenderer();
+  bimLayers = layerList.map(l => new FeatureLayer({
+    url: `${bimUrl}/${l.id}`,
+    outFields: ['Name', 'name'],
+    renderer,
+    opacity: 0.85,
+    title: l.name,
+  }));
+
+  // Insert BIM layers below centerline and stations (index 0 = beneath everything)
+  for (let i = 0; i < bimLayers.length; i++) {
+    map.add(bimLayers[i], i);
+  }
+
+  // Keep hover/selected graphics on top
+  if (selectedLayer) map.reorder(selectedLayer, map.layers.length - 1);
+  if (hoverLayer)   map.reorder(hoverLayer,   map.layers.length - 1);
+
+  // Count total features
+  let total = 0;
+  await Promise.allSettled(bimLayers.map(async l => {
+    await l.load();
+    const q = await l.queryFeatureCount({ where: '1=1' });
+    total += q;
+  }));
+
+  document.getElementById('grp-bim').style.display = '';
+  document.getElementById('legend-bim').style.display = '';
+  document.getElementById('cnt-bim').textContent = total.toLocaleString('nb-NO');
+  document.getElementById('cnt-bim').style.display = '';
 }
 
 // ── STATION SELECTION ──────────────────────────────────────────────────
@@ -1519,37 +1713,56 @@ async function selectStation(idx) {
 }
 
 async function loadSvg(stasjon_m) {
-  const img = document.getElementById('cs-img');
+  const host = document.getElementById('cs-svg-host');
   const loading = document.getElementById('cs-loading');
   const ph = document.getElementById('cs-placeholder');
   const zoomCtrl = document.getElementById('svg-zoom-ctrl');
 
   ph.style.display = 'none';
-  img.style.display = 'none';
+  host.innerHTML = '';
+  currentCoordMap = null;
   zoomCtrl.classList.remove('visible');
   loading.style.display = 'flex';
 
   const formatted = stasjon_m.toFixed(1).padStart(7, '0');
   const url = API + '/api/jobs/' + currentJobId + '/svg/tverrprofil_' + formatted + '.svg';
-  img.onload = () => {
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('not found');
+    const svgText = await resp.text();
+
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svgEl = svgDoc.documentElement;
+    svgEl.removeAttribute('width');
+    svgEl.removeAttribute('height');
+    svgEl.style.transformOrigin = '0 0';
+
+    tagDataCsElements(svgEl);
+
+    const overlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    overlay.id = 'cs-overlay';
+    svgEl.appendChild(overlay);
+
+    host.appendChild(svgEl);
+
     loading.style.display = 'none';
-    img.style.display = 'block';
     zoomCtrl.classList.add('visible');
+
+    // Build coord map after SVG is in DOM (comment nodes accessible)
+    const stIdx = stations.findIndex(s => Math.abs(s.stasjon_m - stasjon_m) < 0.01);
+    const elev = stIdx >= 0 ? stations[stIdx].z : 0;
+    currentCoordMap = buildCoordMap(svgEl, elev);
+
     resetCsZoom();
-  };
-  img.onerror = () => {
+    return parseSvgXTicks(svgText);
+  } catch (_) {
     loading.style.display = 'none';
     ph.textContent = 'SVG ikke funnet for stasjon ' + stasjon_m.toFixed(1);
     ph.style.display = 'flex';
-  };
-  img.src = url;
-
-  // Fetch SVG as text in parallel to extract actual x-axis extent
-  try {
-    const resp = await fetch(url);
-    if (resp.ok) return parseSvgXTicks(await resp.text());
-  } catch (_) {}
-  return null;
+    return null;
+  }
 }
 
 // ── SNAP PREVIEW ───────────────────────────────────────────────────────
@@ -1582,15 +1795,17 @@ function updateSnapPreview(s, screenX, screenY) {
 
 // ── SVG PAN / ZOOM ─────────────────────────────────────────────────────
 function applyTransform() {
-  document.getElementById('cs-img').style.transform =
-    `translate(${svgPanX}px,${svgPanY}px) scale(${svgScale})`;
+  const svgEl = document.querySelector('#cs-svg-host > svg');
+  if (svgEl) svgEl.style.transform = `translate(${svgPanX}px,${svgPanY}px) scale(${svgScale})`;
 }
 
 function resetCsZoom() {
   const area = document.querySelector('.dr-svg-area');
-  const img = document.getElementById('cs-img');
+  const svgEl = document.querySelector('#cs-svg-host > svg');
   const cw = area.clientWidth, ch = area.clientHeight;
-  const iw = img.naturalWidth || 1058, ih = img.naturalHeight || 751;
+  const vb = svgEl ? svgEl.viewBox.baseVal : null;
+  const iw = (vb && vb.width) || 1058;
+  const ih = (vb && vb.height) || 751;
   svgScale = Math.min(cw / iw, ch / ih) * 0.95;
   svgPanX = (cw - iw * svgScale) / 2;
   svgPanY = (ch - ih * svgScale) / 2;
@@ -1610,7 +1825,7 @@ function svgZoomBtn(factor) {
 const svgArea = document.querySelector('.dr-svg-area');
 
 svgArea.addEventListener('wheel', (e) => {
-  if (document.getElementById('cs-img').style.display === 'none') return;
+  if (!document.querySelector('#cs-svg-host > svg')) return;
   e.preventDefault();
   const rect = svgArea.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
@@ -1623,7 +1838,7 @@ svgArea.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 svgArea.addEventListener('pointerdown', (e) => {
-  if (document.getElementById('cs-img').style.display === 'none' || e.button !== 0) return;
+  if (!document.querySelector('#cs-svg-host > svg') || e.button !== 0) return;
   if (e.target.closest('.svg-zoom-ctrl')) return;
   e.preventDefault();
   svgDragging = true;
@@ -1902,8 +2117,12 @@ function toggleLayer(name) {
   tog.textContent = layerVis[name] ? '✓' : '';
   row.classList.toggle('active', layerVis[name]);
   row.classList.toggle('muted', !layerVis[name]);
-  const layer = name === 'centerline' ? clLayer : stLayer;
-  if (layer) layer.visible = layerVis[name];
+  if (name === 'bim') {
+    bimLayers.forEach(l => { l.visible = layerVis[name]; });
+  } else {
+    const layer = name === 'centerline' ? clLayer : stLayer;
+    if (layer) layer.visible = layerVis[name];
+  }
 }
 
 function toggleSidebar() {
