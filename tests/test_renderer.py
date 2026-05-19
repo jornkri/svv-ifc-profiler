@@ -254,3 +254,23 @@ def test_render_normal_section_svg_nan_safe():
         render_normal_section_svg(cs, out)  # skal ikke kaste exception
         assert out.exists()
         assert out.stat().st_size > 0
+
+
+def test_svg_contains_data_cs_gids():
+    """SVG-en skal inneholde gid-tagger for kjørefelt og terreng."""
+    cs = CrossSection(
+        station=50.0,
+        elevation=100.0,
+        segments={
+            "planum": [((-4.5, 0.0), (4.5, 0.0))],
+            "terreng": [((-10.0, -2.0), (10.0, -2.0))],
+            "skjaering": [((4.5, 0.0), (8.0, -3.0))],
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+        assert 'id="cs:kjørefelt"' in content
+        assert 'id="cs:terreng"' in content
+        assert 'id="cs:skjaering"' in content

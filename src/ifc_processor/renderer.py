@@ -38,7 +38,7 @@ _TERRAIN_TICK_INTERVAL = 1.0   # 1 m = 5 mm på papir ved 1:200
 _TERRAIN_TICK_LEN      = 0.25  # R700 TerrengrofilJord: kort tikk, ikke dominerende
 
 
-def _draw_terrain_chain(ax, chain: list[tuple[float, float]]) -> None:
+def _draw_terrain_chain(ax, chain: list[tuple[float, float]], gid: str | None = None) -> None:
     """R700 TerrengrofilJord: hel linje + korte skråstreker ved fast vinkel.
 
     Tikkene resamples langs hele kjedens totale buelengde slik at de fordeles
@@ -49,7 +49,9 @@ def _draw_terrain_chain(ax, chain: list[tuple[float, float]]) -> None:
         return
     us = [p[0] for p in chain]
     vs = [p[1] for p in chain]
-    ax.plot(us, vs, color="black", linewidth=0.8, linestyle="-", zorder=2)
+    lines = ax.plot(us, vs, color="black", linewidth=0.8, linestyle="-", zorder=2)
+    if gid:
+        lines[0].set_gid(gid)
 
     seg_lengths = [
         math.hypot(chain[i + 1][0] - chain[i][0], chain[i + 1][1] - chain[i][1])
@@ -322,8 +324,9 @@ def _draw_named_layer_chains(
             # og produserer lange diagonale artefakter i hjørnene.
             upper = _upper_envelope_chain(segs)
             if len(upper) >= 2:
-                ax.plot([p[0] for p in upper], [p[1] for p in upper],
+                lines = ax.plot([p[0] for p in upper], [p[1] for p in upper],
                         color=color, linewidth=0.8, linestyle="-", zorder=3)
+                lines[0].set_gid('cs:named')  # flat tag — JS snap does not need to distinguish layer names
         else:
             # Side-komponenter: kjedete segmenter med lengde-filter
             clean = [
@@ -333,8 +336,9 @@ def _draw_named_layer_chains(
             for chain in _chain_segments(clean):
                 if _is_suspect_arm(chain):
                     continue
-                ax.plot([p[0] for p in chain], [p[1] for p in chain],
+                lines = ax.plot([p[0] for p in chain], [p[1] for p in chain],
                         color=color, linewidth=0.7, linestyle="-", zorder=3)
+                lines[0].set_gid('cs:named')  # flat tag — JS snap does not need to distinguish layer names
 
 
 def _draw_named_labels(
@@ -515,11 +519,12 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     if pavement_segs:
         envelope = _upper_envelope_chain(pavement_segs)
         if len(envelope) >= 2:
-            ax.plot(
+            lines = ax.plot(
                 [p[0] for p in envelope],
                 [p[1] for p in envelope],
                 color="black", linewidth=2.0, linestyle="-", zorder=5,
             )
+            lines[0].set_gid('cs:kjørefelt')
 
     # --- Named layer chains (individuelle dekkelagsgrenser) ---
     if cross_section.named_segments:
@@ -535,12 +540,13 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
                 logger.debug("Filtrerer nær-vertikal arm for klasse '%s'", road_class)
                 continue
             if road_class == "terreng":
-                _draw_terrain_chain(ax, chain)
+                _draw_terrain_chain(ax, chain, gid='cs:terreng')
             else:
                 style = _STYLE.get(road_class, _STYLE["unknown"])
                 us = [p[0] for p in chain]
                 vs = [p[1] for p in chain]
-                ax.plot(us, vs, **style)
+                lines = ax.plot(us, vs, **style)
+                lines[0].set_gid(f'cs:{road_class}')
 
     # IFC-komponentetiketter fra Name-attributt
     if cross_section.named_segments:
@@ -1043,6 +1049,7 @@ def render_normal_section_svg(cs: CrossSection, output_path: Path) -> Path:
     )
 
     # --- Geometrilag (samme stil som tverrprofil) ---
+    # TODO: add set_gid tagging when normalprofil SVGs are rendered inline
     for road_class, segs in cs.segments.items():
         style = _STYLE.get(road_class, _STYLE["unknown"])
         for chain in _chain_segments(segs):
