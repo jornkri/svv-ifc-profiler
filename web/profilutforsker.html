@@ -1114,6 +1114,7 @@ function renderHoverOverlay(snap, coordMap) {
 
   const {x_m, z_m} = coordMap.svgToReal(snap.x, snap.y);
   const vb = svg.viewBox.baseVal;
+  if (!vb || vb.width === 0) return;
 
   const mkEl = (tag, attrs) => {
     const el = document.createElementNS(CS_NS, tag);
