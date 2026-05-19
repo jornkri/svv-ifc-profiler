@@ -1927,6 +1927,9 @@ async function selectStation(idx) {
 }
 
 async function loadSvg(stasjon_m) {
+  // Cancel incomplete measurements on station change; completed measurements are re-snapped below
+  if (measureMode === 'wait_a' || measureMode === 'wait_b') clearMeasure();
+
   const host = document.getElementById('cs-svg-host');
   const loading = document.getElementById('cs-loading');
   const ph = document.getElementById('cs-placeholder');
