@@ -943,6 +943,8 @@ let darkMode = false;
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
 let currentCoordMap = null;
+let measureMode = 'idle'; // 'idle' | 'wait_a' | 'wait_b' | 'result'
+let measurement = null;   // {a: {svgX, svgY, x_m, z_m, loose}, b: ...}
 let hoverIdx = -1;
 
 // ── THEME ──────────────────────────────────────────────────────────────
@@ -1066,6 +1068,89 @@ function tagDataCsElements(svgEl) {
   svgEl.querySelectorAll('[id^="cs:"]').forEach(g => {
     const cls = g.id.slice(3);
     g.querySelectorAll('path').forEach(p => { p.dataset.cs = cls; });
+  });
+}
+
+const CS_NS = 'http://www.w3.org/2000/svg';
+function csSvgEl() { return document.querySelector('#cs-svg-host > svg'); }
+function csOverlayEl() { return document.getElementById('cs-overlay'); }
+
+function nearestPointOnPath(pathEl, x, y) {
+  const total = pathEl.getTotalLength();
+  if (total < 1) return pathEl.getPointAtLength(0);
+  let lo = 0, hi = total;
+  for (let i = 0; i < 24; i++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    const p1 = pathEl.getPointAtLength(m1), p2 = pathEl.getPointAtLength(m2);
+    if (Math.hypot(p1.x - x, p1.y - y) < Math.hypot(p2.x - x, p2.y - y)) hi = m2; else lo = m1;
+  }
+  return pathEl.getPointAtLength((lo + hi) / 2);
+}
+
+function snapToPath(svgEl, svgX, svgY, thresholdPx) {
+  let bestDist = Infinity, bestPt = null, bestCls = null;
+  svgEl.querySelectorAll('path[data-cs]').forEach(el => {
+    try {
+      const pt = nearestPointOnPath(el, svgX, svgY);
+      const d = Math.hypot(pt.x - svgX, pt.y - svgY);
+      if (d < bestDist) { bestDist = d; bestPt = pt; bestCls = el.dataset.cs; }
+    } catch (_) {}
+  });
+  if (bestDist > thresholdPx || !bestPt) return null;
+  return {x: bestPt.x, y: bestPt.y, cls: bestCls};
+}
+
+function clearHoverOverlay() {
+  const ov = csOverlayEl();
+  if (ov) ov.querySelectorAll('.hover-el').forEach(e => e.remove());
+}
+
+function renderHoverOverlay(snap, coordMap) {
+  const svg = csSvgEl(), ov = csOverlayEl();
+  if (!svg || !ov) return;
+  clearHoverOverlay();
+  if (!snap || !coordMap) return;
+
+  const {x_m, z_m} = coordMap.svgToReal(snap.x, snap.y);
+  const vb = svg.viewBox.baseVal;
+
+  const mkEl = (tag, attrs) => {
+    const el = document.createElementNS(CS_NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    el.classList.add('hover-el');
+    ov.appendChild(el);
+    return el;
+  };
+
+  mkEl('line', {x1: snap.x, y1: vb.y, x2: snap.x, y2: vb.y + vb.height,
+    stroke: '#e0228e', 'stroke-width': 0.5, 'stroke-dasharray': '4 3', opacity: 0.7});
+  mkEl('line', {x1: vb.x, y1: snap.y, x2: vb.x + vb.width, y2: snap.y,
+    stroke: '#e0228e', 'stroke-width': 0.5, 'stroke-dasharray': '4 3', opacity: 0.7});
+  mkEl('circle', {cx: snap.x, cy: snap.y, r: 3.5, fill: '#e0228e', stroke: 'white', 'stroke-width': 1});
+
+  const {z_m: z_cl} = coordMap.svgToReal(coordMap.realToSvg(0, 0).svgX, snap.y);
+  const fall_pct = x_m !== 0 ? ((z_m - z_cl) / Math.abs(x_m) * 100) : 0;
+
+  const tipW = 130, tipH = snap.cls ? 54 : 42, pad = 6;
+  const tipX = (snap.x + tipW + pad < vb.x + vb.width * 0.85) ? snap.x + pad : snap.x - tipW - pad;
+  const tipY = Math.max(vb.y + 2, snap.y - tipH - pad);
+
+  mkEl('rect', {x: tipX, y: tipY, width: tipW, height: tipH, rx: 3, fill: '#e0228e', opacity: 0.92});
+
+  const lines = [
+    `x = ${x_m >= 0 ? '+' : ''}${x_m.toFixed(2)} m fra CL`,
+    `z = ${z_m.toFixed(2)} m.o.h.`,
+    `fall = ${fall_pct.toFixed(1)} %`,
+  ];
+  if (snap.cls) lines.push(snap.cls);
+
+  lines.forEach((txt, i) => {
+    const t = mkEl('text', {x: tipX + 6, y: tipY + 13 + i * 13,
+      'font-size': 10, fill: 'white',
+      'font-family': 'Inter Tight, system-ui, sans-serif',
+      'font-weight': i === 0 ? '600' : '400'});
+    t.textContent = txt;
   });
 }
 
@@ -1846,10 +1931,26 @@ svgArea.addEventListener('pointerdown', (e) => {
 });
 
 svgArea.addEventListener('pointermove', (e) => {
-  if (!svgDragging) return;
-  svgPanX = e.clientX - svgDragStartX;
-  svgPanY = e.clientY - svgDragStartY;
-  applyTransform();
+  if (svgDragging) {
+    svgPanX = e.clientX - svgDragStartX;
+    svgPanY = e.clientY - svgDragStartY;
+    applyTransform();
+    return;
+  }
+  if (measureMode !== 'idle') return;
+  const svg = csSvgEl();
+  if (!svg || !currentCoordMap) return;
+  const rect = svgArea.getBoundingClientRect();
+  const svgX = (e.clientX - rect.left - svgPanX) / svgScale;
+  const svgY = (e.clientY - rect.top - svgPanY) / svgScale;
+  const snap = snapToPath(svg, svgX, svgY, 20 / svgScale);
+  renderHoverOverlay(snap || {x: svgX, y: svgY, cls: null}, currentCoordMap);
+});
+
+svgArea.addEventListener('pointerleave', () => {
+  clearHoverOverlay();
+  svgDragging = false;
+  svgArea.classList.remove('panning');
 });
 
 svgArea.addEventListener('pointerup', () => {
