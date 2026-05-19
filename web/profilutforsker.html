@@ -413,6 +413,18 @@ html[data-theme="dark"] #cs-svg-host > svg {
   box-shadow: 0 1px 3px rgba(0,0,0,.1);
 }
 .svg-zoom-btn:hover { background: var(--paper); color: var(--ink); }
+#btn-measure.is-on { background: var(--accent); color: white; border-color: var(--accent); }
+#measure-panel {
+  display: none; border-top: 1px solid var(--accent-line);
+  padding: 10px 14px; background: var(--accent-soft); font-size: 11.5px;
+}
+#measure-panel.visible { display: block; }
+.measure-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+  color: var(--accent-ink); text-transform: uppercase; margin-bottom: 6px; }
+.measure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; color: var(--ink-3); }
+.measure-grid .val { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+.measure-actions { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--accent-line); }
 #cs-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
 #cs-loading .spin { border-color: var(--line); border-top-color: var(--accent); width: 18px; height: 18px; }
 #cs-placeholder {
@@ -839,6 +851,13 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
               <path d="M1 4.5V1h3.5M7.5 1H11v3.5M11 7.5V11H7.5M4.5 11H1V7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
+          <button class="svg-zoom-btn" id="btn-measure" onclick="toggleMeasure()" title="Avstandsmåling">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <line x1="1" y1="10" x2="10" y2="1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              <line x1="1" y1="8" x2="3" y2="10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+              <line x1="8" y1="1" x2="10" y2="3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -851,6 +870,20 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <dt>Bredde, vei</dt><dd id="mv-bredde">—</dd>
           <dt>Skjæring / Fylling</dt><dd id="mv-skj-fyl">—</dd>
         </dl>
+
+        <div id="measure-panel">
+          <div class="measure-lbl">Måleresultat</div>
+          <div class="measure-grid">
+            <span>Horisontal avstand</span><span class="val" id="mv-dx">—</span>
+            <span>Høydeforskjell (ΔZ)</span><span class="val" id="mv-dz">—</span>
+            <span>% fall</span><span class="val" id="mv-fall">—</span>
+            <span>Skrå avstand</span><span class="val" id="mv-3d">—</span>
+          </div>
+          <div class="measure-actions">
+            <button class="btn-mini" onclick="clearMeasure()">Nullstill</button>
+            <button class="btn-mini" onclick="copyMeasure()">Kopier</button>
+          </div>
+        </div>
 
         <div class="dr-section" id="dr-naboprofiler" style="display:none">
           <h4>Naboprofiler</h4>
@@ -1155,6 +1188,105 @@ function renderHoverOverlay(snap, coordMap) {
   });
 }
 
+function toggleMeasure() {
+  if (measureMode !== 'idle') {
+    clearMeasure();
+  } else {
+    measureMode = 'wait_a';
+    document.getElementById('btn-measure').classList.add('is-on');
+    document.getElementById('cs-meta-line').textContent = 'Klikk punkt 1 i tegningen';
+    document.querySelector('.dr-svg-area').style.cursor = 'crosshair';
+  }
+}
+
+function clearMeasure() {
+  measureMode = 'idle';
+  measurement = null;
+  document.getElementById('btn-measure').classList.remove('is-on');
+  document.getElementById('measure-panel').classList.remove('visible');
+  document.querySelector('.dr-svg-area').style.cursor = '';
+  clearMeasureOverlay();
+  if (currentIdx >= 0 && stations[currentIdx]) {
+    const s = stations[currentIdx];
+    document.getElementById('cs-meta-line').textContent =
+      (s.stasjon_m / 1000).toFixed(3) + ' km · ' + s.z.toFixed(1) + ' m.o.h.';
+  }
+}
+
+function clearMeasureOverlay() {
+  const ov = csOverlayEl();
+  if (ov) ov.querySelectorAll('.measure-el').forEach(e => e.remove());
+}
+
+function renderMeasureOverlay() {
+  clearMeasureOverlay();
+  const svg = csSvgEl(), ov = csOverlayEl();
+  if (!svg || !ov || !measurement) return;
+
+  const mkEl = (tag, attrs) => {
+    const el = document.createElementNS(CS_NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    el.classList.add('measure-el');
+    ov.appendChild(el);
+    return el;
+  };
+
+  const A = measurement.a, B = measurement.b;
+
+  if (A) {
+    mkEl('circle', {cx: A.svgX, cy: A.svgY, r: 4,
+      fill: A.loose ? '#e8c94a' : '#c25a1f',
+      stroke: 'white', 'stroke-width': 1.2,
+      'fill-opacity': A.loose ? 0 : 1, 'stroke-dasharray': A.loose ? '3 2' : 'none'});
+    const t = mkEl('text', {x: A.svgX + 5, y: A.svgY - 5,
+      'font-size': 9, fill: '#c25a1f',
+      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+    t.textContent = '1';
+  }
+  if (B) {
+    mkEl('circle', {cx: B.svgX, cy: B.svgY, r: 4,
+      fill: B.loose ? '#e8c94a' : '#c25a1f',
+      stroke: 'white', 'stroke-width': 1.2,
+      'fill-opacity': B.loose ? 0 : 1, 'stroke-dasharray': B.loose ? '3 2' : 'none'});
+    const t = mkEl('text', {x: B.svgX + 5, y: B.svgY - 5,
+      'font-size': 9, fill: '#c25a1f',
+      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+    t.textContent = '2';
+  }
+  if (A && B) {
+    mkEl('line', {x1: A.svgX, y1: A.svgY, x2: B.svgX, y2: B.svgY,
+      stroke: '#c25a1f', 'stroke-width': 1, 'stroke-dasharray': '6 3'});
+    const mx = (A.svgX + B.svgX) / 2, my = (A.svgY + B.svgY) / 2;
+    const dx = Math.abs(B.x_m - A.x_m);
+    const dz = B.z_m - A.z_m;
+    const fall = dx > 0.001 ? (dz / dx * 100) : 0;
+    const d3 = Math.hypot(dx, dz);
+    const lbl = dx.toFixed(2) + ' m';
+    const lW = lbl.length * 6 + 14;
+    mkEl('rect', {x: mx - lW / 2, y: my - 10, width: lW, height: 14, rx: 3, fill: '#c25a1f'});
+    const t = mkEl('text', {x: mx, y: my - 0.5, 'font-size': 9, fill: 'white', 'text-anchor': 'middle',
+      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+    t.textContent = lbl;
+    if (!A.loose && !B.loose) {
+      document.getElementById('mv-dx').textContent = dx.toFixed(2) + ' m';
+      document.getElementById('mv-dz').textContent = (dz >= 0 ? '+' : '') + dz.toFixed(2) + ' m';
+      document.getElementById('mv-fall').textContent = fall.toFixed(1) + ' %';
+      document.getElementById('mv-3d').textContent = d3.toFixed(2) + ' m';
+      document.getElementById('measure-panel').classList.add('visible');
+    }
+  }
+}
+
+function copyMeasure() {
+  if (!measurement || !measurement.a || !measurement.b) return;
+  const A = measurement.a, B = measurement.b;
+  const dx = Math.abs(B.x_m - A.x_m);
+  const dz = B.z_m - A.z_m;
+  const fall = dx > 0.001 ? (dz / dx * 100) : 0;
+  const row = [dx.toFixed(3), dz.toFixed(3), fall.toFixed(2), Math.hypot(dx, dz).toFixed(3)].join('\t');
+  navigator.clipboard.writeText(row).catch(() => {});
+}
+
 // Draw perpendicular cross-section extent line on the map
 function drawCrossSectionLine(s, idx, xTicks) {
   if (!selectedLayer || !window._Graphic) return;
@@ -1340,6 +1472,7 @@ try {
 
 // ── KEYBOARD NAV ───────────────────────────────────────────────────────
 window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && measureMode !== 'idle') { clearMeasure(); return; }
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea') return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1959,6 +2092,46 @@ svgArea.addEventListener('pointerup', () => {
   svgArea.classList.remove('panning');
 });
 
+svgArea.addEventListener('click', (e) => {
+  if (measureMode === 'idle' || svgDragging) return;
+  if (e.target.closest('.svg-zoom-ctrl')) return;
+  const svg = csSvgEl();
+  if (!svg || !currentCoordMap) return;
+
+  const rect = svgArea.getBoundingClientRect();
+  const svgX = (e.clientX - rect.left - svgPanX) / svgScale;
+  const svgY = (e.clientY - rect.top - svgPanY) / svgScale;
+  const snap = snapToPath(svg, svgX, svgY, 40 / svgScale);
+
+  if (!snap) {
+    document.getElementById('cs-meta-line').textContent = 'Ingen geometri her — prøv nærmere en linje';
+    setTimeout(() => {
+      if (measureMode !== 'idle') {
+        document.getElementById('cs-meta-line').textContent =
+          measureMode === 'wait_a' ? 'Klikk punkt 1 i tegningen' : 'Klikk punkt 2 i tegningen';
+      }
+    }, 1500);
+    return;
+  }
+
+  const real = currentCoordMap.svgToReal(snap.x, snap.y);
+  const pt = {svgX: snap.x, svgY: snap.y, x_m: real.x_m, z_m: real.z_m, loose: false};
+
+  if (measureMode === 'wait_a') {
+    measurement = {a: pt, b: null};
+    measureMode = 'wait_b';
+    document.getElementById('cs-meta-line').textContent = 'Klikk punkt 2 i tegningen';
+    renderMeasureOverlay();
+  } else if (measureMode === 'wait_b') {
+    measurement.b = pt;
+    measureMode = 'result';
+    document.querySelector('.dr-svg-area').style.cursor = '';
+    document.getElementById('btn-measure').classList.remove('is-on');
+    document.getElementById('cs-meta-line').textContent = 'Måleresultat vist under';
+    renderMeasureOverlay();
+  }
+});
+
 function nav(delta) {
   const next = currentIdx + delta;
   if (next >= 0 && next < stations.length) selectStation(next);
@@ -2244,7 +2417,7 @@ window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(
 Object.assign(window, {
   toggleTheme, toggleLp, openCs, closeCs, toggleCsMax,
   toggleLayer, toggleSidebar, mapZoom, mapHome,
-  nav, drawLp, svgZoomBtn, resetCsZoom,
+  nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
 });
 </script>
 </body>
