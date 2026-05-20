@@ -62,6 +62,7 @@ def create_point_fc(
     arcpy.management.AddField(fc_path, "profil_nr", "TEXT", field_length=20)
     arcpy.management.AddField(fc_path, "z_moh", "DOUBLE")
     arcpy.management.AddField(fc_path, "z_terreng", "DOUBLE")
+    arcpy.management.AddField(fc_path, "svg_url", "TEXT", field_length=512)
 
     transformer = (
         Transformer.from_crs(source_epsg, 25833, always_xy=True)
@@ -164,12 +165,13 @@ def main(argv: list[str] | None = None) -> None:
         with arcpy.da.SearchCursor(fc_path, ["OID@", "stasjon_m"]) as cur:
             with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "svg_path"]) as ins:
                 for oid, station_m in cur:
-                    svg = svgs_dir / f"tverrprofil_{station_m:07.1f}.svg"
-                    if svg.exists():
-                        ins.insertRow((oid, str(svg)))
-                        rows_added += 1
-                    else:
-                        logger.warning("SVG ikke funnet: %s", svg)
+                    for prefix in ("tverrprofil", "normalprofil"):
+                        svg = svgs_dir / f"{prefix}_{station_m:07.1f}.svg"
+                        if svg.exists():
+                            ins.insertRow((oid, str(svg)))
+                            rows_added += 1
+                        else:
+                            logger.warning("SVG ikke funnet: %s", svg)
 
         if rows_added > 0:
             arcpy.management.AddAttachments(fc_path, "OBJECTID", match_tbl, "fc_oid", "svg_path")

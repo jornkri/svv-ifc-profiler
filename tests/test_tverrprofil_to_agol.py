@@ -183,6 +183,30 @@ def test_cli_passes_token_to_connect(tmp_path):
     mock_connect.assert_called_once_with(token="tok999", org_url="https://myorg.arcgis.com")
 
 
+def test_create_point_fc_adds_svg_url_field():
+    """create_point_fc must add a svg_url field so AGOL can store attachment URLs."""
+    arcpy_mock = sys.modules["arcpy"]
+    arcpy_mock.management.AddField.reset_mock()
+
+    stations = [{"station_m": 0.0, "profil_nr": "0000.00", "x": 10.0, "y": 20.0, "z": 100.0}]
+
+    arcpy_mock.da.InsertCursor.return_value.__enter__ = lambda s: s
+    arcpy_mock.da.InsertCursor.return_value.__exit__ = MagicMock(return_value=False)
+    arcpy_mock.da.InsertCursor.return_value.__iter__ = MagicMock(return_value=iter([]))
+    arcpy_mock.da.SearchCursor.return_value.__enter__ = lambda s: s
+    arcpy_mock.da.SearchCursor.return_value.__exit__ = MagicMock(return_value=False)
+    arcpy_mock.da.SearchCursor.return_value.__iter__ = MagicMock(return_value=iter([]))
+
+    from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
+    create_point_fc(stations, "C:/scratch/test.gdb", "vei")
+
+    field_names = [
+        call_args[0][1]
+        for call_args in arcpy_mock.management.AddField.call_args_list
+    ]
+    assert "svg_url" in field_names, f"svg_url not in AddField calls: {field_names}"
+
+
 def test_two_attachments_per_station(tmp_path):
     """Match-tabellen skal ha to rader per OID: tverrprofil og normalprofil."""
     stations_path = tmp_path / "stations.json"
