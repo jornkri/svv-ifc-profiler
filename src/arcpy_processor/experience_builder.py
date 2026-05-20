@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from arcgis.features import FeatureLayer
+    from arcgis.gis import GIS
 
 logger = logging.getLogger(__name__)
 
@@ -51,3 +53,53 @@ def backfill_svg_urls(layer: "FeatureLayer") -> int:
         logger.info("svg_url oppdatert for %d features", len(updates))
 
     return len(updates)
+
+
+def create_or_update_experience(
+    gis: "GIS",
+    name: str,
+    centerline_item_id: str,
+    sections_item_id: str,
+    sections_service_url: str,
+    template_path: Path,
+) -> str:
+    """Create or update an Experience Builder app on AGOL from a config.json template.
+
+    Placeholders in the template:
+        __CENTERLINE_ITEM_ID__  → centerline_item_id
+        __SECTIONS_ITEM_ID__    → sections_item_id
+        __SERVICE_URL__         → sections_service_url
+
+    Returns the item homepage URL.
+    """
+    from arcgis.apps.expbuilder import WebExperience
+
+    config_json = (
+        template_path.read_text(encoding="utf-8")
+        .replace("__CENTERLINE_ITEM_ID__", centerline_item_id)
+        .replace("__SECTIONS_ITEM_ID__", sections_item_id)
+        .replace("__SERVICE_URL__", sections_service_url)
+    )
+
+    existing = gis.content.search(
+        query=f'title:"{name}" type:"Web Experience"',
+        max_items=5,
+    )
+    exp_item = next((i for i in existing if i.title == name), None)
+
+    if exp_item is None:
+        exp = WebExperience(gis=gis)
+        exp.create(title=name, tags=["IFC", "SVV", "tverrprofil", "R700"])
+        exp_item = exp.item
+        logger.info("Opprettet ny XB-app '%s' (%s)", name, exp_item.id)
+    else:
+        logger.info("Oppdaterer eksisterende XB-app '%s' (%s)", name, exp_item.id)
+
+    exp_item.update(data=config_json)
+
+    try:
+        WebExperience(exp_item).publish()
+    except Exception as exc:
+        logger.warning("XB publish() feilet (%s) — konfigurasjonen er oppdatert", exc)
+
+    return exp_item.homepage
