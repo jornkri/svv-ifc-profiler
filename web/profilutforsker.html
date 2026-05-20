@@ -983,7 +983,16 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 'use strict';
 
 const API = 'http://localhost:8000';
-const GEODATA_KANVAS = 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer';
+const BASEMAPS = [
+  { id: 'kanvas', label: 'Kanvas',    type: 'vtl',  swatch: '#e8e4d8',
+    url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer' },
+  { id: 'graa',   label: 'Gråtone',  type: 'vtl',  swatch: '#c8c8c8',
+    url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheGraatoneTerreng/VectorTileServer' },
+  { id: 'bilder', label: 'Bilder',   type: 'tile', swatch: '#2a3a2a',
+    url: 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheBilder/MapServer' },
+  { id: 'mork',   label: 'Mørk',     type: 'vtl',  swatch: '#1a2630',
+    url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvasMork/VectorTileServer' },
+];
 
 // ── STATE ──────────────────────────────────────────────────────────────
 let view = null;
@@ -1002,6 +1011,8 @@ let layerVis = { centerline: true, stations: true, bim: true };
 let currentToken = null;
 let orgUrl = 'https://www.arcgis.com';
 let darkMode = false;
+let activeBasemapId = 'kanvas';
+let lightBasemapId  = 'kanvas';
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
 let currentCoordMap = null;
