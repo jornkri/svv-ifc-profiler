@@ -775,6 +775,15 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           </svg>
         </button>
       </div>
+      <div class="map-tool-group" id="grp-basemap" style="position:relative;overflow:visible">
+        <button class="map-tool" id="btn-basemap" onclick="toggleBasemapPicker()" title="Bytt bakgrunnskart">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="12" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+            <rect x="1" y="7.5" width="12" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+        <div id="basemap-picker" class="basemap-picker hidden"></div>
+      </div>
     </div>
 
     <!-- Legend -->
