@@ -1436,11 +1436,12 @@ function makePillUrl(text) {
 
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
-  const [Map, MapView, VectorTileLayer, FeatureLayer, Basemap, esriId, GraphicsLayer, Graphic] =
+  const [Map, MapView, VectorTileLayer, TileLayer, FeatureLayer, Basemap, esriId, GraphicsLayer, Graphic] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
       '@arcgis/core/views/MapView.js',
       '@arcgis/core/layers/VectorTileLayer.js',
+      '@arcgis/core/layers/TileLayer.js',
       '@arcgis/core/layers/FeatureLayer.js',
       '@arcgis/core/Basemap.js',
       '@arcgis/core/identity/IdentityManager.js',
@@ -1450,10 +1451,14 @@ try {
 
   window._esriId = esriId;
   window._FeatureLayer = FeatureLayer;
+  window._VectorTileLayer = VectorTileLayer;
+  window._TileLayer = TileLayer;
+  window._Basemap = Basemap;
 
+  const kanvasCfg = BASEMAPS.find(b => b.id === 'kanvas');
   const basemap = new Basemap({
-    baseLayers: [new VectorTileLayer({ url: GEODATA_KANVAS })],
-    title: 'Geodata Kanvas',
+    baseLayers: [new VectorTileLayer({ url: kanvasCfg.url })],
+    title: kanvasCfg.label,
   });
 
   const map = new Map({ basemap });
@@ -1466,6 +1471,7 @@ try {
   });
 
   view.when(async () => {
+    buildBasemapPicker();
     await initAuth();
     loadJobs();
   });
