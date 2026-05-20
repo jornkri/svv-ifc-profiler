@@ -423,3 +423,70 @@ def test_get_job_status_includes_bim_url(client):
     job_id = create_resp.json()["job_id"]
     status_resp = client.get(f"/api/jobs/{job_id}")
     assert "bim_url" in status_resp.json()
+
+
+def test_job_state_has_xb_url_field():
+    from src.api.job_runner import JobState
+    state = JobState(job_id="test-123")
+    assert state.xb_url is None
+
+
+def test_persist_state_includes_xb_url(tmp_path):
+    from src.api.job_runner import JobState, _persist_state
+    state = JobState(job_id="test-456", output_dir=tmp_path)
+    state.xb_url = "https://experience.arcgis.com/builder/?id=abc"
+    _persist_state(state)
+    data = json.loads((tmp_path / "job_state.json").read_text())
+    assert data["xb_url"] == "https://experience.arcgis.com/builder/?id=abc"
+
+
+def test_run_job_skips_xb_when_template_missing(tmp_path):
+    """XB creation is silently skipped if the template file does not exist."""
+    import json
+    from unittest.mock import patch, MagicMock
+
+    mock_cl_result = {
+        "url": "https://services/CL/FeatureServer",
+        "item_id": "cl_id",
+        "utm33_centerline_paths": [],
+    }
+    mock_tp_result = {
+        "url": "https://services/TP/FeatureServer",
+        "item_id": "tp_id",
+        "utm33_stations": [],
+    }
+
+    mock_pipeline_result = {
+        "metadata": str(tmp_path / "meta.json"),
+        "stations_json": str(tmp_path / "stations.json"),
+    }
+    (tmp_path / "meta.json").write_text(json.dumps({"stations": [{"station": 0.0}]}))
+    (tmp_path / "stations.json").write_text(json.dumps([]))
+
+    with patch("src.api.job_runner.run_pipeline", return_value=mock_pipeline_result), \
+         patch("src.api.job_runner.parse_landxml", return_value=(MagicMock(), 25833)), \
+         patch("src.api.job_runner.subprocess.run") as mock_sub:
+
+        mock_sub.side_effect = [
+            MagicMock(stdout=json.dumps(mock_cl_result), stderr=""),
+            MagicMock(stdout=json.dumps(mock_tp_result), stderr=""),
+        ]
+
+        from src.api import job_runner
+        job_id = job_runner.create_job()
+        job_runner._jobs[job_id].output_dir = tmp_path / "output"
+
+        job_runner.run_job(
+            job_id=job_id,
+            ifc_path=tmp_path / "model.ifc",
+            xml_path=tmp_path / "cl.xml",
+            name="TestProject",
+            interval=10.0,
+            access_token="tok",
+            org_url="https://www.arcgis.com",
+            output_dir=tmp_path / "output",
+        )
+
+    state = job_runner.get_job(job_id)
+    assert state.xb_url is None   # template missing → skipped
+    assert state.status in ("done", "done_with_warnings")

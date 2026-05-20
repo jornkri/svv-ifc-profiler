@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+_UPLOADS = Path("uploads")
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -35,10 +37,35 @@ class JobState:
     centerline_url: str | None = None
     sections_url: str | None = None
     bim_url: str | None = None
+    xb_url: str | None = None
     error: str | None = None
+    output_dir: Path | None = field(default=None, repr=False)
 
 
 _jobs: dict[str, JobState] = {}
+
+
+def _persist_state(state: JobState) -> None:
+    if state.output_dir is None:
+        return
+    try:
+        state.output_dir.mkdir(parents=True, exist_ok=True)
+        (state.output_dir / "job_state.json").write_text(
+            json.dumps({
+                "job_id": state.job_id,
+                "status": state.status,
+                "progress_pct": state.progress_pct,
+                "message": state.message,
+                "centerline_url": state.centerline_url,
+                "sections_url": state.sections_url,
+                "bim_url": state.bim_url,
+                "xb_url": state.xb_url,
+                "error": state.error,
+            }),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("Kunne ikke persistere jobstate: %s", exc)
 
 
 def create_job() -> str:
@@ -48,13 +75,27 @@ def create_job() -> str:
 
 
 def get_job(job_id: str) -> JobState | None:
-    return _jobs.get(job_id)
+    state = _jobs.get(job_id)
+    if state is not None:
+        return state
+    # Server kan ha restartet — prøv å lese fra disk
+    state_file = _UPLOADS / job_id / "output" / "job_state.json"
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            state = JobState(**{k: v for k, v in data.items()})
+            _jobs[job_id] = state
+            return state
+        except Exception:
+            pass
+    return None
 
 
 def _update(state: JobState, pct: int, msg: str) -> None:
     state.progress_pct = pct
     state.message = msg
     logger.info("[%s] %d%% %s", state.job_id, pct, msg)
+    _persist_state(state)
 
 
 def run_job(
@@ -75,6 +116,9 @@ def run_job(
     """Kjør full pipeline i bakgrunnen. Oppdaterer jobbstatus underveis."""
     state = _jobs[job_id]
     state.status = "running"
+    state.output_dir = output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _persist_state(state)
 
     try:
         _update(state, 0, "Starter pipeline…")
@@ -169,15 +213,46 @@ def run_job(
                 logger.info("[%s] Lagret %d UTM33-stasjoner lokalt",
                             job_id, len(tp_result["utm33_stations"]))
 
-        # Persist AGOL service URLs so the viewer can load them later
-        _agol = {k: v for k, v in {
-            "centerline_url": state.centerline_url,
-            "sections_url": state.sections_url,
-        }.items() if v}
-        if _agol:
-            (output_dir / "agol_urls.json").write_text(
-                json.dumps(_agol), encoding="utf-8"
-            )
+        def _persist_agol_urls() -> None:
+            """Skriv agol_urls.json med alle tilgjengelige URL-er."""
+            _agol = {k: v for k, v in {
+                "centerline_url": state.centerline_url,
+                "sections_url": state.sections_url,
+                "bim_url": state.bim_url,
+                "xb_url": state.xb_url,
+            }.items() if v}
+            if _agol:
+                (output_dir / "agol_urls.json").write_text(
+                    json.dumps(_agol), encoding="utf-8"
+                )
+
+        _persist_agol_urls()
+
+        # Create / update Experience Builder app
+        _xb_template = Path(__file__).parent.parent.parent / "templates" / "xb_config_template.json"
+        if (
+            include_tverrprofil
+            and state.centerline_url
+            and state.sections_url
+            and _xb_template.exists()
+        ):
+            _update(state, 88, "Oppretter Experience Builder-app…")
+            try:
+                from arcgis.gis import GIS as _GIS
+                from src.arcpy_processor.experience_builder import create_or_update_experience
+                _gis = _GIS(url=org_url, token=access_token)
+                state.xb_url = create_or_update_experience(
+                    gis=_gis,
+                    name=f"{name}_profilutforsker",
+                    centerline_item_id=cl_result.get("item_id", ""),
+                    sections_item_id=tp_result.get("item_id", ""),
+                    sections_service_url=tp_result.get("url", ""),
+                    template_path=_xb_template,
+                )
+                logger.info("[%s] XB-app URL: %s", job_id, state.xb_url)
+            except Exception as _xb_exc:
+                logger.warning("[%s] XB-app oppretting feilet: %s", job_id, _xb_exc)
+            _persist_agol_urls()
 
         if publish_bim:
             _update(state, 80, "Publiserer BIM som 3D GIS-lag…")
@@ -201,6 +276,7 @@ def run_job(
                 state.bim_url = bim_result.get("url")
                 logger.info("[%s] BIM stdout: %s", job_id, bim_proc.stdout.strip())
                 logger.info("[%s] BIM stderr: %s", job_id, bim_proc.stderr.strip())
+                _persist_agol_urls()
                 _update(state, 100, f"Ferdig — {n_sections} profiler + BIM-lag publisert")
                 state.status = "done"
             except subprocess.CalledProcessError as exc:
@@ -222,7 +298,9 @@ def run_job(
         state.status = "failed"
         state.error = exc.stderr or f"Subprocess feilet med kode {exc.returncode}"
         logger.error("[%s] Subprocess feilet: %s", job_id, state.error)
+        _persist_state(state)
     except Exception as exc:
         state.status = "failed"
         state.error = str(exc)
         logger.error("[%s] Jobb feilet: %s", job_id, exc, exc_info=True)
+        _persist_state(state)
