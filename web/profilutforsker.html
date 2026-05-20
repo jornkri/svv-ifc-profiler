@@ -1073,6 +1073,7 @@ function toggleBasemapPicker() {
 function toggleTheme() {
   darkMode = !darkMode;
   document.documentElement.dataset.theme = darkMode ? 'dark' : '';
+  setBasemap(darkMode ? 'mork' : lightBasemapId);
 }
 
 // ── AUTH ───────────────────────────────────────────────────────────────
