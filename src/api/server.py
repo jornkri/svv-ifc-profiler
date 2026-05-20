@@ -151,6 +151,7 @@ def get_job(job_id: str) -> dict:
         "centerline_url": state.centerline_url,
         "sections_url": state.sections_url,
         "bim_url": state.bim_url,
+        "xb_url": state.xb_url,
         "error": state.error,
     }
 
@@ -179,6 +180,8 @@ def list_jobs() -> list[dict]:
                     "modified": meta_file.stat().st_mtime,
                     "centerline_url": agol_urls.get("centerline_url"),
                     "sections_url": agol_urls.get("sections_url"),
+                    "bim_url": agol_urls.get("bim_url"),
+                    "xb_url": agol_urls.get("xb_url"),
                 })
             except Exception:
                 continue

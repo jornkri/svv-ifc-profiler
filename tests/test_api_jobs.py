@@ -487,3 +487,51 @@ def test_run_job_skips_xb_when_template_missing(tmp_path):
     state = job_runner.get_job(job_id)
     assert state.xb_url is None   # template missing → skipped
     assert state.status in ("done", "done_with_warnings")
+
+
+def test_get_job_response_includes_xb_url():
+    from fastapi.testclient import TestClient
+    from src.api.server import app
+    from src.api import job_runner
+
+    job_id = job_runner.create_job()
+    state = job_runner._jobs[job_id]
+    state.status = "done"
+    state.xb_url = "https://experience.arcgis.com/builder/?id=xyz"
+
+    client = TestClient(app)
+    resp = client.get(f"/api/jobs/{job_id}")
+    assert resp.status_code == 200
+    assert resp.json()["xb_url"] == "https://experience.arcgis.com/builder/?id=xyz"
+
+
+def test_list_jobs_response_includes_xb_url(tmp_path):
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    import json as _json
+
+    job_id = "test-list-xb"
+    output_dir = tmp_path / job_id / "output"
+    output_dir.mkdir(parents=True)
+
+    meta = {"stations": [{"station": 0.0}]}
+    (output_dir / "metadata.json").write_text(_json.dumps(meta))
+
+    agol_urls = {
+        "centerline_url": "https://cl",
+        "sections_url": "https://sec",
+        "xb_url": "https://experience.arcgis.com/builder/?id=abc",
+    }
+    (output_dir / "agol_urls.json").write_text(_json.dumps(agol_urls))
+
+    from src.api.server import app
+    client = TestClient(app)
+
+    with patch("src.api.server.UPLOAD_DIR", tmp_path):
+        resp = client.get("/api/jobs")
+
+    assert resp.status_code == 200
+    jobs = resp.json()
+    match = next((j for j in jobs if j["job_id"] == job_id), None)
+    assert match is not None
+    assert match["xb_url"] == "https://experience.arcgis.com/builder/?id=abc"
