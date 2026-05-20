@@ -442,9 +442,6 @@ def test_persist_state_includes_xb_url(tmp_path):
 
 def test_run_job_skips_xb_when_template_missing(tmp_path):
     """XB creation is silently skipped if the template file does not exist."""
-    import json
-    from unittest.mock import patch, MagicMock
-
     mock_cl_result = {
         "url": "https://services/CL/FeatureServer",
         "item_id": "cl_id",

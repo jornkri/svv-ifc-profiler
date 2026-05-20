@@ -86,8 +86,8 @@ def get_job(job_id: str) -> JobState | None:
             state = JobState(**{k: v for k, v in data.items()})
             _jobs[job_id] = state
             return state
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Kunne ikke laste jobstate fra disk (%s): %s", state_file, exc)
     return None
 
 
@@ -185,6 +185,7 @@ def run_job(
 
         _update(state, 70, f"Senterlinje{lp_label} publisert til AGOL")
 
+        tp_result: dict = {}
         if include_tverrprofil:
             _update(state, 75, "Publiserer tverrprofiler til AGOL…")
             tp_proc = subprocess.run(
@@ -236,7 +237,7 @@ def run_job(
             and state.sections_url
             and _xb_template.exists()
         ):
-            _update(state, 88, "Oppretter Experience Builder-app…")
+            _update(state, 78, "Oppretter Experience Builder-app…")
             try:
                 from arcgis.gis import GIS as _GIS
                 from src.arcpy_processor.experience_builder import create_or_update_experience
