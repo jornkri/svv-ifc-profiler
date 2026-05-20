@@ -215,6 +215,17 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as exc:
             logger.warning("Kunne ikke hente UTM33-stasjoner fra AGOL: %s", exc)
 
+        # Backfill svg_url attribute from AGOL attachment URLs
+        try:
+            from arcgis.features import FeatureLayer
+            from .experience_builder import backfill_svg_urls
+            sections_lyr = FeatureLayer(result["url"] + "/0", gis=gis)
+            n_updated = backfill_svg_urls(sections_lyr)
+            logger.info("svg_url backfilled for %d features", n_updated)
+            result["svg_url_count"] = n_updated
+        except Exception as exc:
+            logger.warning("svg_url backfill feilet: %s", exc)
+
         print(json.dumps(result))
         sys.exit(0)
 

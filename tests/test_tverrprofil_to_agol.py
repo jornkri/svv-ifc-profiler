@@ -20,6 +20,7 @@ def setup_arcpy_mock():
     arcgis_mock = MagicMock()
     sys.modules.setdefault("arcgis", arcgis_mock)
     sys.modules.setdefault("arcgis.gis", MagicMock())
+    sys.modules.setdefault("arcgis.features", MagicMock())
 
 
 def _stations_json(tmp: Path) -> Path:
@@ -270,3 +271,35 @@ def test_two_attachments_per_station(tmp_path):
     paths = [r[1] for r in svg_rows]
     assert any("tverrprofil" in p for p in paths)
     assert any("normalprofil" in p for p in paths)
+
+
+def test_cli_calls_backfill_svg_urls_after_publish(tmp_path, capsys):
+    stations_path = _stations_json(tmp_path)
+
+    success_meta = {
+        "status": "ok", "url": "https://services.arcgis.com/xxx/FeatureServer",
+        "item_id": "abc", "item_url": "https://arcgis.com/home/item.html?id=abc",
+        "layer_count": 1, "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
+        "published_at": "2026-05-04T10:00:00+00:00",
+    }
+
+    mock_backfill = MagicMock(return_value=2)
+
+    with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
+         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor.tverrprofil_to_agol.create_point_fc",
+               return_value="C:/scratch/test.gdb/test_tverrprofiler"), \
+         patch("src.arcpy_processor.publisher.upload_and_publish",
+               return_value=success_meta), \
+         patch("src.arcpy_processor.experience_builder.backfill_svg_urls",
+               mock_backfill):
+        from src.arcpy_processor.tverrprofil_to_agol import main
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--stations-json", str(stations_path),
+                  "--svgs-dir", str(tmp_path),
+                  "--name", "Test",
+                  "--folder", "",
+                  "--token", "tok123"])
+        assert exc_info.value.code == 0
+
+    mock_backfill.assert_called_once()
