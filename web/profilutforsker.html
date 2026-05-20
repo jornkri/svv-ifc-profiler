@@ -291,6 +291,26 @@ kbd {
 .map-tool:hover { background: var(--paper); color: var(--ink); }
 .map-tool.active { background: var(--svv-navy-900); color: #fff; border-color: transparent; }
 
+.basemap-picker {
+  position: absolute; top: 0; right: calc(100% + 8px);
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 4px; min-width: 148px; z-index: 20;
+}
+.basemap-picker.hidden { display: none; }
+.basemap-option {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  font-size: 12px; color: var(--ink); user-select: none;
+}
+.basemap-option:hover { background: var(--paper); }
+.basemap-option.active { font-weight: 600; }
+.basemap-option .bm-check { margin-left: auto; font-size: 11px; color: var(--svv-green-500); opacity: 0; }
+.basemap-option.active .bm-check { opacity: 1; }
+.basemap-swatch {
+  width: 16px; height: 16px; border-radius: 3px;
+  border: 1px solid rgba(0,0,0,.15); flex-shrink: 0;
+}
+
 .map-legend {
   position: absolute; right: 14px; bottom: 14px; z-index: 4;
   background: var(--card); border: 1px solid var(--line); border-radius: 6px;
@@ -1065,10 +1085,13 @@ function buildCoordMap(svgEl, stationElevation) {
   if (xTickEls.length < 2 || yTickEls.length < 2) return null;
 
   const parseTick = (els, attr) => els.map(g => {
-    const tspan = g.querySelector('tspan');
-    const comment = _findCommentIn(g);
-    if (!tspan || !comment) return null;
-    const svgPos = parseFloat(tspan.getAttribute(attr));
+    const useEl = g.querySelector('use');
+    let comment = _findCommentIn(g);
+    if (!comment) {
+      for (const ch of g.children) { const c = _findCommentIn(ch); if (c) { comment = c; break; } }
+    }
+    if (!useEl || !comment) return null;
+    const svgPos = parseFloat(useEl.getAttribute(attr));
     const realVal = parseFloat(comment.textContent.trim().replace(/−/g, '-'));
     return (isNaN(svgPos) || isNaN(realVal)) ? null : {svgPos, realVal};
   }).filter(Boolean);
@@ -1102,11 +1125,36 @@ function tagDataCsElements(svgEl) {
     const cls = g.id.slice(3);
     g.querySelectorAll('path').forEach(p => { p.dataset.cs = cls; });
   });
+  // Fallback for SVGs without cs: groups: tag data paths inside the axes
+  // that are NOT part of tick marks, grid lines, patches, or text.
+  if (!svgEl.querySelector('path[data-cs]')) {
+    const axesEl = svgEl.querySelector('[id^="axes_"]');
+    if (axesEl) {
+      axesEl.querySelectorAll('path').forEach(p => {
+        if (!p.closest('clipPath') &&
+            !p.closest('[id^="matplotlib.axis"]') &&
+            !p.closest('[id^="patch_"]') &&
+            !p.closest('[id^="text_"]')) {
+          p.dataset.cs = '';
+        }
+      });
+    }
+  }
 }
 
 const CS_NS = 'http://www.w3.org/2000/svg';
 function csSvgEl() { return document.querySelector('#cs-svg-host > svg'); }
 function csOverlayEl() { return document.getElementById('cs-overlay'); }
+
+function clientToSvgCoord(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+function svgScreenScale(svg) {
+  const m = svg.getScreenCTM();
+  return Math.hypot(m.a, m.b);
+}
 
 function nearestPointOnPath(pathEl, x, y) {
   const total = pathEl.getTotalLength();
@@ -2044,10 +2092,18 @@ function applyTransform() {
 function resetCsZoom() {
   const area = document.querySelector('.dr-svg-area');
   const svgEl = document.querySelector('#cs-svg-host > svg');
+  if (!svgEl) return;
   const cw = area.clientWidth, ch = area.clientHeight;
-  const vb = svgEl ? svgEl.viewBox.baseVal : null;
-  const iw = (vb && vb.width) || 1058;
-  const ih = (vb && vb.height) || 751;
+  if (!cw || !ch) return;
+
+  // Measure the SVG's natural rendered size (clear transform first so getBoundingClientRect
+  // is not affected by any previously applied scale/pan).
+  svgEl.style.transform = '';
+  const r = svgEl.getBoundingClientRect();
+  const vb = svgEl.viewBox.baseVal;
+  const iw = r.width  > 0 ? r.width  : (vb && vb.width)  || 1058;
+  const ih = r.height > 0 ? r.height : (vb && vb.height) || 751;
+
   svgScale = Math.min(cw / iw, ch / ih) * 0.95;
   svgPanX = (cw - iw * svgScale) / 2;
   svgPanY = (ch - ih * svgScale) / 2;
@@ -2066,6 +2122,16 @@ function svgZoomBtn(factor) {
 
 const svgArea = document.querySelector('.dr-svg-area');
 
+let _csResizePending = false;
+new ResizeObserver(() => {
+  if (_csResizePending) return;
+  _csResizePending = true;
+  requestAnimationFrame(() => {
+    _csResizePending = false;
+    if (csSvgEl()) resetCsZoom();
+  });
+}).observe(svgArea);
+
 svgArea.addEventListener('wheel', (e) => {
   if (!document.querySelector('#cs-svg-host > svg')) return;
   e.preventDefault();
@@ -2082,6 +2148,7 @@ svgArea.addEventListener('wheel', (e) => {
 svgArea.addEventListener('pointerdown', (e) => {
   if (!document.querySelector('#cs-svg-host > svg') || e.button !== 0) return;
   if (e.target.closest('.svg-zoom-ctrl')) return;
+  if (measureMode !== 'idle') return;
   e.preventDefault();
   svgDragging = true;
   svgDragStartX = e.clientX - svgPanX;
@@ -2097,13 +2164,10 @@ svgArea.addEventListener('pointermove', (e) => {
     applyTransform();
     return;
   }
-  if (measureMode !== 'idle') return;
   const svg = csSvgEl();
   if (!svg || !currentCoordMap) return;
-  const rect = svgArea.getBoundingClientRect();
-  const svgX = (e.clientX - rect.left - svgPanX) / svgScale;
-  const svgY = (e.clientY - rect.top - svgPanY) / svgScale;
-  const snap = snapToPath(svg, svgX, svgY, 20 / svgScale);
+  const {x: svgX, y: svgY} = clientToSvgCoord(svg, e.clientX, e.clientY);
+  const snap = snapToPath(svg, svgX, svgY, 20 / svgScreenScale(svg));
   renderHoverOverlay(snap || {x: svgX, y: svgY, cls: null}, currentCoordMap);
 });
 
@@ -2124,10 +2188,8 @@ svgArea.addEventListener('click', (e) => {
   const svg = csSvgEl();
   if (!svg || !currentCoordMap) return;
 
-  const rect = svgArea.getBoundingClientRect();
-  const svgX = (e.clientX - rect.left - svgPanX) / svgScale;
-  const svgY = (e.clientY - rect.top - svgPanY) / svgScale;
-  const snap = snapToPath(svg, svgX, svgY, 40 / svgScale);
+  const {x: svgX, y: svgY} = clientToSvgCoord(svg, e.clientX, e.clientY);
+  const snap = snapToPath(svg, svgX, svgY, 40 / svgScreenScale(svg));
 
   if (!snap) {
     document.getElementById('cs-meta-line').textContent = 'Ingen geometri her — prøv nærmere en linje';
@@ -2187,6 +2249,7 @@ function toggleCsMax() {
   const icon = document.getElementById('btn-cs-max');
   icon.title = csMaximized ? 'Minimer' : 'Maksimer';
   if (lpOpen) updateLpRight();
+  setTimeout(resetCsZoom, 300);
 }
 function updateLpRight() {
   // The CSS handles this via .with-right-drawer and .xp-max on .map-area
