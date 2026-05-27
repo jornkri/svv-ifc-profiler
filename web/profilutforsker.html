@@ -1988,6 +1988,11 @@ async function selectStation(idx) {
   document.getElementById('lp-terreng-pipe').style.display = hasTerreng ? '' : 'none';
   document.getElementById('lp-terreng-grp').style.display = hasTerreng ? '' : 'none';
   if (hasTerreng) document.getElementById('lp-terreng-lbl').textContent = s.z_terreng.toFixed(1) + ' m';
+  const hasGrad = s.gradient_pct != null;
+  document.getElementById('lp-gradient-pipe').style.display = hasGrad ? '' : 'none';
+  document.getElementById('lp-gradient-grp').style.display = hasGrad ? '' : 'none';
+  if (hasGrad) document.getElementById('lp-gradient-lbl').textContent =
+    (s.gradient_pct >= 0 ? '+' : '') + s.gradient_pct.toFixed(1) + ' %';
 
   if (lpOpen) drawLp();
   if (!csOpen) openCs();
@@ -2361,6 +2366,13 @@ function toggleLp() {
   if (lpOpen) setTimeout(drawLp, 280);
 }
 
+function toggleLpScale() {
+  lpScaleMode = lpScaleMode === '1:5' ? 'fit' : '1:5';
+  const btn = document.getElementById('btn-lp-scale');
+  if (btn) btn.lastChild.textContent = lpScaleMode === '1:5' ? ' Tilpass' : ' 1:5 skala';
+  if (lpOpen) drawLp();
+}
+
 // ── LP CHART ───────────────────────────────────────────────────────────
 function drawLp() {
   if (!stations.length) return;
@@ -2715,7 +2727,7 @@ window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(
 
 // Expose functions used by inline onclick handlers (required in ES module context)
 Object.assign(window, {
-  toggleTheme, toggleLp, openCs, closeCs, toggleCsMax,
+  toggleTheme, toggleLp, toggleLpScale, openCs, closeCs, toggleCsMax,
   toggleLayer, toggleSidebar, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
   toggleBasemapPicker, setBasemap,
