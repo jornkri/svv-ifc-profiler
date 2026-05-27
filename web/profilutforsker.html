@@ -1792,8 +1792,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
 
     const fset = await stLayer.queryFeatures({
       where: '1=1',
-      outFields: ['OBJECTID', 'stasjon_m', 'profil_nr', 'z_moh', 'z_terreng',
-                  'gradient_pct', 'cross_fall_l', 'cross_fall_r'],
+      outFields: ['*'],
       returnGeometry: true,
       returnZ: true,
       orderByFields: ['stasjon_m ASC'],
