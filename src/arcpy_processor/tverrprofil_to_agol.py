@@ -73,6 +73,9 @@ def create_point_fc(
         else None
     )
 
+    def _nan_to_none(v):
+        return None if v is None or (isinstance(v, float) and v != v) else v
+
     with arcpy.da.InsertCursor(
         fc_path,
         ["stasjon_m", "profil_nr", "z_moh", "z_terreng",
@@ -84,7 +87,6 @@ def create_point_fc(
                 x, y = transformer.transform(x, y)
             pt = arcpy.Point(x, y, row["z"])
             geom = arcpy.PointGeometry(pt, sr)
-            _nan_to_none = lambda v: None if v is None or (isinstance(v, float) and v != v) else v
             cur.insertRow((
                 row["station_m"],
                 row["profil_nr"],
