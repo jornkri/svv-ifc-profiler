@@ -62,6 +62,9 @@ def create_point_fc(
     arcpy.management.AddField(fc_path, "profil_nr", "TEXT", field_length=20)
     arcpy.management.AddField(fc_path, "z_moh", "DOUBLE")
     arcpy.management.AddField(fc_path, "z_terreng", "DOUBLE")
+    arcpy.management.AddField(fc_path, "gradient_pct", "DOUBLE")
+    arcpy.management.AddField(fc_path, "cross_fall_l", "DOUBLE")
+    arcpy.management.AddField(fc_path, "cross_fall_r", "DOUBLE")
     arcpy.management.AddField(fc_path, "svg_url", "TEXT", field_length=512)
 
     transformer = (
@@ -70,14 +73,28 @@ def create_point_fc(
         else None
     )
 
-    with arcpy.da.InsertCursor(fc_path, ["stasjon_m", "profil_nr", "z_moh", "z_terreng", "SHAPE@"]) as cur:
+    with arcpy.da.InsertCursor(
+        fc_path,
+        ["stasjon_m", "profil_nr", "z_moh", "z_terreng",
+         "gradient_pct", "cross_fall_l", "cross_fall_r", "SHAPE@"],
+    ) as cur:
         for row in stations:
             x, y = row["x"], row["y"]
             if transformer is not None:
                 x, y = transformer.transform(x, y)
             pt = arcpy.Point(x, y, row["z"])
             geom = arcpy.PointGeometry(pt, sr)
-            cur.insertRow((row["station_m"], row["profil_nr"], row["z"], row.get("z_terreng"), geom))
+            _nan_to_none = lambda v: None if v is None or (isinstance(v, float) and v != v) else v
+            cur.insertRow((
+                row["station_m"],
+                row["profil_nr"],
+                row["z"],
+                row.get("z_terreng"),
+                _nan_to_none(row.get("gradient_pct")),
+                _nan_to_none(row.get("cross_fall_l")),
+                _nan_to_none(row.get("cross_fall_r")),
+                geom,
+            ))
 
     logger.info("Opprettet FC '%s' med %d punkt(er)", fc_name, len(stations))
     return fc_path

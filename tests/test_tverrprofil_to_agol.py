@@ -303,3 +303,24 @@ def test_cli_calls_backfill_svg_urls_after_publish(tmp_path, capsys):
         assert exc_info.value.code == 0
 
     mock_backfill.assert_called_once()
+
+
+def test_create_point_fc_adds_rubric_fields():
+    """create_point_fc skal kalle AddField for gradient_pct, cross_fall_l, cross_fall_r."""
+    arcpy_mock = sys.modules["arcpy"]
+    arcpy_mock.management.AddField.reset_mock()
+
+    stations = [
+        {"station_m": 0.0, "profil_nr": "0000.00", "x": 10.0, "y": 20.0, "z": 100.0,
+         "gradient_pct": 1.5, "cross_fall_l": 3.5, "cross_fall_r": -3.5},
+        {"station_m": 50.0, "profil_nr": "0050.00", "x": 60.0, "y": 20.0, "z": 100.75,
+         "gradient_pct": None, "cross_fall_l": None, "cross_fall_r": None},
+    ]
+
+    from src.arcpy_processor.tverrprofil_to_agol import create_point_fc
+    create_point_fc(stations, "C:/scratch/test.gdb", "test")
+
+    added_fields = [c.args[1] for c in arcpy_mock.management.AddField.call_args_list]
+    assert "gradient_pct" in added_fields, f"gradient_pct-felt mangler — fikk: {added_fields}"
+    assert "cross_fall_l" in added_fields, f"cross_fall_l-felt mangler — fikk: {added_fields}"
+    assert "cross_fall_r" in added_fields, f"cross_fall_r-felt mangler — fikk: {added_fields}"
