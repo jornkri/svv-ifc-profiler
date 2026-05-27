@@ -45,7 +45,7 @@
   --topbar-h: 52px;
   --sidebar-w: 280px;
   --drawer-right-w: 460px;
-  --drawer-bottom-h: 340px;
+  --drawer-bottom-h: 480px;
 
   --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -953,7 +953,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <span class="range" id="lp-range"></span>
         </div>
         <div class="handle-actions" onclick="event.stopPropagation()">
-          <button class="btn-mini" onclick="drawLp()">
+          <button class="btn-mini" id="btn-lp-scale" onclick="toggleLpScale()">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1h8v8H1z" stroke="currentColor" stroke-width="1.2"/><path d="M3 3h4v4H3z" stroke="currentColor" stroke-width="1"/></svg>
             Tilpass
           </button>
@@ -971,6 +971,8 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <div class="grp"><span class="lbl">H.o.h.</span><span class="val" id="lp-elev-lbl">— m</span></div>
         <div class="pipe" id="lp-terreng-pipe" style="display:none"></div>
         <div class="grp" id="lp-terreng-grp" style="display:none"><span class="lbl">Terreng</span><span class="val" id="lp-terreng-lbl">— m</span></div>
+        <div class="pipe" id="lp-gradient-pipe" style="display:none"></div>
+        <div class="grp" id="lp-gradient-grp" style="display:none"><span class="lbl">Fall</span><span class="val" id="lp-gradient-lbl">— %</span></div>
       </div>
       <div class="lp-area"><canvas id="lp-canvas"></canvas></div>
     </section>
@@ -1005,6 +1007,7 @@ let stations = [];
 let currentIdx = -1;
 let currentJobId = null;
 let lpOpen = false;
+let lpScaleMode = '1:5';  // '1:5' | 'fit'
 let csOpen = false;
 let csMaximized = false;
 let layerVis = { centerline: true, stations: true, bim: true };
@@ -1789,7 +1792,8 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
 
     const fset = await stLayer.queryFeatures({
       where: '1=1',
-      outFields: ['OBJECTID', 'stasjon_m', 'profil_nr', 'z_moh', 'z_terreng'],
+      outFields: ['OBJECTID', 'stasjon_m', 'profil_nr', 'z_moh', 'z_terreng',
+                  'gradient_pct', 'cross_fall_l', 'cross_fall_r'],
       returnGeometry: true,
       returnZ: true,
       orderByFields: ['stasjon_m ASC'],
@@ -1802,6 +1806,9 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
       profil_nr: f.attributes.profil_nr || '',
       z: f.attributes.z_moh ?? (f.geometry?.z ?? 0),
       z_terreng: f.attributes.z_terreng ?? null,
+      gradient_pct: f.attributes.gradient_pct ?? null,
+      cross_fall_l: f.attributes.cross_fall_l ?? null,
+      cross_fall_r: f.attributes.cross_fall_r ?? null,
       x: f.geometry?.x ?? 0,
       y: f.geometry?.y ?? 0,
     }));
