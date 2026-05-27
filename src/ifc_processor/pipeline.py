@@ -244,6 +244,7 @@ def run_pipeline(
 
     for s in stations:
         svg_path_str: str | None = None
+        normal_svg_path_str: str | None = None
         terrain_z_cl = float("nan")
         terrain_z_ifc: float | None = None
         ns = None
@@ -272,14 +273,17 @@ def run_pipeline(
                         terrain_z_cl = float(s.position[2]) + u0[1]
                         terrain_z_ifc = terrain_z_cl
 
-            if include_lengdeprofil:
-                ns = compute_normal_section(cs)
+            ns = compute_normal_section(cs)
 
             if include_tverrprofil:
                 _p = output_dir / f"tverrprofil_{s.distance:07.1f}.svg"
                 render_cross_section_svg(cs, _p)
                 svg_path_str = str(_p)
                 svg_paths.append(svg_path_str)
+
+            _np = output_dir / f"normalprofil_{s.distance:07.1f}.svg"
+            render_normal_section_svg(cs, _np)
+            normal_svg_path_str = str(_np)
 
         except Exception as exc:
             logger.warning("Hopper over stasjon %.1f m: %s", s.distance, exc)
@@ -292,9 +296,13 @@ def run_pipeline(
         }
         if svg_path_str:
             row["svg"] = svg_path_str
+        if normal_svg_path_str:
+            row["normal_svg"] = normal_svg_path_str
         metadata_rows.append(row)
 
         z_moh = _z_from_profile(s.distance)
+        _cf_l = ns.left_cross_fall_pct if ns is not None and not (isinstance(ns.left_cross_fall_pct, float) and ns.left_cross_fall_pct != ns.left_cross_fall_pct) else None
+        _cf_r = ns.right_cross_fall_pct if ns is not None and not (isinstance(ns.right_cross_fall_pct, float) and ns.right_cross_fall_pct != ns.right_cross_fall_pct) else None
         station_rows.append({
             "station_m": round(s.distance, 3),
             "profil_nr": f"{s.distance:07.2f}",
@@ -302,6 +310,9 @@ def run_pipeline(
             "y": round(float(s.position[1]), 3),
             "z": round(z_moh if z_moh is not None else float(s.position[2]), 3),
             "z_terreng": round(terrain_z_ifc, 3) if terrain_z_ifc is not None else None,
+            "gradient_pct": None,   # fylles ut i neste pass nedenfor
+            "cross_fall_l": round(_cf_l, 3) if _cf_l is not None else None,
+            "cross_fall_r": round(_cf_r, 3) if _cf_r is not None else None,
         })
 
         if include_lengdeprofil:
@@ -315,6 +326,13 @@ def run_pipeline(
 
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
+
+    # Gradient-beregning: (z[i+1] - z[i]) / (station[i+1] - station[i]) * 100
+    for i in range(len(station_rows) - 1):
+        dz = station_rows[i + 1]["z"] - station_rows[i]["z"]
+        ds = station_rows[i + 1]["station_m"] - station_rows[i]["station_m"]
+        station_rows[i]["gradient_pct"] = round(dz / ds * 100, 2) if ds > 1e-6 else None
+    # Siste stasjon har ingen neste — beholder None
 
     stations_json_path = output_dir / "stations.json"
     stations_json_path.write_text(json.dumps(station_rows, indent=2))
