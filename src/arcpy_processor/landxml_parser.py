@@ -178,3 +178,89 @@ def parse_landxml(
         )
 
     return result, epsg
+
+
+def parse_horizontal_alignment(path: Path) -> list[dict]:
+    """Ekstraherer horisontal kurvatur-segmenter fra <Alignment>/<CoordGeom>.
+
+    Returnerer ordnet liste med segment-dicter i station-rekkefølge.
+    Segment-keys:
+        kind:      'line' | 'curve' | 'spiral'
+        sta_start: float (stasjon ved segmentstart, meter)
+        sta_end:   float (stasjon ved segmentslutt, meter)
+        radius:    float (kun for 'curve')
+        A:         float (kun for 'spiral' — klotoide-parameter sqrt(L*R))
+        dir:       +1 (ccw/venstre) | -1 (cw/høyre) (kun for 'curve'/'spiral')
+
+    Hvis filen ikke har <Alignment>-elementer returneres tom liste.
+    """
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError as exc:
+        raise ArcpyProcessorError(
+            LANDXML_PARSE_ERROR, f"Ugyldig XML i '{Path(path).name}': {exc}"
+        ) from exc
+
+    root = tree.getroot()
+    ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
+    ns = {"lx": ns_uri} if ns_uri else {}
+
+    def find_all(parent: ET.Element, tag: str) -> list[ET.Element]:
+        return (parent.findall(f".//lx:{tag}", ns) if ns_uri
+                else parent.findall(f".//{tag}"))
+
+    def find_one(parent: ET.Element, tag: str) -> ET.Element | None:
+        return (parent.find(f"lx:{tag}", ns) if ns_uri
+                else parent.find(tag))
+
+    segments: list[dict] = []
+    for al in find_all(root, "Alignment"):
+        geom_el = find_one(al, "CoordGeom")
+        if geom_el is None:
+            continue
+        for seg in list(geom_el):
+            tag = seg.tag.split("}")[-1] if "}" in seg.tag else seg.tag
+            sta_start_str = seg.get("staStart")
+            length_str = seg.get("length")
+            if sta_start_str is None or length_str is None:
+                continue
+            sta_start = float(sta_start_str)
+            sta_end = sta_start + float(length_str)
+
+            if tag == "Line":
+                segments.append({
+                    "kind": "line",
+                    "sta_start": sta_start,
+                    "sta_end": sta_end,
+                })
+            elif tag == "Curve":
+                radius_str = seg.get("radius")
+                if radius_str is None:
+                    continue
+                rot = seg.get("rot", "ccw")
+                segments.append({
+                    "kind": "curve",
+                    "sta_start": sta_start,
+                    "sta_end": sta_end,
+                    "radius": float(radius_str),
+                    "dir": +1 if rot == "ccw" else -1,
+                })
+            elif tag == "Spiral":
+                rs_str = seg.get("radiusStart")
+                re_str = seg.get("radiusEnd")
+                rot = seg.get("rot", "ccw")
+                L = float(length_str)
+                rs = float(rs_str) if rs_str and rs_str.lower() != "inf" else None
+                re_ = float(re_str) if re_str and re_str.lower() != "inf" else None
+                R = rs if rs is not None else re_
+                if R is None or R <= 0:
+                    continue
+                segments.append({
+                    "kind": "spiral",
+                    "sta_start": sta_start,
+                    "sta_end": sta_end,
+                    "A": math.sqrt(L * R),
+                    "dir": +1 if rot == "ccw" else -1,
+                })
+
+    return segments

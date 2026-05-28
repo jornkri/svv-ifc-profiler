@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 from src.arcpy_processor.errors import ArcpyProcessorError, LANDXML_PARSE_ERROR
-from src.arcpy_processor.landxml_parser import parse_landxml
+from src.arcpy_processor.landxml_parser import parse_landxml, parse_horizontal_alignment
 
 SAMPLE = Path(__file__).parent.parent / "samples" / "FV229_Senterlinje.xml"
+SAMPLE_ALIGNMENT = Path(__file__).parent.parent / "samples" / "m_f_veg_70400_aligment.xml"
 
 
 def test_parses_epsg_from_file():
@@ -52,6 +53,40 @@ def test_raises_when_epsg_missing_and_no_override(tmp_path):
     with pytest.raises(ArcpyProcessorError) as exc_info:
         parse_landxml(xml)
     assert exc_info.value.code == LANDXML_PARSE_ERROR
+
+
+def test_parses_curve_line_segments_from_alignment():
+    """parse_horizontal_alignment skal lese ut Curve+Line-segmenter fra Quadri-format."""
+    segments = parse_horizontal_alignment(SAMPLE_ALIGNMENT)
+    # Sample har: Curve, Line, Curve, Line, Curve, Line = 6 segmenter
+    assert len(segments) == 6
+
+    # Første Curve: radius=50, rot=cw (høyrekurve), staStart=0
+    s0 = segments[0]
+    assert s0["kind"] == "curve"
+    assert s0["sta_start"] == pytest.approx(0.0)
+    assert s0["sta_end"] == pytest.approx(12.768460)
+    assert s0["radius"] == pytest.approx(50.0)
+    assert s0["dir"] == -1  # cw = høyre
+
+    # Andre segment: Line
+    s1 = segments[1]
+    assert s1["kind"] == "line"
+    assert s1["sta_start"] == pytest.approx(12.768460)
+    assert s1["sta_end"] == pytest.approx(57.540816)
+    assert "radius" not in s1
+
+    # Tredje: Curve venstre (rot=ccw → dir=+1)
+    s2 = segments[2]
+    assert s2["kind"] == "curve"
+    assert s2["radius"] == pytest.approx(25.0)
+    assert s2["dir"] == +1
+
+
+def test_returns_empty_for_planfeature_only_file():
+    """FV229_Senterlinje.xml har bare PlanFeatures, ingen Alignment — skal returnere []."""
+    segments = parse_horizontal_alignment(SAMPLE)
+    assert segments == []
 
 
 def test_source_epsg_override(tmp_path):
