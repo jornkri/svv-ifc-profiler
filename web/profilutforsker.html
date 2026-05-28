@@ -2629,11 +2629,27 @@ function drawLp() {
 
         if (hc.kind === 'curve') {
           const yArc = yC - hc.dir * offset;
-          $(`<line x1="${xL.toFixed(1)}" x2="${xR.toFixed(1)}" y1="${yArc.toFixed(1)}" y2="${yArc.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
-          if ((xR - xL) > 22) {
+          // Syntetiske visuelle ramper i ender som ikke har eksplisitt klotoide:
+          // hvis nabosegment er line (eller mangler), ramp diagonalt fra senter til offset.
+          const rampPrev = !prev || prev.kind === 'line';
+          const rampNext = !next || next.kind === 'line';
+          const rampLen = Math.min((xR - xL) * 0.15, 18);
+          const xFlat1 = rampPrev ? xL + rampLen : xL;
+          const xFlat2 = rampNext ? xR - rampLen : xR;
+
+          if (rampPrev) {
+            $(`<line x1="${xL.toFixed(1)}" y1="${yC.toFixed(1)}" x2="${xFlat1.toFixed(1)}" y2="${yArc.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
+          }
+          $(`<line x1="${xFlat1.toFixed(1)}" y1="${yArc.toFixed(1)}" x2="${xFlat2.toFixed(1)}" y2="${yArc.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
+          if (rampNext) {
+            $(`<line x1="${xFlat2.toFixed(1)}" y1="${yArc.toFixed(1)}" x2="${xR.toFixed(1)}" y2="${yC.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
+          }
+          // R-label sentrert på det flate midt-segmentet
+          if ((xFlat2 - xFlat1) > 22) {
+            const labelMidX = (xFlat1 + xFlat2) / 2;
             const labelY = hc.dir > 0 ? yArc + segFs + 1 : yArc - 3;
-            $(`<rect x="${(midX - segFs * 1.9).toFixed(1)}" y="${(labelY - segFs).toFixed(1)}" width="${(segFs * 3.8).toFixed(1)}" height="${(segFs + 2).toFixed(1)}" fill="var(--card)"/>`);
-            $(`<text x="${midX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="${segFs.toFixed(1)}" fill="${ink}1)" font-family="var(--font-mono)" font-weight="500">R=${Math.round(hc.radius)}</text>`);
+            $(`<rect x="${(labelMidX - segFs * 1.9).toFixed(1)}" y="${(labelY - segFs).toFixed(1)}" width="${(segFs * 3.8).toFixed(1)}" height="${(segFs + 2).toFixed(1)}" fill="var(--card)"/>`);
+            $(`<text x="${labelMidX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="${segFs.toFixed(1)}" fill="${ink}1)" font-family="var(--font-mono)" font-weight="500">R=${Math.round(hc.radius)}</text>`);
           }
         } else if (hc.kind === 'spiral') {
           let yA = yC, yB = yC;
