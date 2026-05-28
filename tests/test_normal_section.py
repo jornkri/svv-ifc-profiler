@@ -119,6 +119,40 @@ def test_normal_section_is_dataclass():
     assert ns.elevation == 50.0
 
 
+def test_cross_fall_ignores_non_road_segments():
+    """kjørefelt-segmenter med uregelmessig vertikal komponent (rekkverk, kantstein,
+    numerisk støy) skal filtreres ut så de ikke ødelegger tverrfall-resultatet."""
+    cs = _cs(kjørefelt=[
+        # Ekte kjørebane: 3.5 m, faller 0.105 m → 3 %
+        ((-3.5, -0.105), (0.0, 0.0)),
+        ((0.0, 0.0), (3.5, -0.105)),
+        # Støy: kort segment med stort vertikalt utslag → 500 % slope
+        ((3.5, -0.105), (3.51, -0.155)),
+        ((-3.51, -0.155), (-3.5, -0.105)),
+        # Ekstrem støy: nær-vertikalt → 55000 %
+        ((3.50, -0.105), (3.5001, -0.155)),
+    ])
+    ns = compute_normal_section(cs)
+    assert abs(ns.left_cross_fall_pct - 3.0) < 0.5, f"venstre var {ns.left_cross_fall_pct}"
+    assert abs(ns.right_cross_fall_pct - 3.0) < 0.5, f"høyre var {ns.right_cross_fall_pct}"
+
+
+def test_cross_fall_uses_median_for_robustness():
+    """Hvis ett segment har avvikende (men ikke ekstrem) slope, skal medianen
+    av de godkjente verdiene brukes, ikke middel."""
+    cs = _cs(kjørefelt=[
+        # 5 segmenter på høyre side: 4 stk ≈ 3 %, 1 stk ≈ 8 % (avvik men under 15 %-grensa)
+        ((0.0, 0.0), (1.0, -0.03)),    # 3 %
+        ((1.0, -0.03), (2.0, -0.06)),  # 3 %
+        ((2.0, -0.06), (3.0, -0.09)),  # 3 %
+        ((3.0, -0.09), (4.0, -0.17)),  # 8 % (avvik)
+        ((4.0, -0.17), (5.0, -0.20)),  # 3 %
+    ])
+    ns = compute_normal_section(cs)
+    # Middel = (3+3+3+8+3)/5 = 4.0, median = 3.0 → forventer ~3
+    assert abs(ns.right_cross_fall_pct - 3.0) < 0.3
+
+
 def test_cross_fall_segment_spanning_centreline():
     # IFC kan produsere kjørefelt-segment som krysser CL litt: midpoint avgjør siden
     cs = _cs(kjørefelt=[

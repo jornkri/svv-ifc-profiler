@@ -37,7 +37,13 @@ def _outer_u(segs: list, left: bool) -> float:
 
 
 def _cross_fall(segs: list, left: bool) -> float:
-    """Beregner gjennomsnittlig tverrfall i % fra segmenter på angitt side."""
+    """Beregner tverrfall (%) som median av segmentene på angitt side.
+
+    Filtrerer ut segmenter med slope > 15 % — disse er ikke kjørebane (typisk
+    rekkverk-kant, kantstein, eller numerisk støy der du≈0). Median er mer
+    robust enn middel mot enkeltavvik. Returnerer abs-verdi (positiv) for å
+    holde eksisterende konvensjon.
+    """
     slopes = []
     for (u1, v1), (u2, v2) in segs:
         mid_u = (u1 + u2) / 2
@@ -47,9 +53,17 @@ def _cross_fall(segs: list, left: bool) -> float:
             continue
         du = abs(u2 - u1)
         dv = abs(v2 - v1)
-        if du > 1e-6:
-            slopes.append(dv / du * 100)
-    return sum(slopes) / len(slopes) if slopes else float("nan")
+        if du < 1e-6:
+            continue
+        pct = dv / du * 100
+        if pct > 15:  # ikke kjørebane
+            continue
+        slopes.append(pct)
+    if not slopes:
+        return float("nan")
+    slopes.sort()
+    n = len(slopes)
+    return slopes[n // 2] if n % 2 else (slopes[n // 2 - 1] + slopes[n // 2]) / 2
 
 
 def _slope_ratio(segs: list, left: bool) -> float:
