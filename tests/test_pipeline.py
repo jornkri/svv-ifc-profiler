@@ -92,3 +92,42 @@ def test_load_alignment_metadata_from_ifc():
 def test_load_alignment_metadata_none_for_unknown():
     from src.ifc_processor.pipeline import _load_alignment_metadata
     assert _load_alignment_metadata(None) is None
+
+
+def test_station_grid_starts_at_referent_offset():
+    """Når IfcReferent finnes, skal stations starte ved første referent (modulo intervall)."""
+    from src.ifc_processor.pipeline import _aligned_station_offset
+    from src.ifc_processor.alignment_parser import StationLabel
+
+    labels = [StationLabel(station=107.3, name="P 100", position=(0, 0, 0))]
+    assert _aligned_station_offset(labels, interval_m=10.0) == pytest.approx(7.3)
+
+    labels = [StationLabel(station=100.0, name="P 100", position=(0, 0, 0))]
+    assert _aligned_station_offset(labels, interval_m=10.0) == pytest.approx(0.0)
+
+    assert _aligned_station_offset([], interval_m=10.0) == pytest.approx(0.0)
+
+
+def test_pipeline_aligns_grid_to_referent(tmp_path):
+    """Run pipeline med 12200 IFC-CL og verifiser at stations starter ved referent-offset."""
+    from src.ifc_processor.pipeline import run_pipeline
+    import json
+    samples = Path(__file__).parent.parent / "samples"
+    ifc_path = samples / "m_f_veg_12200_Veg.ifc"
+    cl_path = samples / "m_f-veg_12200_CL.ifc"
+    if not ifc_path.exists() or not cl_path.exists():
+        pytest.skip("12200-testfiler mangler")
+    out = tmp_path / "out"
+    result = run_pipeline(
+        ifc_path=ifc_path,
+        centerline_path=cl_path,
+        output_dir=out,
+        interval_m=10.0,
+        include_terrain=False,
+        include_lengdeprofil=False,
+    )
+    stations = json.loads((out / "stations.json").read_text())
+    if len(stations) > 1:
+        first_two = stations[:2]
+        delta = first_two[1]["station_m"] - first_two[0]["station_m"]
+        assert abs(delta - 10.0) < 0.01

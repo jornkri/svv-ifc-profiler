@@ -35,12 +35,12 @@ class CrossSection:
     )
 
 
-def sample_stations(centerline: Centerline, interval_m: float = 10.0) -> list[Station]:
+def sample_stations(centerline: Centerline, interval_m: float = 10.0, start_offset: float = 0.0) -> list[Station]:
     pts = centerline.points
     sts = centerline.stations
     total = sts[-1]
 
-    target_distances = np.arange(0.0, total + 1e-9, interval_m)
+    target_distances = np.arange(start_offset, total + 1e-9, interval_m)
     stations: list[Station] = []
 
     for d in target_distances:

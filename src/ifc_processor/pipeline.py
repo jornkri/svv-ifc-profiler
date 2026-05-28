@@ -94,6 +94,21 @@ def _load_alignment_metadata(cl_path: Path | None) -> AlignmentMetadata | None:
     return None
 
 
+def _aligned_station_offset(
+    station_labels: list[StationLabel],
+    interval_m: float,
+) -> float:
+    """Returner offset (0 ≤ offset < interval) slik at stations-grid passerer
+    gjennom IfcReferent-stasjoner.
+
+    f.eks. interval=10, første referent på 107.3 → offset 7.3 → grid: 7.3, 17.3, 27.3, ...
+    """
+    if not station_labels:
+        return 0.0
+    first = station_labels[0].station
+    return float(first % interval_m)
+
+
 def _clip_centerline_to_tins(
     centerline: Centerline,
     tins: list[TINLayer],
@@ -303,8 +318,10 @@ def run_pipeline(
         return float(np.interp(station_m, _vp_sta, _vp_elev,
                                left=float(_vp_elev[0]), right=float(_vp_elev[-1])))
 
-    stations = sample_stations(centerline, interval_m)
-    logger.info("Genererer %d tverrprofiler (intervall: %.1f m)", len(stations), interval_m)
+    align_meta = _load_alignment_metadata(centerline_path)
+    offset = _aligned_station_offset(align_meta.station_labels, interval_m) if align_meta else 0.0
+    stations = sample_stations(centerline, interval_m, start_offset=offset)
+    logger.info("Genererer %d tverrprofiler (intervall: %.1f m, offset: %.3f m)", len(stations), interval_m, offset)
 
     svg_paths: list[str] = []
     metadata_rows: list[dict] = []
