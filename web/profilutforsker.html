@@ -2606,8 +2606,62 @@ function drawLp() {
       }
 
     } else if (r.key === 'horkurv') {
-      $(`<line x1="0" y1="${mid.toFixed(1)}" x2="${innerW}" y2="${mid.toFixed(1)}" stroke="${ink}0.18)" stroke-width="0.8" stroke-dasharray="14,5"/>`);
-      $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">kurvaturdata fra LandXML</text>`);
+      const yC = mid;
+      const yTop = y0 + 3;
+      const yBot = y0 + rh - 3;
+      const offset = (yBot - yC) * 0.85;
+      const segFs = Math.max(8.5, baseRowH * 0.62);
+      const stepX = innerW / Math.max(1, (stMax - stMin) / 10);
+
+      // Lang-stiplet senterlinje (~3 stipler per 50 m)
+      const dash = Math.max(8, stepX * 1.3);
+      const dgap = Math.max(3, stepX * 0.4);
+      $(`<line x1="0" y1="${yC.toFixed(1)}" x2="${innerW}" y2="${yC.toFixed(1)}" stroke="${ink}1)" stroke-width="0.9" stroke-dasharray="${dash.toFixed(1)},${dgap.toFixed(1)}"/>`);
+
+      const visible = horCurves.filter(hc => hc.sta_end > stMin && hc.sta_start < stMax);
+
+      visible.forEach((hc, i) => {
+        const xL = xOf(Math.max(hc.sta_start, stMin));
+        const xR = xOf(Math.min(hc.sta_end, stMax));
+        const midX = (xL + xR) / 2;
+        const prev = visible[i - 1];
+        const next = visible[i + 1];
+
+        if (hc.kind === 'curve') {
+          const yArc = yC - hc.dir * offset;
+          $(`<line x1="${xL.toFixed(1)}" x2="${xR.toFixed(1)}" y1="${yArc.toFixed(1)}" y2="${yArc.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
+          if ((xR - xL) > 22) {
+            const labelY = hc.dir > 0 ? yArc + segFs + 1 : yArc - 3;
+            $(`<rect x="${(midX - segFs * 1.9).toFixed(1)}" y="${(labelY - segFs).toFixed(1)}" width="${(segFs * 3.8).toFixed(1)}" height="${(segFs + 2).toFixed(1)}" fill="var(--card)"/>`);
+            $(`<text x="${midX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="${segFs.toFixed(1)}" fill="${ink}1)" font-family="var(--font-mono)" font-weight="500">R=${Math.round(hc.radius)}</text>`);
+          }
+        } else if (hc.kind === 'spiral') {
+          let yA = yC, yB = yC;
+          if (prev && prev.kind === 'curve') yA = yC - prev.dir * offset;
+          if (next && next.kind === 'curve') yB = yC - next.dir * offset;
+          $(`<line x1="${xL.toFixed(1)}" x2="${xR.toFixed(1)}" y1="${yA.toFixed(1)}" y2="${yB.toFixed(1)}" stroke="${ink}1)" stroke-width="1.4"/>`);
+          if ((xR - xL) > 20) {
+            const yMidSeg = (yA + yB) / 2;
+            const above = yMidSeg < yC;
+            const labelY = above ? yMidSeg - 3 : yMidSeg + segFs + 1;
+            $(`<rect x="${(midX - segFs * 1.8).toFixed(1)}" y="${(labelY - segFs).toFixed(1)}" width="${(segFs * 3.6).toFixed(1)}" height="${(segFs + 2).toFixed(1)}" fill="var(--card)"/>`);
+            $(`<text x="${midX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="${segFs.toFixed(1)}" fill="${ink}1)" font-family="var(--font-mono)" font-weight="500">A=${Math.round(hc.A)}</text>`);
+          }
+        }
+        // KP-streker (to faste segmenter med liten luft) ved start/slutt
+        if (hc.kind === 'curve' || hc.kind === 'spiral') {
+          [xL, xR].forEach(x => {
+            const yMidGap = (yTop + yBot) / 2;
+            const g = 3;
+            $(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${yTop.toFixed(1)}" y2="${(yMidGap - g).toFixed(1)}" stroke="${ink}1)" stroke-width="0.7"/>`);
+            $(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${(yMidGap + g).toFixed(1)}" y2="${yBot.toFixed(1)}" stroke="${ink}1)" stroke-width="0.7"/>`);
+          });
+        }
+      });
+
+      if (visible.length === 0) {
+        $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">kurvaturdata mangler</text>`);
+      }
 
     } else if (r.key === 'breddeutv') {
       $(`<line x1="0" y1="${mid.toFixed(1)}" x2="${innerW}" y2="${mid.toFixed(1)}" stroke="${ink}0.18)" stroke-width="0.8" stroke-dasharray="14,5"/>`);
