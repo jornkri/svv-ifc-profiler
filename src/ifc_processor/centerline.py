@@ -362,7 +362,13 @@ def load_centerline(source: Path | None, ifc_path: Path) -> Centerline:
             return _load_from_csv(source)
         if suffix == ".xml":
             return _load_from_landxml(source)
-        raise ValueError(f"Ukjent senterlinje-format: {suffix}. Godkjente formater: .geojson, .csv, .xml (LandXML)")
+        if suffix == ".ifc":
+            from .alignment_parser import load_alignment_from_ifc
+            return load_alignment_from_ifc(source).to_centerline()
+        raise ValueError(
+            f"Ukjent senterlinje-format: {suffix}. "
+            "Godkjente formater: .geojson, .csv, .xml (LandXML), .ifc (IFC4X3)"
+        )
 
     if ifc_path.exists():
         cl = _try_ifc_alignment(ifc_path)

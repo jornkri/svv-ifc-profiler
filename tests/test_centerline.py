@@ -41,3 +41,13 @@ def test_centerline_total_length():
     stations = _stations_from_points(pts)
     cl = Centerline(points=pts, stations=stations)
     assert cl.total_length == pytest.approx(5.0)
+
+
+def test_load_centerline_from_ifc_alignment():
+    from src.ifc_processor.centerline import load_centerline, Centerline
+    cl_ifc = Path(__file__).parent.parent / "samples" / "m_f-veg_12200_CL.ifc"
+    cl = load_centerline(source=cl_ifc, ifc_path=Path("nonexistent.ifc"))
+    assert isinstance(cl, Centerline)
+    assert cl.points.shape[0] >= 100
+    assert cl.points.shape[1] == 3
+    assert cl.total_length > 100  # 12200-modellen er > 2 km
