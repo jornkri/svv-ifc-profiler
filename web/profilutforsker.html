@@ -593,7 +593,36 @@ html[data-theme="dark"] .snap-preview-svg-el { background: var(--paper-2); }
 .lp-toolbar .pipe { width: 1px; height: 12px; background: var(--line); }
 
 .lp-area { flex: 1; overflow: hidden; position: relative; }
-#lp-canvas { display: block; }
+
+/* LP SVG viewer */
+.lp-wrap { width: 100%; height: 100%; position: relative; overflow: hidden; }
+.lp-scroll { position: absolute; inset: 0; overflow: auto; user-select: none; -webkit-user-select: none; }
+.lp-inner { display: flex; position: relative; }
+.lp-gutter {
+  flex-shrink: 0; position: sticky; left: 0; z-index: 2;
+  border-right: 1.5px solid var(--ink); background: var(--card);
+}
+.lp-plot { flex-shrink: 0; }
+.xp-zoom-hud {
+  position: absolute; right: 10px; bottom: 8px;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06); z-index: 5;
+  pointer-events: all;
+}
+.xp-zoom-val {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--ink-3); padding: 0 6px;
+  font-variant-numeric: tabular-nums; min-width: 36px; text-align: right;
+}
+.xp-zoom-btn {
+  width: 22px; height: 22px;
+  border: 1px solid var(--line-2); background: var(--card);
+  border-radius: 4px; cursor: pointer; color: var(--ink-2);
+  font-size: 14px; line-height: 1; display: grid; place-items: center;
+}
+.xp-zoom-btn:hover { background: var(--paper); color: var(--ink); }
 
 /* ── ESRI OVERRIDES ── */
 .esri-view .esri-view-surface--inset-outline:focus::after { outline: none; }
@@ -945,7 +974,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 
     <!-- BOTTOM DRAWER (lengdeprofil) -->
     <section class="drawer-bottom closed" id="lp">
-      <div class="drawer-handle" onclick="toggleLp()">
+      <div class="drawer-handle" id="lp-handle">
         <div class="grip"></div>
         <div class="handle-title">
           <span class="num">C-plan</span>
@@ -974,7 +1003,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <div class="pipe" id="lp-gradient-pipe" style="display:none"></div>
         <div class="grp" id="lp-gradient-grp" style="display:none"><span class="lbl">Fall</span><span class="val" id="lp-gradient-lbl">— %</span></div>
       </div>
-      <div class="lp-area"><canvas id="lp-canvas"></canvas></div>
+      <div class="lp-area" id="lp-area"></div>
     </section>
 
   </div><!-- /map-area -->
@@ -1008,6 +1037,9 @@ let currentIdx = -1;
 let currentJobId = null;
 let lpOpen = false;
 let lpScaleMode = '1:5';  // '1:5' | 'fit'
+let horCurves = [];  // [{kind, sta_start, sta_end, radius?, A?, dir?}, ...]
+let lpZoom = 1;
+let _lpDrag = { active: false, sx: 0, sy: 0, sl: 0, st: 0, moved: 0 };
 let csOpen = false;
 let csMaximized = false;
 let layerVis = { centerline: true, stations: true, bim: true };
@@ -1687,6 +1719,7 @@ document.getElementById('job-select').addEventListener('change', async e => {
 async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
   currentJobId = jobId;
   stations = [];
+  horCurves = [];
   currentIdx = -1;
   setLoading(true, 'Laster veidata fra AGOL…');
 
@@ -1811,6 +1844,16 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
       x: f.geometry?.x ?? 0,
       y: f.geometry?.y ?? 0,
     }));
+
+    // Last horisontal kurvatur fra API (tom liste hvis ikke tilgjengelig)
+    try {
+      const hcRes = await fetch(API + '/api/jobs/' + jobId + '/horizontal-alignment',
+                                { credentials: 'include' });
+      horCurves = hcRes.ok ? await hcRes.json() : [];
+    } catch (err) {
+      console.warn('horizontal-alignment fetch:', err);
+      horCurves = [];
+    }
 
     // Update UI
     const shortId = jobId.slice(0, 8) + '…';
@@ -2372,306 +2415,343 @@ function toggleLpScale() {
   if (lpOpen) drawLp();
 }
 
-// ── LP CHART ───────────────────────────────────────────────────────────
+// ── LP ZOOM HELPERS ──────────────────────────────────────────────────────
+const LP_ZOOM_MIN = 1, LP_ZOOM_MAX = 5, LP_GW = 82, LP_PR = 16;
+function lpZoomIn()    { _setLpZoom(lpZoom * 1.4); }
+function lpZoomOut()   { _setLpZoom(lpZoom / 1.4); }
+function lpZoomReset() { _setLpZoom(1); }
+function _setLpZoom(z) {
+  lpZoom = +Math.max(LP_ZOOM_MIN, Math.min(LP_ZOOM_MAX, z)).toFixed(3);
+  if (lpOpen) drawLp();
+}
+function _lpNearest(st) {
+  return stations.reduce((a, b) => Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
+}
+
+// ── LP CHART (SVG-based) ─────────────────────────────────────────────────
 function drawLp() {
   if (!stations.length) return;
-  const area = document.querySelector('.lp-area');
-  const cnv = document.getElementById('lp-canvas');
-  const W = area.clientWidth, H = area.clientHeight;
-  if (!W || !H) return;
-  cnv.width = W; cnv.height = H;
-  const ctx = cnv.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
+  const area = document.getElementById('lp-area');
+  if (!area) return;
+  const aW = area.clientWidth, aH = area.clientHeight;
+  if (!aW || !aH) return;
+
+  // Preserve scroll
+  const prevSc = area.querySelector('.lp-scroll');
+  const prevSL = prevSc ? prevSc.scrollLeft : 0;
+  const prevST = prevSc ? prevSc.scrollTop  : 0;
 
   const isDark = document.documentElement.dataset.theme === 'dark';
-  const gridColor   = isDark ? 'rgba(255,255,255,.04)' : 'rgba(6,41,72,.05)';
-  const axisColor   = isDark ? 'rgba(255,255,255,.15)' : 'rgba(6,41,72,.15)';
-  const labelColor  = isDark ? '#6a7682' : '#8a96a2';
-  const lineColor   = '#1f8a4a';
-  const fillColor   = isDark ? 'rgba(31,138,74,.08)' : 'rgba(31,138,74,.1)';
-  const terrengColor = isDark ? '#9b7a2e' : '#8b5e1a';
-  const cursorColor = '#e0228e';
 
-  // Rubric layout constants
-  const RUBRIC_ROW_H = 26;
-  const N_RUBRIC_ROWS = 5;
-  const RUBRIC_H = N_RUBRIC_ROWS * RUBRIC_ROW_H;
-  const PAD = { t: 10, r: 18, b: 20, l: 70 };
-  const iW = W - PAD.l - PAD.r;
-  const profH = H - PAD.t - RUBRIC_H - PAD.b;
-  const iH = profH;
-  const rubricY0 = PAD.t + profH;
+  // Layout
+  const GW = LP_GW, PR = LP_PR;
+  const baseW  = Math.max(600, aW - GW);
+  const svgW   = baseW * lpZoom;
+  const innerW = svgW - PR;
 
-  const stMin = stations[0].stasjon_m;
-  const stMax = stations[stations.length - 1].stasjon_m;
-  const elevs = stations.map(s => s.z);
-  const terrengElevs = stations.map(s => s.z_terreng).filter(z => z != null);
-  const hasTerreng = terrengElevs.length > 0;
-  const allElevs = [...elevs, ...terrengElevs];
+  const baseRowH = Math.max(18, Math.min(26, 18 + (lpZoom - 1) * 2.5));
+  const ROWS = [
+    { key: 'profnr',    label: 'Profil nr.',  hm: 1.8 },
+    { key: 'horkurv',   label: 'Hor.kurv.',   hm: 2.0 },
+    { key: 'breddeutv', label: 'Breddeutv.',  hm: 1.8 },
+    { key: 'tverrfall', label: 'Tverrfall',   hm: 4.4, subs: ['H.kj.b.k.', 'V.kj.b.k.'] },
+    { key: 'profh',     label: 'Profil h.',   hm: 3.8 },
+    { key: 'terrengh',  label: 'Terreng h.',  hm: 3.8 },
+  ];
+  const rowH   = ROWS.map(r => Math.round(r.hm * baseRowH));
+  const rowTop = [0];
+  for (let i = 0; i < rowH.length; i++) rowTop.push(rowTop[i] + rowH[i]);
+  const schemaH = rowTop[rowTop.length - 1];
+  const GPT = 16, GPB = 8;
+  const graphH = Math.max(220, aH - schemaH - 8);
+  const svgH   = graphH + schemaH + 2;
 
-  // 1:5 scale or auto-fit
+  // Scales
+  const stMin = stations[0].stasjon_m, stMax = stations[stations.length - 1].stasjon_m;
+  const stRange = stMax - stMin;
+  const dElevs = stations.map(s => s.z);
+  const tElevs = stations.map(s => s.z_terreng).filter(v => v != null);
+  const hasT   = tElevs.length > 0;
+
   let elMin, elMax;
   if (lpScaleMode === '1:5') {
-    const elRange  = (stMax - stMin) / 5;
-    const elCenter = (Math.min(...elevs) + Math.max(...elevs)) / 2;
-    elMin = elCenter - elRange / 2;
-    elMax = elCenter + elRange / 2;
+    const er = stRange / 5;
+    const all = [...dElevs, ...(hasT ? tElevs : [])];
+    const ec = (Math.min(...all) + Math.max(...all)) / 2;
+    elMin = ec - er / 2; elMax = ec + er / 2;
   } else {
-    elMin = Math.min(...allElevs) - 2;
-    elMax = Math.max(...allElevs) + 2;
+    const all = [...dElevs, ...(hasT ? tElevs : [])];
+    elMin = Math.floor((Math.min(...all) - 2) / 5) * 5;
+    elMax = Math.ceil ((Math.max(...all) + 2) / 5) * 5;
   }
 
-  const xOf = st => PAD.l + ((st - stMin) / (stMax - stMin)) * iW;
-  const yOf = el => PAD.t + iH - ((el - elMin) / (elMax - elMin)) * iH;
+  const xOf = st => ((st - stMin) / stRange) * innerW;
+  const yOf = el => GPT + (graphH - GPT - GPB) * (1 - (el - elMin) / (elMax - elMin));
 
-  // Grid Y — 10m fixed (R700 1:5)
-  ctx.strokeStyle = gridColor; ctx.lineWidth = 1;
-  ctx.fillStyle = labelColor;
-  ctx.font = '10px "JetBrains Mono", monospace'; ctx.textAlign = 'right';
-  for (let el = Math.ceil(elMin / 10) * 10; el <= elMax; el += 10) {
-    const y = yOf(el);
-    if (y < PAD.t - 1 || y > PAD.t + iH + 1) continue;
-    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
-    ctx.fillText(el.toFixed(0), PAD.l - 5, y + 3.5);
+  // Colors
+  const CR  = '#1f8a4a';
+  const CF  = isDark ? 'rgba(31,138,74,.08)' : 'rgba(31,138,74,.10)';
+  const CT  = isDark ? '#9b7a2e' : '#8b5e1a';
+  const CC  = '#e0228e';
+  const ink = isDark ? 'rgba(232,237,242,' : 'rgba(14,26,38,';
+
+  // SVG parts
+  const p = [];
+  const $ = s => p.push(s);
+
+  // ── GRAPH AREA ─────────────────────────────────────────────
+  // H-grid 5m minor
+  for (let y = Math.ceil(elMin / 5) * 5; y <= elMax; y += 5) {
+    if (y % 10 === 0) continue;
+    const cy = yOf(y);
+    if (cy < GPT - 1 || cy > graphH + 1) continue;
+    $(`<line x1="0" y1="${cy.toFixed(1)}" x2="${innerW}" y2="${cy.toFixed(1)}" stroke="${ink}0.07)" stroke-width="0.5"/>`);
   }
-
-  // Grid X — 50m fixed (R700 1:5)
-  ctx.textAlign = 'center';
+  // H-grid 10m major
+  for (let y = Math.ceil(elMin / 10) * 10; y <= elMax; y += 10) {
+    const cy = yOf(y);
+    if (cy < GPT - 1 || cy > graphH + 1) continue;
+    $(`<line x1="0" y1="${cy.toFixed(1)}" x2="${innerW}" y2="${cy.toFixed(1)}" stroke="${ink}0.28)" stroke-width="0.7"/>`);
+  }
+  // V-grid 10m fine
+  for (let st = Math.ceil(stMin / 10) * 10; st <= stMax; st += 10) {
+    if (st % 50 === 0) continue;
+    const cx = xOf(st);
+    $(`<line x1="${cx.toFixed(1)}" y1="${GPT}" x2="${cx.toFixed(1)}" y2="${svgH}" stroke="${ink}0.05)" stroke-width="0.4"/>`);
+  }
+  // V-grid 50m medium
   for (let st = Math.ceil(stMin / 50) * 50; st <= stMax; st += 50) {
-    const x = xOf(st);
-    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, rubricY0); ctx.stroke();
-    ctx.fillText(st.toFixed(0), x, H - PAD.b + 14);
+    if (st % 100 === 0) continue;
+    const cx = xOf(st);
+    $(`<line x1="${cx.toFixed(1)}" y1="${GPT}" x2="${cx.toFixed(1)}" y2="${svgH}" stroke="${ink}0.22)" stroke-width="0.6"/>`);
+  }
+  // V-grid 100m heavy
+  for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
+    const cx = xOf(st);
+    $(`<line x1="${cx.toFixed(1)}" y1="${GPT}" x2="${cx.toFixed(1)}" y2="${svgH}" stroke="${ink}0.45)" stroke-width="1.0"/>`);
   }
 
-  // Axes (profile area only)
-  ctx.strokeStyle = axisColor; ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(PAD.l, PAD.t);
-  ctx.lineTo(PAD.l, rubricY0);
-  ctx.lineTo(W - PAD.r, rubricY0);
-  ctx.stroke();
-
-  // Y axis label
-  ctx.save();
-  ctx.translate(13, PAD.t + iH / 2); ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = labelColor; ctx.font = '10px "Inter Tight", sans-serif';
-  ctx.textAlign = 'center'; ctx.fillText('H.o.h. (m)', 0, 0);
-  ctx.restore();
-
-  // Terrain line (dashed, below design)
-  if (hasTerreng) {
-    ctx.save(); ctx.setLineDash([6, 4]);
-    ctx.strokeStyle = terrengColor; ctx.lineWidth = 1.0;
-    ctx.beginPath();
-    let started = false;
-    for (const s of stations) {
-      if (s.z_terreng == null) { started = false; continue; }
-      const x = xOf(s.stasjon_m), y = yOf(s.z_terreng);
-      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-    }
-    ctx.stroke(); ctx.restore();
-  }
+  // Graph boundary line
+  $(`<line x1="0" y1="${graphH}" x2="${innerW}" y2="${graphH}" stroke="${ink}1)" stroke-width="1.5"/>`);
 
   // Fill under design profile
-  ctx.beginPath();
-  ctx.moveTo(xOf(stMin), rubricY0);
-  for (const s of stations) ctx.lineTo(xOf(s.stasjon_m), yOf(s.z));
-  ctx.lineTo(xOf(stMax), rubricY0);
-  ctx.closePath();
-  ctx.fillStyle = fillColor; ctx.fill();
+  let fillD = `M0,${graphH}`;
+  for (const s of stations) fillD += ` L${xOf(s.stasjon_m).toFixed(1)},${yOf(s.z).toFixed(1)}`;
+  fillD += ` L${innerW},${graphH} Z`;
+  $(`<path d="${fillD}" fill="${CF}"/>`);
 
-  // Design profile line (solid heavy — R700)
-  ctx.beginPath(); ctx.strokeStyle = lineColor; ctx.lineWidth = 2.0;
-  stations.forEach((s, i) => {
-    if (i === 0) ctx.moveTo(xOf(s.stasjon_m), yOf(s.z));
-    else ctx.lineTo(xOf(s.stasjon_m), yOf(s.z));
-  });
-  ctx.stroke();
-
-  // Profile height labels at 100m
-  ctx.fillStyle = lineColor;
-  ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-  for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
-    const s = stations.reduce((a, b) =>
-      Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
-    const x = xOf(s.stasjon_m), y = yOf(s.z);
-    if (y > PAD.t + 5) ctx.fillText(s.z.toFixed(1), x, y - 5);
+  // Terrain line (dashed)
+  if (hasT) {
+    let td = '', ok = false;
+    for (const s of stations) {
+      if (s.z_terreng == null) { ok = false; continue; }
+      const cx = xOf(s.stasjon_m).toFixed(1), cy = yOf(s.z_terreng).toFixed(1);
+      td += ok ? ` L${cx},${cy}` : `M${cx},${cy}`; ok = true;
+    }
+    if (td) $(`<path d="${td}" fill="none" stroke="${CT}" stroke-width="1.2" stroke-dasharray="6,4"/>`);
   }
 
+  // Design profile line
+  let rd = '';
+  stations.forEach((s, i) => {
+    const cx = xOf(s.stasjon_m).toFixed(1), cy = yOf(s.z).toFixed(1);
+    rd += i === 0 ? `M${cx},${cy}` : ` L${cx},${cy}`;
+  });
+  $(`<path d="${rd}" fill="none" stroke="${CR}" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>`);
+
+  // Profile height labels at 100m (above line)
+  for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
+    const s = _lpNearest(st);
+    const cx = xOf(s.stasjon_m), cy = yOf(s.z);
+    if (cy > GPT + 8)
+      $(`<text x="${cx.toFixed(1)}" y="${(cy - 5).toFixed(1)}" text-anchor="middle" font-size="8" font-weight="600" fill="${CR}" font-family="var(--font-mono)">${s.z.toFixed(2)}</text>`);
+  }
   // Terrain height labels at 100m
-  if (hasTerreng) {
-    ctx.fillStyle = terrengColor;
-    ctx.font = '8px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+  if (hasT) {
     for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
-      const s = stations.reduce((a, b) =>
-        Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
+      const s = _lpNearest(st);
       if (s.z_terreng == null) continue;
-      const x = xOf(s.stasjon_m), y = yOf(s.z_terreng);
-      if (y > PAD.t + 5) ctx.fillText(s.z_terreng.toFixed(1), x, y + 12);
+      const cx = xOf(s.stasjon_m), cy = yOf(s.z_terreng);
+      $(`<text x="${cx.toFixed(1)}" y="${(cy + 12).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="${CT}" font-family="var(--font-mono)">${s.z_terreng.toFixed(2)}</text>`);
     }
   }
 
   // Legend (upper right)
-  const legX = W - PAD.r - 4, legY = PAD.t + 10;
-  ctx.font = '9px "Inter Tight", sans-serif'; ctx.textAlign = 'right';
-  ctx.strokeStyle = lineColor; ctx.lineWidth = 2.0; ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(legX - 28, legY); ctx.lineTo(legX - 8, legY); ctx.stroke();
-  ctx.fillStyle = lineColor; ctx.fillText('Prosjektert profil', legX - 32, legY + 3.5);
-  if (hasTerreng) {
-    ctx.strokeStyle = terrengColor; ctx.lineWidth = 1.0; ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.moveTo(legX - 28, legY + 14); ctx.lineTo(legX - 8, legY + 14); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = terrengColor; ctx.fillText('Eksisterende terreng', legX - 32, legY + 17.5);
-  }
-  ctx.setLineDash([]);
-
-  // Station ticks (at rubric boundary)
-  ctx.strokeStyle = 'rgba(224,34,142,.25)'; ctx.lineWidth = 1;
-  for (const s of stations) {
-    const x = xOf(s.stasjon_m);
-    ctx.beginPath(); ctx.moveTo(x, rubricY0 - 1); ctx.lineTo(x, rubricY0 + 3); ctx.stroke();
+  const lx = innerW - 6, ly = GPT + 8;
+  $(`<line x1="${lx-28}" y1="${ly}" x2="${lx-6}" y2="${ly}" stroke="${CR}" stroke-width="2"/>`);
+  $(`<text x="${lx-32}" y="${ly+3.5}" text-anchor="end" font-size="8.5" fill="${CR}" font-family="var(--font-sans)">Prosjektert profil</text>`);
+  if (hasT) {
+    $(`<line x1="${lx-28}" y1="${ly+14}" x2="${lx-6}" y2="${ly+14}" stroke="${CT}" stroke-width="1.2" stroke-dasharray="6,4"/>`);
+    $(`<text x="${lx-32}" y="${ly+17.5}" text-anchor="end" font-size="8.5" fill="${CT}" font-family="var(--font-sans)">Eksisterende terreng</text>`);
   }
 
-  // ── RUBRIC ──────────────────────────────────────────────────────────
-  const ROWS = [
-    { label: 'Terrenghøyde', key: 'terrain'   },
-    { label: 'Profilhøyde',  key: 'design'    },
-    { label: 'Tverrfall',    key: 'crossfall' },
-    { label: 'Hor.kurv.',    key: 'curvature' },
-    { label: 'Profil nr.',   key: 'profnr'    },
-  ];
+  // ── SCHEMA BLOCK ──────────────────────────────────────────────────────
+  $(`<g transform="translate(0,${graphH})">`);
+  for (let ri = 0; ri < ROWS.length; ri++) {
+    const r   = ROWS[ri];
+    const y0  = rowTop[ri];
+    const rh  = rowH[ri];
+    const mid = y0 + rh / 2;
 
-  // Left border of rubric block
-  ctx.strokeStyle = axisColor; ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  ctx.moveTo(PAD.l, rubricY0); ctx.lineTo(PAD.l, H - PAD.b);
-  ctx.stroke();
+    if (ri > 0) $(`<line x1="0" y1="${y0}" x2="${innerW}" y2="${y0}" stroke="${ink}0.65)" stroke-width="0.8"/>`);
 
-  ctx.font = '8.5px "Inter Tight", sans-serif';
-
-  for (let i = 0; i < N_RUBRIC_ROWS; i++) {
-    const rowY    = rubricY0 + (N_RUBRIC_ROWS - 1 - i) * RUBRIC_ROW_H;
-    const rowMidY = rowY + RUBRIC_ROW_H / 2;
-    const rowBotY = rowY + RUBRIC_ROW_H;
-
-    // Row separator
-    ctx.strokeStyle = axisColor; ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.moveTo(PAD.l, rowBotY); ctx.lineTo(W - PAD.r, rowBotY); ctx.stroke();
-
-    // Row label
-    ctx.fillStyle = labelColor; ctx.textAlign = 'right';
-    ctx.fillText(ROWS[i].label, PAD.l - 4, rowMidY + 3);
-
-    const key = ROWS[i].key;
-
-    if (key === 'profnr') {
-      for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
-        const x = xOf(st);
-        ctx.strokeStyle = axisColor; ctx.lineWidth = 0.3;
-        ctx.beginPath(); ctx.moveTo(x, rubricY0); ctx.lineTo(x, H - PAD.b); ctx.stroke();
-        ctx.fillStyle = isDark ? '#e0e6ec' : '#1a2a36';
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
-        ctx.fillText(st.toFixed(0), x, rowMidY + 3);
-        ctx.font = '8.5px "Inter Tight", sans-serif';
+    if (r.key === 'profnr') {
+      const fs = Math.max(10, rh * 0.55);
+      for (let st = Math.ceil(stMin / 50) * 50; st <= stMax; st += 50) {
+        const cx = xOf(st), heavy = st % 100 === 0;
+        $(`<line x1="${cx.toFixed(1)}" y1="${y0}" x2="${cx.toFixed(1)}" y2="${y0+rh}" stroke="${ink}${heavy ? '0.6' : '0.2'})" stroke-width="${heavy ? '0.8' : '0.4'}"/>`);
+        // Hvit maskeboks under tallet for å bryte gjennomgående kolonnedeler
+        $(`<rect x="${(cx - fs * 1.4).toFixed(1)}" y="${(y0 + 2).toFixed(1)}" width="${(fs * 2.8).toFixed(1)}" height="${(rh - 4).toFixed(1)}" fill="var(--card)"/>`);
+        $(`<text x="${cx.toFixed(1)}" y="${mid.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs.toFixed(1)}" font-weight="700" letter-spacing="-0.01em" fill="${ink}0.92)" font-family="var(--font-sans)">${st.toFixed(0)}</text>`);
       }
 
-    } else if (key === 'design') {
-      ctx.textAlign = 'center';
-      ctx.font = '8px "JetBrains Mono", monospace';
-      ctx.fillStyle = lineColor;
-      for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
-        const s = stations.reduce((a, b) =>
-          Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
-        ctx.fillText(s.z.toFixed(1), xOf(st), rowMidY + 3);
-      }
-      ctx.font = '8.5px "Inter Tight", sans-serif';
+    } else if (r.key === 'horkurv') {
+      $(`<line x1="0" y1="${mid.toFixed(1)}" x2="${innerW}" y2="${mid.toFixed(1)}" stroke="${ink}0.18)" stroke-width="0.8" stroke-dasharray="14,5"/>`);
+      $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">kurvaturdata fra LandXML</text>`);
 
-    } else if (key === 'terrain') {
-      const hasT = stations.some(s => s.z_terreng != null);
-      if (hasT) {
-        ctx.textAlign = 'center'; ctx.font = '8px "JetBrains Mono", monospace';
-        ctx.fillStyle = terrengColor;
-        for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
-          const s = stations.reduce((a, b) =>
-            Math.abs(b.stasjon_m - st) < Math.abs(a.stasjon_m - st) ? b : a);
-          if (s.z_terreng != null) ctx.fillText(s.z_terreng.toFixed(1), xOf(st), rowMidY + 3);
-        }
-        ctx.font = '8.5px "Inter Tight", sans-serif';
-      } else {
-        ctx.fillStyle = labelColor; ctx.textAlign = 'center';
-        ctx.font = 'italic 8px "Inter Tight", sans-serif';
-        ctx.fillText('(ikke tilgjengelig)', (PAD.l + W - PAD.r) / 2, rowMidY + 3);
-        ctx.font = '8.5px "Inter Tight", sans-serif';
-      }
+    } else if (r.key === 'breddeutv') {
+      $(`<line x1="0" y1="${mid.toFixed(1)}" x2="${innerW}" y2="${mid.toFixed(1)}" stroke="${ink}0.18)" stroke-width="0.8" stroke-dasharray="14,5"/>`);
+      $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">breddeutvidelse fra LandXML</text>`);
 
-    } else if (key === 'crossfall') {
+    } else if (r.key === 'tverrfall') {
       const hasL = stations.some(s => s.cross_fall_l != null);
       const hasR = stations.some(s => s.cross_fall_r != null);
-      if (hasL || hasR) {
-        const midY = rowMidY;
-        const maxCf = Math.max(...stations.map(s =>
-          Math.max(Math.abs(s.cross_fall_l ?? 0), Math.abs(s.cross_fall_r ?? 0))), 2);
-        const cfScale = (RUBRIC_ROW_H * 0.35) / maxCf;
-        ctx.strokeStyle = axisColor; ctx.lineWidth = 0.5;
-        ctx.beginPath(); ctx.moveTo(PAD.l, midY); ctx.lineTo(W - PAD.r, midY); ctx.stroke();
-        if (hasL) {
-          ctx.save(); ctx.strokeStyle = lineColor; ctx.lineWidth = 1.2;
-          ctx.beginPath(); let moved = false;
-          for (const s of stations) {
-            if (s.cross_fall_l == null) { moved = false; continue; }
-            const x = xOf(s.stasjon_m), y = midY - s.cross_fall_l * cfScale;
-            if (!moved) { ctx.moveTo(x, y); moved = true; } else ctx.lineTo(x, y);
-          }
-          ctx.stroke(); ctx.restore();
-        }
+      // 0%-line (dashed)
+      $(`<line x1="0" y1="${mid.toFixed(1)}" x2="${innerW}" y2="${mid.toFixed(1)}" stroke="${ink}0.18)" stroke-width="0.7" stroke-dasharray="14,5"/>`);
+      if (hasR || hasL) {
+        const maxCf = Math.max(...stations.flatMap(s => [Math.abs(s.cross_fall_r ?? 0), Math.abs(s.cross_fall_l ?? 0)]), 3);
+        const cfS = (rh * 0.38) / maxCf;
+        // H.kj.b.k. = cross_fall_r (solid)
         if (hasR) {
-          ctx.save(); ctx.strokeStyle = terrengColor; ctx.lineWidth = 1.2;
-          ctx.beginPath(); let moved = false;
+          let pd = '', ok = false;
           for (const s of stations) {
-            if (s.cross_fall_r == null) { moved = false; continue; }
-            const x = xOf(s.stasjon_m), y = midY - s.cross_fall_r * cfScale;
-            if (!moved) { ctx.moveTo(x, y); moved = true; } else ctx.lineTo(x, y);
+            if (s.cross_fall_r == null) { ok = false; continue; }
+            const cx = xOf(s.stasjon_m).toFixed(1), cy = (mid - s.cross_fall_r * cfS).toFixed(1);
+            pd += ok ? ` L${cx},${cy}` : `M${cx},${cy}`; ok = true;
           }
-          ctx.stroke(); ctx.restore();
+          if (pd) $(`<path d="${pd}" fill="none" stroke="${ink}0.75)" stroke-width="1.2"/>`);
+        }
+        // V.kj.b.k. = cross_fall_l (dashed)
+        if (hasL) {
+          let pd = '', ok = false;
+          for (const s of stations) {
+            if (s.cross_fall_l == null) { ok = false; continue; }
+            const cx = xOf(s.stasjon_m).toFixed(1), cy = (mid - s.cross_fall_l * cfS).toFixed(1);
+            pd += ok ? ` L${cx},${cy}` : `M${cx},${cy}`; ok = true;
+          }
+          if (pd) $(`<path d="${pd}" fill="none" stroke="${ink}0.75)" stroke-width="1.2" stroke-dasharray="5,3"/>`);
+        }
+        // % labels at 100m
+        for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
+          const s = _lpNearest(st);
+          if (s.cross_fall_r != null) {
+            const cx = xOf(s.stasjon_m), cy = mid - s.cross_fall_r * cfS;
+            const txt = (s.cross_fall_r >= 0 ? '+' : '') + s.cross_fall_r.toFixed(1) + '%';
+            $(`<text x="${cx.toFixed(1)}" y="${(cy - 3).toFixed(1)}" text-anchor="middle" font-size="7" fill="${ink}0.65)" font-family="var(--font-mono)">${txt}</text>`);
+          }
         }
       } else {
-        ctx.fillStyle = labelColor; ctx.textAlign = 'center';
-        ctx.font = 'italic 8px "Inter Tight", sans-serif';
-        ctx.fillText('(tverrfalldata mangler)', (PAD.l + W - PAD.r) / 2, rowMidY + 3);
-        ctx.font = '8.5px "Inter Tight", sans-serif';
+        $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">tverrfalldata mangler</text>`);
       }
 
-    } else if (key === 'curvature') {
-      ctx.fillStyle = labelColor; ctx.textAlign = 'center';
-      ctx.font = 'italic 8px "Inter Tight", sans-serif';
-      ctx.fillText('(kurvatur fra LandXML — kommer)', (PAD.l + W - PAD.r) / 2, rowMidY + 3);
-      ctx.font = '8.5px "Inter Tight", sans-serif';
+    } else if (r.key === 'profh') {
+      const valFs = Math.max(7, Math.min(11, rh * 0.22));
+      const step = lpZoom >= 1.5 ? 10 : 20;
+      for (let st = Math.ceil(stMin / step) * step; st <= stMax; st += step) {
+        const s = _lpNearest(st);
+        const cx = xOf(s.stasjon_m).toFixed(1);
+        $(`<text x="${cx}" y="${(mid+2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${CR}" font-family="var(--font-mono)" transform="rotate(-90,${cx},${mid.toFixed(1)})">${s.z.toFixed(2)}</text>`);
+      }
+
+    } else if (r.key === 'terrengh') {
+      const valFs = Math.max(7, Math.min(11, rh * 0.22));
+      const step = lpZoom >= 1.5 ? 10 : 20;
+      const hasTd = stations.some(s => s.z_terreng != null);
+      if (hasTd) {
+        for (let st = Math.ceil(stMin / step) * step; st <= stMax; st += step) {
+          const s = _lpNearest(st);
+          if (s.z_terreng == null) continue;
+          const cx = xOf(s.stasjon_m).toFixed(1);
+          $(`<text x="${cx}" y="${(mid+2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${CT}" font-family="var(--font-mono)" transform="rotate(-90,${cx},${mid.toFixed(1)})">${s.z_terreng.toFixed(2)}</text>`);
+        }
+      } else {
+        $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">terrengdata mangler</text>`);
+      }
     }
   }
+  $(`</g>`);
 
-  // Cursor — full height from profile top through rubric
+  // Cursor
   if (currentIdx >= 0 && currentIdx < stations.length) {
     const s = stations[currentIdx];
-    const x = xOf(s.stasjon_m), y = yOf(s.z);
-    ctx.strokeStyle = cursorColor; ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = cursorColor;
-    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(224,34,142,.2)';
-    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
-    if (s.z_terreng != null) {
-      const yt = yOf(s.z_terreng);
-      ctx.fillStyle = terrengColor;
-      ctx.beginPath(); ctx.arc(x, yt, 3.5, 0, Math.PI * 2); ctx.fill();
+    const cx = xOf(s.stasjon_m).toFixed(1), cy = yOf(s.z).toFixed(1);
+    $(`<line x1="${cx}" y1="${GPT}" x2="${cx}" y2="${svgH}" stroke="${CC}" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.8"/>`);
+    $(`<circle cx="${cx}" cy="${cy}" r="4.5" fill="${CC}"/>`);
+    $(`<circle cx="${cx}" cy="${cy}" r="8" fill="${CC}" opacity="0.2"/>`);
+    if (hasT && s.z_terreng != null) {
+      const cyt = yOf(s.z_terreng).toFixed(1);
+      $(`<circle cx="${cx}" cy="${cyt}" r="3.5" fill="${CT}"/>`);
     }
   }
 
-  // Click handler
-  cnv.onclick = e => {
-    const rect = cnv.getBoundingClientRect();
+  // ── Build gutter HTML ─────────────────────────────────────────────────
+  const labelFs = Math.max(9, Math.min(11, 9 + (lpZoom - 1) * 0.5));
+  let gh = `<div style="position:absolute;top:4px;right:6px;font-size:9px;font-weight:600;color:var(--ink-3);font-family:var(--font-sans)">H.o.h.</div>`;
+  for (let y = Math.ceil(elMin / 10) * 10; y <= elMax; y += 10) {
+    const cy = yOf(y);
+    if (cy < GPT - 2 || cy > graphH + 2) continue;
+    gh += `<div style="position:absolute;right:8px;top:${(cy-6).toFixed(0)}px;font-size:10.5px;font-family:var(--font-mono);color:var(--ink-2);line-height:1">${y}</div>`;
+  }
+  gh += `<div style="position:absolute;left:0;right:0;top:${graphH}px;border-top:1.5px solid var(--ink)"></div>`;
+  for (let ri = 0; ri < ROWS.length; ri++) {
+    const r = ROWS[ri], y0 = graphH + rowTop[ri], rh = rowH[ri];
+    let lc = `<div style="font-weight:600;line-height:1.1;text-align:right">${r.label}</div>`;
+    if (r.subs) {
+      lc += `<div style="display:flex;flex-direction:column;gap:1px;margin-top:3px;align-items:flex-end">`;
+      r.subs.forEach((sub, si) => {
+        const sw = si === 0
+          ? `<svg width="16" height="5" style="flex-shrink:0"><line x1="0" y1="2.5" x2="16" y2="2.5" stroke="var(--ink)" stroke-width="1.1"/></svg>`
+          : `<svg width="16" height="5" style="flex-shrink:0"><line x1="0" y1="2.5" x2="16" y2="2.5" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 2"/></svg>`;
+        lc += `<div style="display:flex;align-items:center;gap:3px;font-size:${labelFs-1}px;font-weight:400;color:var(--ink-2)">${sw}<span style="line-height:1">${sub}</span></div>`;
+      });
+      lc += `</div>`;
+    }
+    gh += `<div style="position:absolute;left:0;right:0;top:${y0.toFixed(0)}px;height:${rh}px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:2px 5px 2px 2px;font-size:${labelFs}px;color:var(--ink);${ri>0?'border-top:1px solid var(--ink);':''}box-sizing:border-box;font-family:var(--font-sans)">${lc}</div>`;
+  }
+
+  // ── Inject DOM ────────────────────────────────────────────────────────
+  const cur = lpZoom > 1 ? 'grab' : 'default';
+  area.innerHTML = `
+    <div class="lp-wrap">
+      <div class="lp-scroll" id="lp-scroll" style="cursor:${cur}">
+        <div class="lp-inner" style="width:${GW+svgW}px;height:${svgH}px">
+          <div class="lp-gutter" style="width:${GW}px;height:${svgH}px;position:relative">${gh}</div>
+          <div class="lp-plot" style="width:${svgW}px;height:${svgH}px">
+            <svg id="lp-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}"
+                 style="display:block;cursor:${lpZoom > 1 ? 'grab' : 'crosshair'}">${p.join('')}</svg>
+          </div>
+        </div>
+      </div>
+      <div class="xp-zoom-hud">
+        <span class="xp-zoom-val">${Math.round(lpZoom * 100)}%</span>
+        <button class="xp-zoom-btn" onclick="lpZoomIn()" title="Zoom inn (+)">+</button>
+        <button class="xp-zoom-btn" onclick="lpZoomOut()" title="Zoom ut (-)">−</button>
+        <button class="xp-zoom-btn" onclick="lpZoomReset()" title="Tilbakestill">⤾</button>
+      </div>
+    </div>`;
+
+  // Restore scroll
+  const sc = document.getElementById('lp-scroll');
+  if (sc) { sc.scrollLeft = prevSL; sc.scrollTop = prevST; }
+
+  // ── Events on new elements ────────────────────────────────────────────
+  const svgEl = document.getElementById('lp-svg');
+  if (!sc || !svgEl) return;
+
+  // Click to select station
+  svgEl.addEventListener('click', e => {
+    if (_lpDrag.moved > 4) return;
+    const rect = svgEl.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     let best = 0, bestD = Infinity;
     for (let i = 0; i < stations.length; i++) {
@@ -2679,8 +2759,86 @@ function drawLp() {
       if (d < bestD) { bestD = d; best = i; }
     }
     selectStation(best);
-  };
+  });
+
+  // Ctrl+wheel zoom
+  sc.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const oldZ = lpZoom;
+    const dir  = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const newZ = +Math.max(LP_ZOOM_MIN, Math.min(LP_ZOOM_MAX, oldZ * dir)).toFixed(3);
+    if (newZ === oldZ) return;
+    const rect = sc.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cx2 = sc.scrollLeft + cx - GW;
+    const ratio = newZ / oldZ;
+    const newSL = cx2 * ratio - (cx - GW);
+    lpZoom = newZ;
+    drawLp();
+    requestAnimationFrame(() => {
+      const s2 = document.getElementById('lp-scroll');
+      if (s2) s2.scrollLeft = Math.max(0, newSL);
+    });
+  }, { passive: false });
+
+  // Pan drag start
+  sc.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('.xp-zoom-hud, button')) return;
+    _lpDrag = { active: true, sx: e.clientX, sy: e.clientY, sl: sc.scrollLeft, st: sc.scrollTop, moved: 0 };
+    sc.style.cursor = 'grabbing';
+    svgEl.style.cursor = 'grabbing';
+  });
 }
+
+// Document-level LP pan handlers (wired once at startup)
+document.addEventListener('mousemove', e => {
+  if (!_lpDrag.active) return;
+  const sc = document.getElementById('lp-scroll');
+  if (!sc) { _lpDrag.active = false; return; }
+  const dx = e.clientX - _lpDrag.sx, dy = e.clientY - _lpDrag.sy;
+  _lpDrag.moved = Math.max(_lpDrag.moved, Math.abs(dx) + Math.abs(dy));
+  sc.scrollLeft = _lpDrag.sl - dx;
+  sc.scrollTop  = _lpDrag.st - dy;
+});
+document.addEventListener('mouseup', () => {
+  if (!_lpDrag.active) return;
+  _lpDrag.active = false;
+  const sc  = document.getElementById('lp-scroll');
+  const svg = document.getElementById('lp-svg');
+  const cur = lpZoom > 1 ? 'grab' : 'default';
+  if (sc)  sc.style.cursor  = cur;
+  if (svg) svg.style.cursor = lpZoom > 1 ? 'grab' : 'crosshair';
+});
+
+function _initLpHandle() {
+  const handle = document.getElementById('lp-handle');
+  if (!handle) return;
+  let startY, startH, dragged;
+  handle.addEventListener('mousedown', e => {
+    if (e.target.closest('.handle-actions')) return;
+    dragged = false; startY = e.clientY;
+    startH = document.getElementById('lp').clientHeight;
+    e.preventDefault();
+    const onMove = e2 => {
+      const delta = startY - e2.clientY;
+      if (Math.abs(delta) > 4) dragged = true;
+      if (dragged) {
+        const newH = Math.max(120, Math.min(window.innerHeight - 100, startH + delta));
+        document.getElementById('lp').style.height = newH + 'px';
+        if (lpOpen) drawLp();
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!dragged) toggleLp();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+_initLpHandle();
 
 function niceStep(raw) {
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -2730,6 +2888,7 @@ Object.assign(window, {
   toggleLayer, toggleSidebar, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
   toggleBasemapPicker, setBasemap,
+  lpZoomIn, lpZoomOut, lpZoomReset,
 });
 </script>
 </body>
