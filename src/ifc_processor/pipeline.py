@@ -280,7 +280,7 @@ def run_pipeline(
         include_lengdeprofil: Generer lengdeprofil-SVG.
 
     Returns:
-        Dict med nøklene "svgs", "centerline", "metadata", "stations_json".
+        Dict med nøklene "svgs", "centerline", "metadata", "stations_json", "station_labels_json".
 
     Raises:
         ValueError: Hvis ingen senterlinje kan bestemmes.
@@ -406,6 +406,30 @@ def run_pipeline(
             cf = (ns.left_cross_fall_pct, ns.right_cross_fall_pct) if ns else (float("nan"), float("nan"))
             lp_cross_falls.append(cf)
 
+    # Annotér referent-treff i station_rows
+    if align_meta and align_meta.station_labels:
+        tol = 0.5  # m
+        labels_sorted = sorted(align_meta.station_labels, key=lambda l: l.station)
+        for row in station_rows:
+            sm = row["station_m"]
+            for lbl in labels_sorted:
+                if abs(lbl.station - sm) <= tol:
+                    row["referent_name"] = lbl.name
+                    break
+
+    # Skriv station_labels.json (tom liste hvis ingen)
+    labels_out = [
+        {
+            "station": round(lbl.station, 3),
+            "name": lbl.name,
+            "x": round(lbl.position[0], 3),
+            "y": round(lbl.position[1], 3),
+            "z": round(lbl.position[2], 3),
+        }
+        for lbl in (align_meta.station_labels if align_meta else [])
+    ]
+    (output_dir / "station_labels.json").write_text(json.dumps(labels_out, indent=2))
+
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
 
@@ -443,5 +467,6 @@ def run_pipeline(
         "centerline": str(cl_path),
         "metadata": str(meta_path),
         "stations_json": str(stations_json_path),
+        "station_labels_json": str(output_dir / "station_labels.json"),
         "lengdeprofil": lp_svg_path,
     }

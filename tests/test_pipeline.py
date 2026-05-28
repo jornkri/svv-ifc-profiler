@@ -131,3 +131,48 @@ def test_pipeline_aligns_grid_to_referent(tmp_path):
         first_two = stations[:2]
         delta = first_two[1]["station_m"] - first_two[0]["station_m"]
         assert abs(delta - 10.0) < 0.01
+
+
+def test_station_rows_have_referent_name(tmp_path):
+    """Stasjoner som matcher IfcReferent får referent_name-felt."""
+    samples = Path(__file__).parent.parent / "samples"
+    ifc_path = samples / "m_f_veg_12200_Veg.ifc"
+    cl_path = samples / "m_f-veg_12200_CL.ifc"
+    if not ifc_path.exists() or not cl_path.exists():
+        pytest.skip("12200-testfiler mangler")
+    out = tmp_path / "out"
+    run_pipeline(
+        ifc_path=ifc_path,
+        centerline_path=cl_path,
+        output_dir=out,
+        interval_m=10.0,
+        include_terrain=False,
+        include_tverrprofil=False,
+        include_lengdeprofil=False,
+    )
+    stations = json.loads((out / "stations.json").read_text())
+    with_ref = [s for s in stations if s.get("referent_name")]
+    assert len(with_ref) >= 1
+
+
+def test_station_labels_json_written(tmp_path):
+    """station_labels.json skal skrives med alle IfcReferent."""
+    samples = Path(__file__).parent.parent / "samples"
+    ifc_path = samples / "m_f_veg_12200_Veg.ifc"
+    cl_path = samples / "m_f-veg_12200_CL.ifc"
+    if not ifc_path.exists() or not cl_path.exists():
+        pytest.skip("12200-testfiler mangler")
+    out = tmp_path / "out"
+    run_pipeline(
+        ifc_path=ifc_path,
+        centerline_path=cl_path,
+        output_dir=out,
+        interval_m=10.0,
+        include_terrain=False,
+        include_tverrprofil=False,
+        include_lengdeprofil=False,
+    )
+    labels = json.loads((out / "station_labels.json").read_text())
+    assert len(labels) > 50
+    assert "station" in labels[0]
+    assert "name" in labels[0]
