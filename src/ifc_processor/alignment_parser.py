@@ -57,6 +57,19 @@ class IfcAlignmentData:
 
 _VALID_SCHEMAS = {"IFC4X3", "IFC4X3_ADD1", "IFC4X3_ADD2", "IFC4X3_TC1"}
 
+_HORIZONTAL_TYPE_MAP = {
+    "LINE": "LINE",
+    "CIRCULARARC": "CIRCULARARC",
+    "CLOTHOID": "CLOTHOID",
+    "CLOTHOIDCURVE": "CLOTHOID",
+    "CUBICSPIRAL": "CLOTHOID",
+    "BLOSSCURVE": "CLOTHOID",
+    "COSINECURVE": "CLOTHOID",
+    "SINECURVE": "CLOTHOID",
+    "VIENNESEBEND": "CLOTHOID",
+    "HELMERTCURVE": "CLOTHOID",
+}
+
 
 def _find_horizontal(alignment):
     """Return the IfcAlignmentHorizontal nested under *alignment*, or None."""
@@ -65,6 +78,62 @@ def _find_horizontal(alignment):
             if obj.is_a("IfcAlignmentHorizontal"):
                 return obj
     return None
+
+
+def _extract_horizontal_segments(horizontal) -> list[HorizontalSegment]:
+    if horizontal is None:
+        return []
+    segments: list[HorizontalSegment] = []
+    cum_station = 0.0
+    nested_segs: list = []
+    for rel in horizontal.IsNestedBy:
+        for obj in rel.RelatedObjects:
+            if obj.is_a("IfcAlignmentSegment"):
+                nested_segs.append(obj)
+
+    for seg in nested_segs:
+        params = seg.DesignParameters
+        if params is None or not params.is_a("IfcAlignmentHorizontalSegment"):
+            continue
+
+        raw_type = (params.PredefinedType or "").upper()
+        seg_type = _HORIZONTAL_TYPE_MAP.get(raw_type)
+        if seg_type is None:
+            logger.warning(
+                "Ukjent horisontal segment-type '%s' — behandler som CLOTHOID",
+                raw_type,
+            )
+            seg_type = "CLOTHOID"
+
+        start_pt = (
+            float(params.StartPoint.Coordinates[0]),
+            float(params.StartPoint.Coordinates[1]),
+        )
+        start_dir = float(params.StartDirection or 0.0)
+        length = float(params.SegmentLength or 0.0)
+        start_r = params.StartRadiusOfCurvature
+        end_r = params.EndRadiusOfCurvature
+
+        # IFC4X3 konvensjon: signert radius → fortegn bestemmer retning
+        is_ccw: bool | None = None
+        if start_r is not None and start_r != 0.0:
+            is_ccw = float(start_r) > 0.0
+        elif end_r is not None and end_r != 0.0:
+            is_ccw = float(end_r) > 0.0
+
+        segments.append(HorizontalSegment(
+            start_station=cum_station,
+            length=length,
+            start_point=start_pt,
+            start_direction=start_dir,
+            segment_type=seg_type,
+            start_radius=abs(float(start_r)) if start_r else None,
+            end_radius=abs(float(end_r)) if end_r else None,
+            is_ccw=is_ccw,
+        ))
+        cum_station += length
+
+    return segments
 
 
 def _find_vertical(alignment):
@@ -127,8 +196,16 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
     alignment = _select_alignment(ifc)
     name = alignment.Name or "<ukjent>"
 
+    h = _find_horizontal(alignment)
+    horizontal_segments = _extract_horizontal_segments(h)
+    if not horizontal_segments:
+        raise ValueError(
+            f"IfcAlignment '{name}' har ingen horisontalsegmenter."
+        )
+
     return IfcAlignmentData(
         name=name,
         points_3d=np.zeros((0, 3)),
         stations=np.zeros(0),
+        horizontal_segments=horizontal_segments,
     )

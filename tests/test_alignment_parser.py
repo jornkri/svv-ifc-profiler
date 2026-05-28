@@ -70,3 +70,30 @@ def test_dataclasses_constructible():
     )
     assert data.source_epsg == 25833
     assert data.name == "test"
+
+
+def test_horizontal_segments_extracted():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    assert len(data.horizontal_segments) == 67
+    starts = [s.start_station for s in data.horizontal_segments]
+    assert starts == sorted(starts)
+    assert starts[0] == 0.0
+
+
+def test_horizontal_segment_types_present():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    types = {s.segment_type for s in data.horizontal_segments}
+    assert "LINE" in types
+    assert types <= {"LINE", "CIRCULARARC", "CLOTHOID"}
+
+
+def test_circular_arc_has_radius():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    arcs = [s for s in data.horizontal_segments if s.segment_type == "CIRCULARARC"]
+    if arcs:
+        assert arcs[0].start_radius is not None
+        assert arcs[0].start_radius > 0
+        assert arcs[0].is_ccw in (True, False)
