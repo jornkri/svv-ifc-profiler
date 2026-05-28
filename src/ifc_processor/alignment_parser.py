@@ -232,6 +232,98 @@ def _select_alignment(ifc):
     return chosen
 
 
+def _extract_station_labels(
+    alignment,
+    points_3d: np.ndarray,
+    stations: np.ndarray,
+) -> list[StationLabel]:
+    """Hent IfcReferent som er nestet under alignment.
+
+    IFC4X3 struktur (m_f-veg_12200_CL.ifc):
+      IfcReferent.ObjectPlacement  → IfcLinearPlacement
+        .RelativePlacement          → IfcAxis2PlacementLinear
+          .Location                 → IfcPointByDistanceExpression
+            .DistanceAlong          → IfcLengthMeasure (wrappedValue = float)
+
+    Stasjonen er DistanceAlong-verdien (offset fra start av alignment).
+    Negative verdier (referenter før alignment-start) filtreres bort.
+    3D-posisjon interpoleres på samplede points_3d.
+    """
+    referents: list = []
+    for rel in alignment.IsNestedBy:
+        for obj in rel.RelatedObjects:
+            if obj.is_a("IfcReferent"):
+                referents.append(obj)
+
+    labels: list[StationLabel] = []
+    for ref in referents:
+        placement = getattr(ref, "ObjectPlacement", None)
+        if placement is None or not placement.is_a("IfcLinearPlacement"):
+            continue
+
+        # Primary path: RelativePlacement → IfcAxis2PlacementLinear → Location → DistanceAlong
+        station_val: float | None = None
+        rel_pl = getattr(placement, "RelativePlacement", None)
+        if rel_pl is not None:
+            loc = getattr(rel_pl, "Location", None)
+            if loc is not None:
+                da = getattr(loc, "DistanceAlong", None)
+                if da is not None:
+                    if hasattr(da, "wrappedValue"):
+                        station_val = float(da.wrappedValue)
+                    elif isinstance(da, (int, float)):
+                        station_val = float(da)
+                    else:
+                        try:
+                            station_val = float(da)
+                        except (TypeError, ValueError):
+                            pass
+
+        # Fallback path: Distance attribute (older IFC4X3 drafts)
+        if station_val is None:
+            dist_attr = getattr(placement, "Distance", None)
+            if dist_attr is not None:
+                if hasattr(dist_attr, "DistanceAlong"):
+                    raw = dist_attr.DistanceAlong
+                    station_val = float(raw.wrappedValue) if hasattr(raw, "wrappedValue") else float(raw)
+                elif hasattr(dist_attr, "wrappedValue"):
+                    station_val = float(dist_attr.wrappedValue)
+                elif isinstance(dist_attr, (int, float)):
+                    station_val = float(dist_attr)
+
+        if station_val is None:
+            logger.debug("IfcReferent '%s': kan ikke lese DistanceAlong — hopper over", ref.Name)
+            continue
+
+        # Skip referents that lie before the alignment start
+        if station_val < 0.0:
+            logger.debug(
+                "IfcReferent '%s': DistanceAlong=%.3f < 0 — hopper over",
+                ref.Name, station_val,
+            )
+            continue
+
+        station = station_val
+
+        if stations.size >= 2:
+            x = float(np.interp(station, stations, points_3d[:, 0]))
+            y = float(np.interp(station, stations, points_3d[:, 1]))
+            z = float(np.interp(station, stations, points_3d[:, 2]))
+            pos = (x, y, z)
+        else:
+            pos = (0.0, 0.0, 0.0)
+
+        name = ref.Name or f"P {station:.0f}"
+        labels.append(StationLabel(
+            station=station,
+            name=name,
+            position=pos,
+        ))
+
+    labels.sort(key=lambda sl: sl.station)
+    return labels
+
+
 def _find_curve3d_representation(alignment):
     """Return the Curve3D IfcShapeRepresentation for *alignment*, or None.
 
@@ -334,10 +426,19 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
 
     points_3d, stations = _sample_alignment_3d(alignment, horizontal_segments)
 
+    station_labels = _extract_station_labels(alignment, points_3d, stations)
+
+    logger.info(
+        "alignment_parser: Lastet '%s' (%d hor.seg, %d vert.seg, %d referenter, %.1f m)",
+        name, len(horizontal_segments), len(vertical_segments),
+        len(station_labels), float(stations[-1]) if stations.size else 0.0,
+    )
+
     return IfcAlignmentData(
         name=name,
         points_3d=points_3d,
         stations=stations,
         horizontal_segments=horizontal_segments,
         vertical_segments=vertical_segments,
+        station_labels=station_labels,
     )

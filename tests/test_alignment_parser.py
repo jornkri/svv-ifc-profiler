@@ -145,3 +145,19 @@ def test_total_length_matches_horizontal_sum():
     sum_h = sum(s.length for s in data.horizontal_segments)
     sampled_len = float(data.stations[-1])
     assert abs(sampled_len - sum_h) < 5.0
+
+
+def test_station_labels_extracted():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    assert len(data.station_labels) > 50  # 12200 har 99 referenter
+    sl = data.station_labels[0]
+    assert sl.name != ""
+    assert sl.station >= 0.0
+
+
+def test_station_labels_sorted():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    stations = [sl.station for sl in data.station_labels]
+    assert stations == sorted(stations)
