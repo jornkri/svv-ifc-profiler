@@ -53,6 +53,27 @@ class IfcAlignmentData:
     station_labels: list[StationLabel] = field(default_factory=list)
     source_epsg: int = 25833
 
+    def to_centerline(self) -> "Centerline":
+        from .centerline import Centerline
+        return Centerline(
+            points=self.points_3d,
+            stations=self.stations,
+            source_epsg=self.source_epsg,
+        )
+
+    def vertical_profile_pvi(self) -> list[tuple[float, float]]:
+        """Returner [(stasjon, høyde)] som matcher load_vertical_profile()-formatet."""
+        if not self.vertical_segments:
+            return []
+        pvi: list[tuple[float, float]] = []
+        for seg in self.vertical_segments:
+            pvi.append((seg.start_station, seg.start_height))
+        last = self.vertical_segments[-1]
+        end_station = last.start_station + last.length
+        end_height = last.start_height + last.start_gradient * last.length
+        pvi.append((end_station, end_height))
+        return pvi
+
 
 # ---------------------------------------------------------------------------
 # IFC loading helpers

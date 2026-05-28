@@ -161,3 +161,26 @@ def test_station_labels_sorted():
     data = load_alignment_from_ifc(CL_12200)
     stations = [sl.station for sl in data.station_labels]
     assert stations == sorted(stations)
+
+
+def test_to_centerline_adapter():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    from src.ifc_processor.centerline import Centerline
+    data = load_alignment_from_ifc(CL_12200)
+    cl = data.to_centerline()
+    assert isinstance(cl, Centerline)
+    assert cl.points.shape == data.points_3d.shape
+    assert cl.stations.shape == data.stations.shape
+    assert cl.source_epsg == data.source_epsg
+
+
+def test_vertical_profile_pvi_format():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    pvi = data.vertical_profile_pvi()
+    assert len(pvi) >= 2
+    for sta, h in pvi:
+        assert isinstance(sta, float)
+        assert isinstance(h, float)
+    stations = [s for s, _ in pvi]
+    assert stations == sorted(stations)
