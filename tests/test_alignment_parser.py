@@ -11,6 +11,31 @@ from src.ifc_processor.alignment_parser import (
     IfcAlignmentData,
 )
 
+SAMPLES = Path(__file__).parent.parent / "samples"
+CL_12200 = SAMPLES / "m_f-veg_12200_CL.ifc"
+VEG_12200 = SAMPLES / "m_f_veg_12200_Veg.ifc"          # vegmodell, ikke alignment
+KLEVERUD = SAMPLES / "UEH-32-A-55075_05 Vei Kleverud_IFC.ifc"  # IFC2X3 — feil schema
+
+
+def test_load_12200_returns_alignment_data():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    assert data.name == "12150"
+
+
+def test_ifc4_schema_rejected():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    if not KLEVERUD.exists():
+        pytest.skip("IFC4-eksempel ikke tilgjengelig")
+    with pytest.raises(ValueError, match="IFC4X3"):
+        load_alignment_from_ifc(KLEVERUD)
+
+
+def test_missing_alignment_raises():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    with pytest.raises(ValueError, match="IfcAlignment"):
+        load_alignment_from_ifc(VEG_12200)
+
 
 def test_dataclasses_constructible():
     hs = HorizontalSegment(
