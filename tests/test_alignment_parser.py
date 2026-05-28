@@ -124,3 +124,24 @@ def test_parabolic_radius_signed():
         for p in parabols:
             assert p.radius is not None
             assert p.radius != 0.0
+
+
+def test_points_3d_sampled():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    assert data.points_3d.shape[0] >= 100
+    assert data.points_3d.shape[1] == 3
+    assert data.stations.shape[0] == data.points_3d.shape[0]
+    # Z-verdier er meningsfulle (ikke alle 0)
+    assert np.abs(data.points_3d[:, 2]).max() > 1.0
+    # Stasjonene er monotone
+    assert np.all(np.diff(data.stations) >= 0)
+
+
+def test_total_length_matches_horizontal_sum():
+    """Total samplet lengde skal være ~lik sum av horisontalsegmenter."""
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    sum_h = sum(s.length for s in data.horizontal_segments)
+    sampled_len = float(data.stations[-1])
+    assert abs(sampled_len - sum_h) < 5.0

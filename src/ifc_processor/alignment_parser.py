@@ -6,9 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import ifcopenshell
+import ifcopenshell.geom
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+_SAMPLE_INTERVAL_M = 1.0
 
 
 @dataclass
@@ -229,6 +232,80 @@ def _select_alignment(ifc):
     return chosen
 
 
+def _find_curve3d_representation(alignment):
+    """Return the Curve3D IfcShapeRepresentation for *alignment*, or None.
+
+    IfcAlignment in IFC4X3 typically carries two representations:
+    - 'Curve3D' — the IfcGradientCurve (3D, used for sampling)
+    - 'Curve2D' / 'FootPrint' — horizontal projection only
+
+    ifcopenshell.geom.create_shape() picks the first representation it can
+    process; on this IFC file that is the Curve2D which causes a RuntimeError.
+    We must pass the Curve3D representation explicitly.
+    """
+    if alignment.Representation is None:
+        return None
+    for rep in alignment.Representation.Representations:
+        if rep.RepresentationType == "Curve3D":
+            return rep
+    return None
+
+
+def _sample_alignment_3d(
+    alignment,
+    horizontal_segments: list[HorizontalSegment],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Returner (M,3) 3D-punkter + (M,) kumulative stasjoner.
+
+    Bruker ifcopenshell.geom på IfcAlignment for å få ut Curve3D-polylinje
+    (representerer IfcGradientCurve). Resampler til ~1 m intervall.
+    """
+    settings = ifcopenshell.geom.settings()
+    # IFC4X3 alignment geometri evalueres som kurver; sett flagg der mulig
+    try:
+        settings.set(settings.INCLUDE_CURVES, True)
+    except AttributeError:
+        try:
+            settings.set("include-curves", True)
+        except Exception:
+            pass
+
+    # Must pass the Curve3D representation explicitly; create_shape without it
+    # defaults to Curve2D/FootPrint which raises RuntimeError.
+    curve3d_rep = _find_curve3d_representation(alignment)
+    if curve3d_rep is None:
+        raise ValueError(
+            f"IfcAlignment '{alignment.Name}' mangler Curve3D-representasjon."
+        )
+
+    try:
+        shape = ifcopenshell.geom.create_shape(settings, alignment, curve3d_rep)
+    except RuntimeError as exc:
+        raise ValueError(
+            f"Kan ikke evaluere geometri for IfcAlignment '{alignment.Name}': {exc}"
+        ) from exc
+
+    verts = np.array(shape.geometry.verts, dtype=float).reshape(-1, 3)
+    if verts.shape[0] < 2:
+        raise ValueError(
+            f"IfcAlignment '{alignment.Name}' produserte for få 3D-punkter ({verts.shape[0]})"
+        )
+
+    diffs = np.diff(verts, axis=0)
+    seg_lens = np.linalg.norm(diffs, axis=1)
+    raw_stations = np.concatenate([[0.0], np.cumsum(seg_lens)])
+
+    total_len = float(raw_stations[-1])
+    if total_len <= 0:
+        return verts, raw_stations
+    n_samples = max(2, int(np.ceil(total_len / _SAMPLE_INTERVAL_M)) + 1)
+    target_stations = np.linspace(0.0, total_len, n_samples)
+    resampled = np.column_stack([
+        np.interp(target_stations, raw_stations, verts[:, i]) for i in range(3)
+    ])
+    return resampled, target_stations
+
+
 def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
     """Les IFC4X3 IfcAlignment og returner felles datakontrakt.
 
@@ -255,10 +332,12 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
     v = _find_vertical(alignment)
     vertical_segments = _extract_vertical_segments(v)
 
+    points_3d, stations = _sample_alignment_3d(alignment, horizontal_segments)
+
     return IfcAlignmentData(
         name=name,
-        points_3d=np.zeros((0, 3)),
-        stations=np.zeros(0),
+        points_3d=points_3d,
+        stations=stations,
         horizontal_segments=horizontal_segments,
         vertical_segments=vertical_segments,
     )
