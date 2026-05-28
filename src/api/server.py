@@ -323,6 +323,18 @@ def get_job_geojson(job_id: str) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
+@app.get("/api/jobs/{job_id}/horizontal-alignment")
+def get_horizontal_alignment(job_id: str) -> list[dict]:
+    """Returner horisontale kurvatur-segmenter for jobben (tom liste hvis mangler)."""
+    path = UPLOAD_DIR / job_id / "output" / "horizontal_alignment.json"
+    if not path.exists():
+        return []
+    try:
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        return []
+
+
 @app.get("/api/jobs/{job_id}/svg/{filename:path}")
 def get_svg(job_id: str, filename: str) -> FileResponse:
     """Serve an SVG cross-section file from a job's output directory."""

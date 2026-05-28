@@ -537,6 +537,32 @@ def test_list_jobs_response_includes_xb_url(tmp_path):
     assert match["xb_url"] == "https://experience.arcgis.com/builder/?id=abc"
 
 
+def test_get_horizontal_alignment_returns_segments(client, tmp_path):
+    """Endpoint /api/jobs/{job_id}/horizontal-alignment skal returnere segmenter."""
+    output_dir = tmp_path / "job-xyz" / "output"
+    output_dir.mkdir(parents=True)
+    segments = [
+        {"kind": "curve", "sta_start": 0.0, "sta_end": 12.77, "radius": 50.0, "dir": -1},
+        {"kind": "line",  "sta_start": 12.77, "sta_end": 57.54},
+    ]
+    (output_dir / "horizontal_alignment.json").write_text(json.dumps(segments))
+
+    with patch("src.api.server.UPLOAD_DIR", tmp_path):
+        r = client.get("/api/jobs/job-xyz/horizontal-alignment")
+    assert r.status_code == 200
+    assert r.json() == segments
+
+
+def test_get_horizontal_alignment_returns_empty_list_when_missing(client, tmp_path):
+    """Hvis filen mangler skal endpoint returnere [] (ikke 404)."""
+    (tmp_path / "job-empty" / "output").mkdir(parents=True)
+
+    with patch("src.api.server.UPLOAD_DIR", tmp_path):
+        r = client.get("/api/jobs/job-empty/horizontal-alignment")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
 def test_horizontal_alignment_json_written(tmp_path):
     """job_runner skal skrive horizontal_alignment.json til output-dir basert på LandXML."""
     from src.api import job_runner
