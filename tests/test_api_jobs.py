@@ -535,3 +535,21 @@ def test_list_jobs_response_includes_xb_url(tmp_path):
     match = next((j for j in jobs if j["job_id"] == job_id), None)
     assert match is not None
     assert match["xb_url"] == "https://experience.arcgis.com/builder/?id=abc"
+
+
+def test_horizontal_alignment_json_written(tmp_path):
+    """job_runner skal skrive horizontal_alignment.json til output-dir basert på LandXML."""
+    from src.api import job_runner
+
+    xml_src = Path(__file__).parent.parent / "samples" / "m_f_veg_70400_aligment.xml"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    job_runner._write_horizontal_alignment_json(xml_src, output_dir)
+
+    out_file = output_dir / "horizontal_alignment.json"
+    assert out_file.exists(), "horizontal_alignment.json ble ikke skrevet"
+    data = json.loads(out_file.read_text())
+    assert len(data) == 6
+    assert data[0]["kind"] == "curve"
+    assert data[0]["radius"] == pytest.approx(50.0)

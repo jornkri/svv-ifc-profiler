@@ -21,9 +21,32 @@ except Exception:  # pragma: no cover
     run_pipeline = None  # type: ignore[assignment]
 
 try:
-    from src.arcpy_processor.landxml_parser import parse_landxml  # noqa: F401
+    from src.arcpy_processor.landxml_parser import (  # noqa: F401
+        parse_landxml,
+        parse_horizontal_alignment,
+    )
 except Exception:  # pragma: no cover
     parse_landxml = None  # type: ignore[assignment]
+    parse_horizontal_alignment = None  # type: ignore[assignment]
+
+
+def _write_horizontal_alignment_json(xml_path: Path, output_dir: Path) -> None:
+    """Skriv horizontal_alignment.json hvis LandXML har Alignment-blokk.
+
+    Stille no-op hvis parse_horizontal_alignment ikke er tilgjengelig, hvis filen
+    ikke inneholder Alignment-elementer, eller hvis parsing feiler (logg-bare).
+    """
+    if parse_horizontal_alignment is None:
+        return
+    try:
+        segments = parse_horizontal_alignment(Path(xml_path))
+    except Exception as exc:  # pragma: no cover — defensiv mot ufullstendig data
+        logger.warning("Kunne ikke lese horisontal alignment fra %s: %s", xml_path, exc)
+        return
+    if not segments:
+        return
+    out = Path(output_dir) / "horizontal_alignment.json"
+    out.write_text(json.dumps(segments, indent=2), encoding="utf-8")
 
 JobStatus = Literal["queued", "running", "done", "done_with_warnings", "failed"]
 
@@ -147,6 +170,7 @@ def run_job(
         _update(state, 50, f"Genererte {n_sections} stasjoner")
 
         _, source_epsg = parse_landxml(xml_path)
+        _write_horizontal_alignment_json(xml_path, output_dir)
 
         lp_svg = pipeline_result.get("lengdeprofil")
         cl_cmd = [
