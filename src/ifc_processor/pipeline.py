@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
+from .alignment_parser import HorizontalSegment, StationLabel
 from .centerline import Centerline, _stations_from_points, load_centerline, load_vertical_profile
 from .cross_section import cut_cross_section, recenter_on_pavement, sample_stations, stitch_cross_section_gaps
 from .ifc_reader import TINLayer, read_ifc_tins
@@ -16,6 +18,80 @@ from .renderer import render_cross_section_svg, render_longitudinal_profile_svg,
 from .terrain_sampler import fetch_terrain_profile, terrain_to_segments
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AlignmentMetadata:
+    vertical_pvi: list[tuple[float, float]] = field(default_factory=list)
+    horizontal_segments: list[HorizontalSegment] = field(default_factory=list)
+    station_labels: list[StationLabel] = field(default_factory=list)
+    source_epsg: int = 25833
+
+
+def _horizontal_segments_from_landxml(path: Path) -> list[HorizontalSegment]:
+    """Konverter LandXML horisontalkurvatur → felles HorizontalSegment-format."""
+    from src.arcpy_processor.landxml_parser import parse_horizontal_alignment
+    raw = parse_horizontal_alignment(path)
+    segments: list[HorizontalSegment] = []
+    for s in raw:
+        kind = s["kind"]
+        sta_start = float(s["sta_start"])
+        length = float(s["sta_end"]) - sta_start
+        if kind == "line":
+            seg_type = "LINE"
+            start_radius = None
+            end_radius = None
+            is_ccw = None
+        elif kind == "curve":
+            seg_type = "CIRCULARARC"
+            r = float(s["radius"])
+            start_radius = r
+            end_radius = r
+            is_ccw = s.get("dir", 1) > 0
+        else:  # "spiral"
+            seg_type = "CLOTHOID"
+            A = float(s["A"])
+            R = (A * A) / length if length > 0 else None
+            start_radius = None
+            end_radius = R
+            is_ccw = s.get("dir", 1) > 0
+        segments.append(HorizontalSegment(
+            start_station=sta_start,
+            length=length,
+            start_point=(0.0, 0.0),
+            start_direction=0.0,
+            segment_type=seg_type,
+            start_radius=start_radius,
+            end_radius=end_radius,
+            is_ccw=is_ccw,
+        ))
+    return segments
+
+
+def _load_alignment_metadata(cl_path: Path | None) -> AlignmentMetadata | None:
+    """Returner felles metadata uavhengig av om kilden er LandXML eller IFC-CL."""
+    if cl_path is None:
+        return None
+    suffix = cl_path.suffix.lower()
+    if suffix == ".xml":
+        pvi = load_vertical_profile(cl_path) or []
+        horiz = _horizontal_segments_from_landxml(cl_path)
+        return AlignmentMetadata(
+            vertical_pvi=pvi,
+            horizontal_segments=horiz,
+            station_labels=[],
+            source_epsg=25833,
+        )
+    if suffix == ".ifc":
+        from .alignment_parser import load_alignment_from_ifc
+        data = load_alignment_from_ifc(cl_path)
+        return AlignmentMetadata(
+            vertical_pvi=data.vertical_profile_pvi(),
+            horizontal_segments=data.horizontal_segments,
+            station_labels=data.station_labels,
+            source_epsg=data.source_epsg,
+        )
+    return None
 
 
 def _clip_centerline_to_tins(

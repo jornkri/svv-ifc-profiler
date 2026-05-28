@@ -178,3 +178,138 @@ def parse_landxml(
         )
 
     return result, epsg
+
+
+def parse_horizontal_alignment(
+    path: Path,
+) -> list[dict]:
+    """Les LandXML og returner horisontalsegmenter frå første Alignment.
+
+    Returnerer ei liste med dicts med minst desse nøklane:
+      - ``kind``:      ``"line"`` | ``"curve"`` | ``"spiral"``
+      - ``sta_start``: startstasjon (m)
+      - ``sta_end``:   sluttstasjon (m)
+
+    For ``kind == "curve"``:
+      - ``radius``: sirkelbueradius (m, alltid positiv)
+      - ``dir``:    +1 = mot urvisaren (ccw), −1 = med urvisaren (cw)
+
+    For ``kind == "spiral"``:
+      - ``A``:   klothoidparameter (m)
+      - ``dir``: +1 = ccw, −1 = cw
+
+    Elementrekkjefølgja i ``<CoordGeom>`` er brukt som kjeldeinformasjon.
+    ``staStart`` og ``length`` (eller summen av tidlegare element) bestemmer
+    stasjoneringa.
+
+    Raises:
+        ArcpyProcessorError: LANDXML_PARSE_ERROR ved ugyldig XML eller ingen
+            alignment funne i fila.
+    """
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError as exc:
+        raise ArcpyProcessorError(
+            LANDXML_PARSE_ERROR, f"Ugyldig XML i '{Path(path).name}': {exc}"
+        ) from exc
+
+    root = tree.getroot()
+    ns_uri = root.tag.split("}")[0][1:] if root.tag.startswith("{") else ""
+    ns = {"lx": ns_uri} if ns_uri else {}
+
+    def find_all(parent: ET.Element, tag: str) -> list[ET.Element]:
+        return (parent.findall(f".//lx:{tag}", ns) if ns_uri
+                else parent.findall(f".//{tag}"))
+
+    alignments = find_all(root, "Alignment")
+    if not alignments:
+        raise ArcpyProcessorError(
+            LANDXML_PARSE_ERROR,
+            f"Ingen <Alignment>-element funne i '{Path(path).name}'.",
+        )
+    # Vel den lengste alignment (eller den fyrste)
+    def _al_len(al: ET.Element) -> float:
+        try:
+            return float(al.get("length") or 0.0)
+        except ValueError:
+            return 0.0
+
+    alignment = max(alignments, key=_al_len)
+
+    # Finn CoordGeom (direkte barn av Alignment, ikkje djupare)
+    def _direct_child(parent: ET.Element, local_tag: str) -> ET.Element | None:
+        for child in parent:
+            child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if child_tag == local_tag:
+                return child
+        return None
+
+    coord_geom = _direct_child(alignment, "CoordGeom")
+    if coord_geom is None:
+        raise ArcpyProcessorError(
+            LANDXML_PARSE_ERROR,
+            f"Alignment '{alignment.get('name', '')}' manglar <CoordGeom>.",
+        )
+
+    segments: list[dict] = []
+    for elem in coord_geom:
+        tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+
+        # staStart og length kan vera attributt; elles akkumulerer vi
+        sta_start_attr = elem.get("staStart")
+        length_attr = elem.get("length")
+
+        sta_start: float = (
+            float(sta_start_attr) if sta_start_attr is not None
+            else (segments[-1]["sta_end"] if segments else 0.0)
+        )
+        length: float = float(length_attr) if length_attr is not None else 0.0
+        sta_end = sta_start + length
+
+        if tag == "Line":
+            segments.append({
+                "kind": "line",
+                "sta_start": sta_start,
+                "sta_end": sta_end,
+            })
+
+        elif tag == "Curve":
+            radius_attr = elem.get("radius")
+            rot = elem.get("rot", "ccw").lower()
+            radius = abs(float(radius_attr)) if radius_attr is not None else 0.0
+            direction = -1 if rot == "cw" else 1
+            segments.append({
+                "kind": "curve",
+                "sta_start": sta_start,
+                "sta_end": sta_end,
+                "radius": radius,
+                "dir": direction,
+            })
+
+        elif tag == "Spiral":
+            # LandXML Spiral: A = klothoidparameter, rot bestemmer retning
+            # Prøv å rekne ut A frå langleik og radius
+            r_start = elem.get("radiusStart")
+            r_end = elem.get("radiusEnd")
+            # A² = L * R_slutt (overgang linje→kurve: R_start=inf, R_end=R)
+            try:
+                if r_end and r_end != "INF":
+                    r_val = abs(float(r_end))
+                elif r_start and r_start != "INF":
+                    r_val = abs(float(r_start))
+                else:
+                    r_val = None
+                A = math.sqrt(length * r_val) if r_val and length > 0 else 0.0
+            except (TypeError, ValueError):
+                A = 0.0
+            rot = elem.get("rot", "ccw").lower()
+            direction = -1 if rot == "cw" else 1
+            segments.append({
+                "kind": "spiral",
+                "sta_start": sta_start,
+                "sta_end": sta_end,
+                "A": A,
+                "dir": direction,
+            })
+
+    return segments

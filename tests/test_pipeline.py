@@ -66,3 +66,29 @@ def test_pipeline_raises_without_centerline(tmp_path):
     fake_ifc.write_text("")
     with pytest.raises(ValueError, match="Ingen senterlinje"):
         run_pipeline(ifc_path=fake_ifc, centerline_path=None, output_dir=tmp_path / "out")
+
+
+def test_load_alignment_metadata_from_landxml():
+    """Eksisterende LandXML-vei skal fortsatt fungere via ny metadata-helper."""
+    from src.ifc_processor.pipeline import _load_alignment_metadata
+    xml = Path(__file__).parent.parent / "samples" / "m_f_veg_70400_aligment.xml"
+    meta = _load_alignment_metadata(xml)
+    assert meta is not None
+    assert len(meta.horizontal_segments) > 0
+    # LandXML har ingen referenter
+    assert meta.station_labels == []
+
+
+def test_load_alignment_metadata_from_ifc():
+    from src.ifc_processor.pipeline import _load_alignment_metadata
+    ifc_cl = Path(__file__).parent.parent / "samples" / "m_f-veg_12200_CL.ifc"
+    meta = _load_alignment_metadata(ifc_cl)
+    assert meta is not None
+    assert len(meta.horizontal_segments) == 67
+    assert len(meta.vertical_pvi) >= 2
+    assert len(meta.station_labels) > 50
+
+
+def test_load_alignment_metadata_none_for_unknown():
+    from src.ifc_processor.pipeline import _load_alignment_metadata
+    assert _load_alignment_metadata(None) is None
