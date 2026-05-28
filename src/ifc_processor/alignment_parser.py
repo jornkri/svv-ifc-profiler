@@ -145,6 +145,55 @@ def _find_vertical(alignment):
     return None
 
 
+def _extract_vertical_segments(vertical) -> list[VerticalSegment]:
+    if vertical is None:
+        return []
+    segments: list[VerticalSegment] = []
+    nested_segs: list = []
+    for rel in vertical.IsNestedBy:
+        for obj in rel.RelatedObjects:
+            if obj.is_a("IfcAlignmentSegment"):
+                nested_segs.append(obj)
+
+    for seg in nested_segs:
+        params = seg.DesignParameters
+        if params is None or not params.is_a("IfcAlignmentVerticalSegment"):
+            continue
+
+        raw_type = (params.PredefinedType or "").upper()
+        if raw_type not in ("CONSTANTGRADIENT", "PARABOLICARC", "CIRCULARARC"):
+            logger.warning(
+                "Ukjent vertikal segment-type '%s' — behandler som CONSTANTGRADIENT",
+                raw_type,
+            )
+            raw_type = "CONSTANTGRADIENT"
+
+        start_station = float(params.StartDistAlong or 0.0)
+        length = float(params.HorizontalLength or 0.0)
+        start_height = float(params.StartHeight or 0.0)
+        start_grad = float(params.StartGradient or 0.0)
+        end_grad = float(params.EndGradient or start_grad)
+
+        radius: float | None = None
+        if raw_type in ("PARABOLICARC", "CIRCULARARC"):
+            r_raw = params.RadiusOfCurvature
+            if r_raw is not None and r_raw != 0.0:
+                # Tegn-konvensjon: konkav (dal, gradient øker) → +, konveks (topp) → −
+                sign = 1.0 if (end_grad - start_grad) > 0 else -1.0
+                radius = sign * abs(float(r_raw))
+
+        segments.append(VerticalSegment(
+            start_station=start_station,
+            length=length,
+            start_height=start_height,
+            start_gradient=start_grad,
+            segment_type=raw_type,
+            radius=radius,
+        ))
+
+    return segments
+
+
 def _select_alignment(ifc):
     """Pick the single IfcAlignment in *ifc*, or the longest if multiple exist.
 
@@ -203,9 +252,13 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
             f"IfcAlignment '{name}' har ingen horisontalsegmenter."
         )
 
+    v = _find_vertical(alignment)
+    vertical_segments = _extract_vertical_segments(v)
+
     return IfcAlignmentData(
         name=name,
         points_3d=np.zeros((0, 3)),
         stations=np.zeros(0),
         horizontal_segments=horizontal_segments,
+        vertical_segments=vertical_segments,
     )

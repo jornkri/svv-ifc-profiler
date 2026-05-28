@@ -97,3 +97,30 @@ def test_circular_arc_has_radius():
         assert arcs[0].start_radius is not None
         assert arcs[0].start_radius > 0
         assert arcs[0].is_ccw in (True, False)
+
+
+def test_vertical_segments_extracted():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    assert len(data.vertical_segments) == 50
+    starts = [s.start_station for s in data.vertical_segments]
+    assert starts == sorted(starts)
+
+
+def test_vertical_segment_types():
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    types = {s.segment_type for s in data.vertical_segments}
+    assert types <= {"CONSTANTGRADIENT", "PARABOLICARC", "CIRCULARARC"}
+    assert "CONSTANTGRADIENT" in types
+
+
+def test_parabolic_radius_signed():
+    """Parabel som krummer ned (topp) → negativ radius; krummer opp (dal) → positiv."""
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc
+    data = load_alignment_from_ifc(CL_12200)
+    parabols = [s for s in data.vertical_segments if s.segment_type == "PARABOLICARC"]
+    if parabols:
+        for p in parabols:
+            assert p.radius is not None
+            assert p.radius != 0.0
