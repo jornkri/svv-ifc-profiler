@@ -87,8 +87,7 @@ ASCII-tolerant: match på trygge delstrenger (`"relag"` for Bærelag) og bruk
 | Underbygning | Planum | `IfcEarthworks*` PredefinedType⊃SUBGRADE; Name⊃"Constructionbed"/"Subgrade" |
 | Underbygning | Forsterket grunn | `IfcReinforcedSoil`; Name⊃"Fyllingslag" |
 | Terreng | Fylling | `IfcEarthworksFill` PredefinedType∈{SLOPEFILL, EMBANKMENT}; Name⊃"Fylling" |
-| Terreng | Skjæring (jord) | `IfcEarthworksCut/Fill` Name⊃"Jordskj"/"InCutSoil" |
-| Terreng | Skjæring (fjell) | Name⊃"Fjellskj"/"RockCutFace"/"InCutRock"/"Dypsprenging" |
+| Terreng | Skjæring | `IfcEarthworksCut/Fill` Name⊃"Jordskj"/"Fjellskj"/"InCutSoil"/"InCutRock"/"RockCutFace"/"Dypsprenging" |
 | Terreng | Avrunding | Name⊃"Avrunding" |
 | Drenering | Grøft | `IfcDistributionChamberElement` PredefinedType=TRENCH |
 
