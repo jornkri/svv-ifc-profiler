@@ -134,6 +134,81 @@ def convert_bim(
     return [os.path.join(dataset_path, fc) for fc in remaining_fcs]
 
 
+_KAT_FIELDS = [("kategori", 60), ("fag_gruppe", 40), ("ifc_klasse", 60), ("navn", 200)]
+
+
+def merge_and_categorize(
+    fc_paths: list[str],
+    classification: dict[str, ClassifiedElement],
+    *,
+    scratch: str | None = None,
+    input_wkid: int | None = None,
+    output_wkid: int = 25833,
+) -> str:
+    """Slå sammen multipatch-FC-er til ett 3D-lag, join kategori via GlobalId,
+    og avled et 2D-fотavtrykkslag. Returner sti til utdata-GDB med to FC-er.
+
+    Raises:
+        ArcpyProcessorError: BIM_CONVERSION_FAILED ved geometrifeil, eller hvis
+        GlobalId-felt mangler (join ikke mulig — se spec for fallback).
+    """
+    scratch = scratch or arcpy.env.scratchFolder
+    out_gdb = os.path.join(scratch, "bim_out.gdb")
+    if arcpy.Exists(out_gdb):
+        arcpy.management.Delete(out_gdb)
+    arcpy.management.CreateFileGDB(scratch, "bim_out.gdb")
+
+    bim_3d = os.path.join(out_gdb, "bim_3d")
+    bim_plan = os.path.join(out_gdb, "bim_plan")
+
+    try:
+        arcpy.management.Merge(fc_paths, bim_3d)
+
+        guid_field = _find_guid_field(bim_3d)
+        if guid_field is None:
+            raise ArcpyProcessorError(
+                BIM_CONVERSION_FAILED,
+                "Fant ikke IFC-GlobalId-felt i GDB — kan ikke joine kategori. "
+                "Inspiser feltene (arcpy.ListFields) og koble classify_from_fields "
+                "mot ObjectType/Name som fallback (se spec).",
+            )
+
+        for fname, flen in _KAT_FIELDS:
+            arcpy.management.AddField(bim_3d, fname, "TEXT", field_length=flen)
+        arcpy.management.AddField(bim_3d, "bim_id", "LONG")
+        arcpy.management.CalculateField(bim_3d, "bim_id", "!OBJECTID!", "PYTHON3")
+
+        cursor_fields = [guid_field, "kategori", "fag_gruppe", "ifc_klasse", "navn"]
+        with arcpy.da.UpdateCursor(bim_3d, cursor_fields) as cur:
+            for r in cur:
+                r[1], r[2], r[3], r[4] = _resolve_kategori(r[0], classification)
+                cur.updateRow(r)
+
+        # 2D-fотavtrykk, ett per kildeobjekt (gruppert på stabil bim_id)
+        arcpy.ddd.MultiPatchFootprint(bim_3d, bim_plan, group_field="bim_id")
+        arcpy.management.JoinField(
+            bim_plan, "bim_id", bim_3d, "bim_id",
+            ["kategori", "fag_gruppe", "ifc_klasse", "navn"],
+        )
+
+        if input_wkid and input_wkid != output_wkid:
+            sr = arcpy.SpatialReference(output_wkid)
+            for fc in (bim_3d, bim_plan):
+                proj = fc + "_p"
+                arcpy.management.Project(fc, proj, sr)
+                arcpy.management.Delete(fc)
+                arcpy.management.Rename(proj, fc)
+    except ArcpyProcessorError:
+        raise
+    except Exception as exc:
+        raise ArcpyProcessorError(
+            BIM_CONVERSION_FAILED,
+            f"Kategorisering/fотavtrykk feilet: {exc}",
+        ) from exc
+
+    return out_gdb
+
+
 def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:  # noqa: ARG001
     """Slett feature classes uten features. Returner gjenstående.
 

@@ -50,3 +50,61 @@ def test_find_guid_field_none_when_absent():
     with patch("src.arcpy_processor.converter.arcpy.ListFields",
                return_value=_fields("OBJECTID", "Name", "ObjectType")):
         assert _find_guid_field("fc") is None
+
+
+# --- merge_and_categorize ---
+import src.arcpy_processor.converter as conv
+
+
+def test_merge_and_categorize_orchestration(monkeypatch):
+    calls = {"merge": None, "footprint": None, "joinfield": None, "rows": []}
+
+    arcpy = conv.arcpy
+    arcpy.reset_mock()
+
+    # CreateFileGDB / Exists
+    arcpy.Exists.return_value = False
+
+    # Merge registrerer kall
+    def _merge(inputs, output):
+        calls["merge"] = (list(inputs), output)
+    arcpy.management.Merge.side_effect = _merge
+
+    # ListFields → guid-felt finnes
+    gf = MagicMock(); gf.name = "GlobalId"
+    monkeypatch.setattr(conv, "_find_guid_field", lambda fc: "GlobalId")
+
+    # UpdateCursor: én rad med GlobalId "G1"
+    row = ["G1", None, None, None, None]
+    class _Cur:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def __iter__(self): return iter([row])
+        def updateRow(self, r): calls["rows"].append(list(r))
+    arcpy.da.UpdateCursor.return_value = _Cur()
+
+    def _footprint(in_fc, out_fc, **kw):
+        calls["footprint"] = (in_fc, out_fc, kw)
+    arcpy.ddd.MultiPatchFootprint.side_effect = _footprint
+
+    def _joinfield(*a, **kw):
+        calls["joinfield"] = (a, kw)
+    arcpy.management.JoinField.side_effect = _joinfield
+
+    from src.ifc_processor.bim_classifier import ClassifiedElement
+    classification = {"G1": ClassifiedElement("G1", "IfcKerb", "Kantstein 1", "Kantstein", "Vegbane")}
+
+    gdb = conv.merge_and_categorize(
+        ["/scratch/bim_temp.gdb/ds/Courses", "/scratch/bim_temp.gdb/ds/Kerbs"],
+        classification,
+        scratch="/scratch",
+    )
+
+    assert gdb.endswith("bim_out.gdb")
+    # Begge kilde-FC-ene ble merget
+    assert len(calls["merge"][0]) == 2
+    # Kategori ble skrevet til raden (kategori, fag_gruppe, ifc_klasse, navn)
+    assert calls["rows"][0][1:] == ["Kantstein", "Vegbane", "IfcKerb", "Kantstein 1"]
+    # Fотavtrykk laget og kategori join-et tilbake
+    assert calls["footprint"] is not None
+    assert calls["joinfield"] is not None
