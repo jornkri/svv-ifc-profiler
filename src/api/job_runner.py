@@ -171,8 +171,9 @@ def run_job(
 
         is_ifc_cl = cl_path.suffix.lower() == ".ifc"
         if is_ifc_cl:
-            # IFC4X3-senterlinje er i EUREF89 UTM33 (EPSG:25833)
-            source_epsg = 25833
+            # Les faktisk kilde-CRS fra IfcProjectedCRS (ofte NTM, ikke UTM33).
+            from src.ifc_processor.alignment_parser import read_ifc_epsg
+            source_epsg = read_ifc_epsg(cl_path)
         else:
             _, source_epsg = parse_landxml(cl_path)
         # horizontal_alignment.json skrives nå av run_pipeline (for både LandXML og IFC-CL).

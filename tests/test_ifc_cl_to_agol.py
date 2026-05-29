@@ -45,7 +45,8 @@ def test_cli_parses_ifc_cl_and_calls_publisher(monkeypatch, capsys):
     mock_publish.assert_called_once()
     kwargs = mock_publish.call_args.kwargs
     assert kwargs["service_name"] == "test_service"
-    assert kwargs["source_epsg"] == 25833
+    # 12200-CL er EUREF89 NTM sone 7 (EPSG:5107), lest fra IfcProjectedCRS
+    assert kwargs["source_epsg"] == 5107
     # Punkter-dict skal ha én entry (alignment-navnet)
     assert len(kwargs["points_dict"]) == 1
     assert "n_hor_seg" in kwargs["extra_field_values"]

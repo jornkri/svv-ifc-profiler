@@ -23,6 +23,14 @@ def test_load_12200_returns_alignment_data():
     assert data.name == "12150"
 
 
+def test_source_epsg_read_from_projected_crs():
+    """12200-CL er i EUREF89 NTM sone 7 (EPSG:5107) — ikke UTM33."""
+    from src.ifc_processor.alignment_parser import load_alignment_from_ifc, read_ifc_epsg
+    assert read_ifc_epsg(CL_12200) == 5107
+    data = load_alignment_from_ifc(CL_12200)
+    assert data.source_epsg == 5107
+
+
 def test_ifc4_schema_rejected():
     from src.ifc_processor.alignment_parser import load_alignment_from_ifc
     if not KLEVERUD.exists():

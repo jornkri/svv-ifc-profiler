@@ -277,7 +277,12 @@ def get_job_geojson(job_id: str) -> dict:
     cl_ifc_file = job_dir / "centerline.ifc"
 
     if cl_ifc_file.exists():
-        epsg = 25833  # IFC4X3-senterlinje er i EUREF89 UTM33 (EPSG:25833)
+        # Les faktisk kilde-CRS fra IfcProjectedCRS (ofte NTM, ikke UTM33).
+        try:
+            from src.ifc_processor.alignment_parser import read_ifc_epsg
+            epsg = read_ifc_epsg(cl_ifc_file)
+        except Exception:
+            epsg = 25833
     elif cl_xml_file.exists():
         epsg = _get_landxml_epsg(cl_xml_file)
     else:

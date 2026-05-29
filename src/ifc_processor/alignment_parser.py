@@ -95,6 +95,46 @@ _HORIZONTAL_TYPE_MAP = {
 }
 
 
+_DEFAULT_EPSG = 25833
+
+
+def _epsg_from_projected_crs(ifc) -> int:
+    """Les EPSG-kode fra IfcProjectedCRS.Name (f.eks. 'EPSG:5107' → 5107).
+
+    Norske vegmodeller bruker ofte NTM-soner (EPSG:5105–5130), ikke UTM33.
+    Faller tilbake til 25833 hvis ingen gjenkjennelig kode finnes.
+    """
+    import re
+    for pcrs in ifc.by_type("IfcProjectedCRS"):
+        name = (pcrs.Name or "").strip()
+        m = re.search(r"(\d{4,5})", name)
+        if m:
+            try:
+                code = int(m.group(1))
+                logger.info("IfcProjectedCRS '%s' → EPSG:%d", name, code)
+                return code
+            except ValueError:
+                pass
+    logger.warning(
+        "Fant ingen EPSG-kode i IfcProjectedCRS — antar EPSG:%d", _DEFAULT_EPSG
+    )
+    return _DEFAULT_EPSG
+
+
+def read_ifc_epsg(ifc_path: Path) -> int:
+    """Åpne en IFC4X3-fil og returner kilde-EPSG fra IfcProjectedCRS.
+
+    Lett hjelpefunksjon for kallere som bare trenger CRS (job_runner, API),
+    uten å parse hele alignment-geometrien. Faller tilbake til 25833.
+    """
+    try:
+        ifc = ifcopenshell.open(str(ifc_path))
+    except Exception as exc:
+        logger.warning("Kunne ikke lese EPSG fra %s: %s — antar 25833", ifc_path, exc)
+        return _DEFAULT_EPSG
+    return _epsg_from_projected_crs(ifc)
+
+
 def _find_horizontal(alignment):
     """Return the IfcAlignmentHorizontal nested under *alignment*, or None."""
     for rel in alignment.IsNestedBy:
@@ -434,6 +474,7 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
 
     alignment = _select_alignment(ifc)
     name = alignment.Name or "<ukjent>"
+    source_epsg = _epsg_from_projected_crs(ifc)
 
     h = _find_horizontal(alignment)
     horizontal_segments = _extract_horizontal_segments(h)
@@ -450,8 +491,8 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
     station_labels = _extract_station_labels(alignment, points_3d, stations)
 
     logger.info(
-        "alignment_parser: Lastet '%s' (%d hor.seg, %d vert.seg, %d referenter, %.1f m)",
-        name, len(horizontal_segments), len(vertical_segments),
+        "alignment_parser: Lastet '%s' (EPSG:%d, %d hor.seg, %d vert.seg, %d referenter, %.1f m)",
+        name, source_epsg, len(horizontal_segments), len(vertical_segments),
         len(station_labels), float(stations[-1]) if stations.size else 0.0,
     )
 
@@ -462,4 +503,5 @@ def load_alignment_from_ifc(ifc_path: Path) -> IfcAlignmentData:
         horizontal_segments=horizontal_segments,
         vertical_segments=vertical_segments,
         station_labels=station_labels,
+        source_epsg=source_epsg,
     )
