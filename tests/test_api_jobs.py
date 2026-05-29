@@ -56,7 +56,7 @@ def test_run_job_success(tmp_path):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
-            xml_path=fake_xml,
+            cl_path=fake_xml,
             name="TestJob",
             interval=10.0,
             access_token="tok",
@@ -97,7 +97,7 @@ def test_run_job_passes_source_epsg_to_tverrprofil(tmp_path):
          patch("src.api.job_runner.subprocess.run",
                side_effect=[mock_proc_cl, mock_proc_tp]) as mock_run, \
          patch("src.api.job_runner.parse_landxml", return_value=({}, 5111)):
-        run_job(job_id=job_id, ifc_path=fake_ifc, xml_path=fake_xml,
+        run_job(job_id=job_id, ifc_path=fake_ifc, cl_path=fake_xml,
                 name="T", interval=10.0, access_token="tok",
                 org_url="https://x.arcgis.com", output_dir=output_dir)
 
@@ -134,7 +134,7 @@ def test_run_job_sets_failed_on_subprocess_error(tmp_path):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
-            xml_path=fake_xml,
+            cl_path=fake_xml,
             name="TestFail",
             interval=10.0,
             access_token="tok",
@@ -180,7 +180,7 @@ def test_run_job_with_publish_bim_success(tmp_path):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
-            xml_path=fake_xml,
+            cl_path=fake_xml,
             name="TestBIM",
             interval=10.0,
             access_token="tok",
@@ -228,7 +228,7 @@ def test_run_job_with_publish_bim_bim_fails_gives_done_with_warnings(tmp_path):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
-            xml_path=fake_xml,
+            cl_path=fake_xml,
             name="TestBIMFail",
             interval=10.0,
             access_token="tok",
@@ -276,7 +276,7 @@ def test_run_job_with_publish_bim_bad_json_gives_done_with_warnings(tmp_path):
         run_job(
             job_id=job_id,
             ifc_path=fake_ifc,
-            xml_path=fake_xml,
+            cl_path=fake_xml,
             name="TestBIMBadJson",
             interval=10.0,
             access_token="tok",
@@ -338,7 +338,7 @@ def test_post_jobs_requires_auth(client):
         "/api/jobs",
         data={"name": "Test", "interval": "10"},
         files={"ifc_file": ("m.ifc", io.BytesIO(b"fake")),
-               "xml_file": ("cl.xml", io.BytesIO(b"<x/>"))},
+               "cl_file": ("cl.xml", io.BytesIO(b"<x/>"))},
     )
     assert resp.status_code == 401
 
@@ -349,7 +349,7 @@ def test_post_jobs_validates_file_type(client):
         "/api/jobs",
         data={"name": "Test", "interval": "10"},
         files={"ifc_file": ("model.txt", io.BytesIO(b"bad")),
-               "xml_file": ("cl.xml", io.BytesIO(b"<x/>"))},
+               "cl_file": ("cl.xml", io.BytesIO(b"<x/>"))},
     )
     assert resp.status_code == 400
 
@@ -361,7 +361,7 @@ def test_post_jobs_creates_job_and_returns_id(client):
             "/api/jobs",
             data={"name": "TestService", "interval": "10"},
             files={"ifc_file": ("model.ifc", io.BytesIO(b"fake")),
-                   "xml_file": ("cl.xml", io.BytesIO(b"<xml/>"))},
+                   "cl_file": ("cl.xml", io.BytesIO(b"<xml/>"))},
         )
     assert resp.status_code == 200
     data = resp.json()
@@ -376,7 +376,7 @@ def test_get_job_status_queued(client):
             "/api/jobs",
             data={"name": "S", "interval": "10"},
             files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
-                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+                   "cl_file": ("c.xml", io.BytesIO(b"<x/>"))},
         )
     job_id = create_resp.json()["job_id"]
 
@@ -403,7 +403,7 @@ def test_post_jobs_passes_publish_bim_true_to_run_job(client):
             "/api/jobs",
             data={"name": "S", "interval": "10", "publish_bim": "true"},
             files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
-                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+                   "cl_file": ("c.xml", io.BytesIO(b"<x/>"))},
         )
     mock_run_job.assert_called_once()
     _, kwargs = mock_run_job.call_args
@@ -418,7 +418,7 @@ def test_get_job_status_includes_bim_url(client):
             "/api/jobs",
             data={"name": "S", "interval": "10"},
             files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
-                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+                   "cl_file": ("c.xml", io.BytesIO(b"<x/>"))},
         )
     job_id = create_resp.json()["job_id"]
     status_resp = client.get(f"/api/jobs/{job_id}")
@@ -476,7 +476,7 @@ def test_run_job_skips_xb_when_template_missing(tmp_path):
         job_runner.run_job(
             job_id=job_id,
             ifc_path=tmp_path / "model.ifc",
-            xml_path=tmp_path / "cl.xml",
+            cl_path=tmp_path / "cl.xml",
             name="TestProject",
             interval=10.0,
             access_token="tok",
@@ -503,6 +503,71 @@ def test_get_job_response_includes_xb_url():
     resp = client.get(f"/api/jobs/{job_id}")
     assert resp.status_code == 200
     assert resp.json()["xb_url"] == "https://experience.arcgis.com/builder/?id=xyz"
+
+
+def test_create_job_accepts_ifc_cl(client):
+    """POST /api/jobs godtar cl_file med .ifc-ending og ruter med .ifc-sti."""
+    _login(client)
+    with patch("src.api.job_runner.run_job") as mock_run_job:
+        resp = client.post(
+            "/api/jobs",
+            data={"name": "test_job", "interval": "20.0"},
+            files={"ifc_file": ("model.ifc", io.BytesIO(b"fake")),
+                   "cl_file": ("centerline.ifc", io.BytesIO(b"fake"))},
+        )
+    assert resp.status_code == 200
+    assert "job_id" in resp.json()
+    _, kwargs = mock_run_job.call_args
+    assert kwargs["cl_path"].suffix.lower() == ".ifc"
+
+
+def test_create_job_rejects_unknown_cl_ending(client):
+    """cl_file med ukjent ending (.txt) skal gi 400."""
+    _login(client)
+    resp = client.post(
+        "/api/jobs",
+        data={"name": "test_job", "interval": "20.0"},
+        files={"ifc_file": ("model.ifc", io.BytesIO(b"fake")),
+               "cl_file": ("centerline.txt", io.BytesIO(b"bad"))},
+    )
+    assert resp.status_code == 400
+    assert "cl_file" in resp.json()["detail"].lower() or \
+           ".xml" in resp.json()["detail"].lower()
+
+
+def test_run_job_routes_ifc_cl_to_ifc_publisher(tmp_path):
+    """Når cl_path er .ifc skal senterlinje-publiseringen rute til ifc_cl_to_agol."""
+    from src.api.job_runner import create_job, run_job
+
+    fake_ifc = tmp_path / "model.ifc"; fake_ifc.write_text("")
+    fake_cl = tmp_path / "centerline.ifc"; fake_cl.write_text("")
+    output_dir = tmp_path / "output"; output_dir.mkdir()
+    (output_dir / "metadata.json").write_text(json.dumps({"stations": [{}]}))
+
+    pipeline_result = {
+        "svgs": [], "centerline": str(output_dir / "c.geojson"),
+        "metadata": str(output_dir / "metadata.json"),
+        "stations_json": str(output_dir / "stations.json"),
+    }
+    mock_proc_cl = MagicMock(stdout=json.dumps({"status": "ok", "url": "https://agol/cl"}), returncode=0)
+    mock_proc_tp = MagicMock(stdout=json.dumps({"status": "ok", "url": "https://agol/tp"}), returncode=0)
+
+    job_id = create_job()
+    with patch("src.api.job_runner.run_pipeline", return_value=pipeline_result), \
+         patch("src.api.job_runner.subprocess.run",
+               side_effect=[mock_proc_cl, mock_proc_tp]) as mock_run, \
+         patch("src.api.job_runner.parse_landxml") as mock_parse:
+        run_job(job_id=job_id, ifc_path=fake_ifc, cl_path=fake_cl,
+                name="T", interval=10.0, access_token="tok",
+                org_url="https://x.arcgis.com", output_dir=output_dir)
+
+    cl_call_args = mock_run.call_args_list[0][0][0]
+    assert "src.arcpy_processor.ifc_cl_to_agol" in cl_call_args
+    assert "--ifc-cl" in cl_call_args
+    # .ifc skal ikke kalle parse_landxml — source-epsg er 25833
+    mock_parse.assert_not_called()
+    tp_call_args = mock_run.call_args_list[1][0][0]
+    assert "25833" in tp_call_args
 
 
 def test_list_jobs_response_includes_xb_url(tmp_path):

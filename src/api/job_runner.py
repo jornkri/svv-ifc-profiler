@@ -101,7 +101,7 @@ def _update(state: JobState, pct: int, msg: str) -> None:
 def run_job(
     job_id: str,
     ifc_path: Path,
-    xml_path: Path,
+    cl_path: Path,
     name: str,
     interval: float,
     access_token: str,
@@ -134,7 +134,7 @@ def run_job(
 
         pipeline_result = run_pipeline(
             ifc_path=ifc_path,
-            centerline_path=xml_path,
+            centerline_path=cl_path,
             output_dir=output_dir,
             interval_m=interval,
             include_terrain=True,
@@ -146,17 +146,32 @@ def run_job(
         n_sections = len(meta["stations"])
         _update(state, 50, f"Genererte {n_sections} stasjoner")
 
-        _, source_epsg = parse_landxml(xml_path)
+        is_ifc_cl = cl_path.suffix.lower() == ".ifc"
+        if is_ifc_cl:
+            # IFC4X3-senterlinje er i EUREF89 UTM33 (EPSG:25833)
+            source_epsg = 25833
+        else:
+            _, source_epsg = parse_landxml(cl_path)
 
         lp_svg = pipeline_result.get("lengdeprofil")
-        cl_cmd = [
-            sys.executable, "-m", "src.arcpy_processor.landxml_to_agol",
-            "--xml", str(xml_path),
-            "--name", f"{name}_senterlinje",
-            "--folder", "",
-            "--token", access_token,
-            "--org-url", org_url,
-        ]
+        if is_ifc_cl:
+            cl_cmd = [
+                sys.executable, "-m", "src.arcpy_processor.ifc_cl_to_agol",
+                "--ifc-cl", str(cl_path),
+                "--name", f"{name}_senterlinje",
+                "--folder", "",
+                "--token", access_token,
+                "--org-url", org_url,
+            ]
+        else:
+            cl_cmd = [
+                sys.executable, "-m", "src.arcpy_processor.landxml_to_agol",
+                "--xml", str(cl_path),
+                "--name", f"{name}_senterlinje",
+                "--folder", "",
+                "--token", access_token,
+                "--org-url", org_url,
+            ]
         if lp_svg:
             cl_cmd += ["--lengdeprofil", lp_svg]
         lp_label = " + lengdeprofil" if lp_svg else ""
