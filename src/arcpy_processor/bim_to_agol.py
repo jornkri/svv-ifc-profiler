@@ -10,24 +10,9 @@ from typing import NoReturn
 
 from dotenv import load_dotenv
 
-from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
+from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES
 
 logger = logging.getLogger(__name__)
-
-
-def _gdb_path_from_fcs(fc_paths: list[str]) -> str:
-    """Utled GDB-sti fra første FC-sti (format: /scratch/bim_temp.gdb/dataset/FC)."""
-    if not fc_paths:
-        raise ArcpyProcessorError(PUBLISH_FAILED, "Intern feil: fc_paths er tom")
-    parts = Path(fc_paths[0]).parts
-    try:
-        gdb_idx = next(i for i, p in enumerate(parts) if p.endswith(".gdb"))
-    except StopIteration:
-        raise ArcpyProcessorError(
-            PUBLISH_FAILED,
-            f"Intern feil: ingen .gdb-komponent i sti: {fc_paths[0]}",
-        ) from None
-    return str(Path(*parts[:gdb_idx + 1]))
 
 
 def _check_arcpy() -> None:
@@ -93,10 +78,8 @@ def main(argv: list[str] | None = None) -> None:
             )
 
         classification = classify_ifc(args.ifc)
-        gdb_path = merge_and_categorize(
-            fc_paths, classification,
-            input_wkid=args.input_wkid, output_wkid=args.output_wkid,
-        )
+        # convert_bim har allerede reprosjektert til output_wkid — ikke reprosjekter på nytt.
+        gdb_path = merge_and_categorize(fc_paths, classification)
 
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         print(json.dumps(result))

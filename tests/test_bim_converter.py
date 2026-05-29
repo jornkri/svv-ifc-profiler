@@ -34,6 +34,31 @@ def _fields(*names):
     return out
 
 
+def _typed_fields(*pairs):
+    """pairs: (name, type) tuples."""
+    out = []
+    for name, ftype in pairs:
+        f = MagicMock()
+        f.name = name
+        f.type = ftype
+        out.append(f)
+    return out
+
+
+def test_find_guid_field_skips_arcgis_uuid_globalid():
+    # ArcGIS UUID GlobalID (type 'GlobalID') must be skipped in favour of the IFC text guid
+    with patch("src.arcpy_processor.converter.arcpy.ListFields",
+               return_value=_typed_fields(("OBJECTID", "OID"), ("GlobalID", "GlobalID"),
+                                          ("IfcGUID", "String"))):
+        assert _find_guid_field("fc") == "IfcGUID"
+
+
+def test_find_guid_field_none_when_only_arcgis_uuid():
+    with patch("src.arcpy_processor.converter.arcpy.ListFields",
+               return_value=_typed_fields(("OBJECTID", "OID"), ("GlobalID", "GlobalID"))):
+        assert _find_guid_field("fc") is None
+
+
 def test_find_guid_field_matches_globalid():
     with patch("src.arcpy_processor.converter.arcpy.ListFields",
                return_value=_fields("OBJECTID", "GlobalId", "Name")):
@@ -53,6 +78,7 @@ def test_find_guid_field_none_when_absent():
 
 
 # --- merge_and_categorize ---
+import pytest
 import src.arcpy_processor.converter as conv
 
 
@@ -108,3 +134,26 @@ def test_merge_and_categorize_orchestration(monkeypatch):
     # Fотavtrykk laget og kategori join-et tilbake
     assert calls["footprint"] is not None
     assert calls["joinfield"] is not None
+
+
+def test_merge_and_categorize_raises_when_no_guid_matches(monkeypatch):
+    from src.arcpy_processor.errors import ArcpyProcessorError
+    arcpy = conv.arcpy
+    arcpy.reset_mock()
+    arcpy.Exists.return_value = False
+    arcpy.management.Merge.side_effect = None
+    monkeypatch.setattr(conv, "_find_guid_field", lambda fc: "GlobalId")
+
+    row = ["UNMATCHED_GUID", None, None, None, None]
+    class _Cur:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def __iter__(self): return iter([row])
+        def updateRow(self, r): pass
+    arcpy.da.UpdateCursor.return_value = _Cur()
+
+    from src.ifc_processor.bim_classifier import ClassifiedElement
+    classification = {"G1": ClassifiedElement("G1", "IfcKerb", "K", "Kantstein", "Vegbane")}
+
+    with pytest.raises(ArcpyProcessorError):
+        conv.merge_and_categorize(["/s/bim_temp.gdb/ds/Kerbs"], classification, scratch="/scratch")

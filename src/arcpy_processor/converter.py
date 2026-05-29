@@ -24,10 +24,15 @@ def _resolve_kategori(global_id: str,
 
 
 def _find_guid_field(fc_path: str) -> str | None:
-    """Finn feltet som holder IFC-GlobalId i en feature class (case-insensitivt).
-    Returner None hvis ingen kandidat finnes (→ trigger fallback i kaller)."""
-    for f in arcpy.ListFields(fc_path):
-        if "globalid" in f.name.lower() or "ifcguid" in f.name.lower():
+    """Finn feltet som holder IFC-GlobalId (case-insensitivt). Foretrekker et
+    eksplisitt 'ifcguid'-felt; ellers et 'globalid'-felt som IKKE er ArcGIS sin
+    egen UUID-type ('GlobalID'), så vi ikke joiner på feil nøkkel. None hvis ingen."""
+    fields = list(arcpy.ListFields(fc_path))
+    for f in fields:
+        if "ifcguid" in f.name.lower():
+            return f.name
+    for f in fields:
+        if "globalid" in f.name.lower() and f.type != "GlobalID":
             return f.name
     return None
 
@@ -179,10 +184,21 @@ def merge_and_categorize(
         arcpy.management.CalculateField(bim_3d, "bim_id", "!OBJECTID!", "PYTHON3")
 
         cursor_fields = [guid_field, "kategori", "fag_gruppe", "ifc_klasse", "navn"]
+        matched = 0
         with arcpy.da.UpdateCursor(bim_3d, cursor_fields) as cur:
             for r in cur:
-                r[1], r[2], r[3], r[4] = _resolve_kategori(r[0], classification)
+                vals = _resolve_kategori(r[0], classification)
+                if vals[0] != "Uklassifisert":
+                    matched += 1
+                r[1], r[2], r[3], r[4] = vals
                 cur.updateRow(r)
+        if classification and matched == 0:
+            raise ArcpyProcessorError(
+                BIM_CONVERSION_FAILED,
+                f"Ingen features matchet IFC-GlobalId fra klassifiseringen (join-felt "
+                f"'{guid_field}'). Sannsynlig feil join-nøkkel — verifiser at feltet "
+                "inneholder IFC-GlobalId og ikke ArcGIS sin UUID-GlobalID.",
+            )
 
         # 2D-fотavtrykk, ett per kildeobjekt (gruppert på stabil bim_id)
         arcpy.ddd.MultiPatchFootprint(bim_3d, bim_plan, group_field="bim_id")
