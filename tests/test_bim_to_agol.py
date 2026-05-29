@@ -9,6 +9,7 @@ import pytest
 SAMPLE = Path(__file__).parent.parent / "samples" / "m_f_veg_12200_Veg.ifc"
 
 
+@pytest.mark.slow
 def test_main_classifies_and_publishes_two_layers(monkeypatch):
     if not SAMPLE.exists():
         pytest.skip("12200 IFC-sample mangler")
@@ -26,7 +27,7 @@ def test_main_classifies_and_publishes_two_layers(monkeypatch):
 
     from src.arcpy_processor import bim_to_agol
 
-    with patch.object(bim_to_agol, "connect", return_value=MagicMock()), \
+    with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
          patch("src.arcpy_processor.publisher.check_name_available"), \
          patch("src.arcpy_processor.converter.convert_bim",
                return_value=["/s/bim_temp.gdb/ds/Courses"]) as m_conv, \

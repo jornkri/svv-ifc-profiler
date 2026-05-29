@@ -12,13 +12,6 @@ from dotenv import load_dotenv
 
 from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
 
-# Module-level import so patch.object(bim_to_agol, "connect", ...) works in tests.
-# The actual connect() call happens inside main() after _check_arcpy() passes.
-try:
-    from .auth import connect  # noqa: F401
-except Exception:  # pragma: no cover – arcgis not installed in test env
-    connect = None  # type: ignore[assignment]
-
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +69,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         _check_arcpy()
+        from .auth import connect
         from .converter import convert_bim, merge_and_categorize
         from .publisher import check_name_available, upload_and_publish
         from src.ifc_processor.bim_classifier import classify_ifc
