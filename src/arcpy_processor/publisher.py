@@ -137,6 +137,12 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
             f"Publisering til ArcGIS Online feilet: {exc}",
         ) from exc
     finally:
+        # Opprydning er best-effort: på Windows kan zip-fila fortsatt være låst
+        # (OneDrive/antivirus/SDK) rett etter opplasting. En feil her skal IKKE
+        # maskere et vellykket publiserings-resultat.
         if os.path.exists(zip_path):
-            os.remove(zip_path)
-            logger.debug("Slettet midlertidig zip: %s", zip_path)
+            try:
+                os.remove(zip_path)
+                logger.debug("Slettet midlertidig zip: %s", zip_path)
+            except OSError as exc:
+                logger.warning("Kunne ikke slette midlertidig zip %s: %s", zip_path, exc)
