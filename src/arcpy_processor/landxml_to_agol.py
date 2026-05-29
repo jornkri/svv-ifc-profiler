@@ -165,11 +165,11 @@ def main(argv: list[str] | None = None) -> None:
             lp_path = Path(args.lengdeprofil)
             if lp_path.exists():
                 arcpy.management.EnableAttachments(fc_path)
-                match_tbl = os.path.join(arcpy.env.scratchGDB, f"{dataset_name}_lp_match")
+                match_tbl = os.path.join(gdb_path, f"{dataset_name}_lp_match")
                 if arcpy.Exists(match_tbl):
                     arcpy.management.Delete(match_tbl)
                 arcpy.management.CreateTable(
-                    arcpy.env.scratchGDB, f"{dataset_name}_lp_match"
+                    gdb_path, f"{dataset_name}_lp_match"
                 )
                 arcpy.management.AddField(match_tbl, "fc_oid", "LONG")
                 arcpy.management.AddField(match_tbl, "file_path", "TEXT", field_length=512)

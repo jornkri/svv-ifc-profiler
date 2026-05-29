@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import zipfile
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from arcgis.gis import GIS
-
-from arcgis.gis import ItemProperties
 
 from .errors import ArcpyProcessorError, NAME_EXISTS, PUBLISH_FAILED
 
@@ -31,15 +30,15 @@ def _zip_gdb(gdb_path: str, zip_path: str) -> None:
 
 
 def check_name_available(gis: GIS, name: str, folder: str) -> None:  # noqa: ARG001
-    """Feiler med NAME_EXISTS hvis et item med samme tittel finnes i organisasjonen."""
+    """Feiler med NAME_EXISTS hvis en Feature Service med samme tittel finnes."""
     existing = gis.content.search(
-        query=f'title:"{name}" AND (type:"Feature Service" OR type:"File Geodatabase")',
+        query=f'title:"{name}" AND type:"Feature Service"',
         max_items=10,
     )
     if any(item.title == name for item in existing):
         raise ArcpyProcessorError(
             NAME_EXISTS,
-            f"Et item med navn '{name}' finnes allerede i organisasjonen. "
+            f"En Feature Service med navn '{name}' finnes allerede i organisasjonen. "
             "Velg et annet navn eller slett det eksisterende itemet.",
         )
 
@@ -62,25 +61,50 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         _zip_gdb(gdb_path, zip_path)
         logger.info("Zippet GDB til %s (%.1f MB)", zip_path, os.path.getsize(zip_path) / 1e6)
 
-        item_props = ItemProperties(
-            title=name,
-            item_type="File Geodatabase",
-            tags=["IFC", "BIM", "SVV", "tverrprofil"],
-            snippet=f"BIM-data konvertert fra IFC: {name}",
-        )
-        folder_obj = gis.content.folders.get(folder if folder else None)
-        if folder_obj is None:
-            raise ArcpyProcessorError(
-                PUBLISH_FAILED,
-                f"Mappe '{folder}' ble ikke funnet i ArcGIS Online-kontoen. "
-                "Opprett mappen i AGOL eller oppgi et annet mappenavn med --folder.",
-            )
-        job = folder_obj.add(item_properties=item_props, file=zip_path)
-        item = job.result()
-        logger.info("Lastet opp GDB som item %s", item.id)
+        # Last opp GDB med et midlertidig navn for å unngå konflikt med Feature Service-navnet.
+        # AGOL ville ellers appende "_1" på den publiserte Feature Service.
+        gdb_upload_name = f"{name}_gdb"
+        item_props = {
+            "title": gdb_upload_name,
+            "type": "File Geodatabase",
+            "tags": "IFC,BIM,SVV,tverrprofil",
+            "snippet": f"BIM-data konvertert fra IFC: {name}",
+        }
+        # gis.content.add() is synchronous and returns a validated Item — more reliable
+        # than the async folder_obj.add() job pattern for subsequent publish calls.
+        item = gis.content.add(item_properties=item_props, data=zip_path, folder=folder or None)
+        if item is None:
+            raise ArcpyProcessorError(PUBLISH_FAILED, "Opplasting til AGOL returnerte None")
+        logger.info("Lastet opp GDB som item %s (tittel: %s)", item.id, gdb_upload_name)
 
-        fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
+        # AGOL can lag after upload before the item is queriable for publish.
+        # Retry with backoff to handle the propagation delay.
+        publish_delays = [3, 6, 12, 20]
+        fs_item = None
+        last_exc = None
+        for attempt, delay in enumerate([0] + publish_delays, start=1):
+            if delay:
+                logger.info("Venter %ds før publisering (forsøk %d)…", delay, attempt)
+                time.sleep(delay)
+            try:
+                fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
+                break
+            except Exception as exc:
+                last_exc = exc
+                if "Could not locate the Item" in str(exc) and attempt <= len(publish_delays):
+                    logger.warning("Item ikke tilgjengelig ennå (%s), prøver igjen…", exc)
+                    continue
+                raise
+        if fs_item is None:
+            raise last_exc
         logger.info("Publisert feature service: %s", fs_item.url)
+
+        # Slett kilde-GDB-item — bare Feature Service trengs i AGOL.
+        try:
+            item.delete()
+            logger.info("Slettet kilde-GDB item %s", item.id)
+        except Exception as del_exc:
+            logger.warning("Kunne ikke slette kilde-GDB item %s: %s", item.id, del_exc)
 
         # Diagnostic: query first feature to verify published coordinates
         try:
@@ -98,8 +122,8 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         return {
             "status": "ok",
             "url": fs_item.url,
-            "item_id": item.id,
-            "item_url": item.homepage,
+            "item_id": fs_item.id,
+            "item_url": fs_item.homepage,
             "layer_count": layer_count,
             "spatial_reference": "ETRS89 / UTM zone 33N (EPSG:25833)",
             "published_at": datetime.now(timezone.utc).isoformat(),

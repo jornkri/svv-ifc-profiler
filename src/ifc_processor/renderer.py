@@ -89,7 +89,7 @@ def _draw_terrain_chain(ax, chain: list[tuple[float, float]], gid: str | None = 
             tick_idx += 1
         accumulated += seg_len
 
-_TOL = 1e-6  # toleranse for sammenkjeding av endepunkter (meter)
+_TOL = 1e-3  # toleranse for sammenkjeding av endepunkter (meter) — 1 mm håndterer IFC-presisjon
 
 # Classes that represent solid pavement volumes — stacked layers produce multiple TIN edges
 # at nearly identical v values. We render only the upper envelope instead of all edges.
@@ -217,7 +217,28 @@ def _upper_envelope_chain(
     return [(float(u), float(v)) for u, v in zip(us, max_v) if not np.isnan(v)]
 
 
-_SLOPE_CLASSES = frozenset({"skjaering", "fylling"})
+_SLOPE_CLASSES = frozenset({"skjaering", "fylling", "groft"})
+
+
+def _filter_horiz_segs(
+    segs: list[tuple[tuple[float, float], tuple[float, float]]],
+    max_slope: float = 2.0,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """Fjern nær-loddrette segmenter (IFC solid-sideflater) fra pavement-samling.
+
+    Sideflater på IFC-solider har dv/du >> 2 og produserer synlige kante-artefakter
+    i den øvre konvolutten.  Vegoverflate og konstruksjonsgeometri har typisk dv/du < 0.1
+    (2–8 % tverrfall); kantstein kan nå ~1.0.  max_slope=2.0 ekskluderer sideflanter
+    trygt uten å fjerne legitim veggeometri.
+    """
+    result = []
+    for (u1, v1), (u2, v2) in segs:
+        du = abs(u2 - u1)
+        if du < 1e-3:
+            continue
+        if abs(v2 - v1) / du <= max_slope:
+            result.append(((u1, v1), (u2, v2)))
+    return result
 
 
 def _outer_face_segs(
@@ -312,25 +333,31 @@ def _draw_named_layer_chains(
     """Tegn individuelle IFC-komponentkjeder (ett lag per farge).
 
     Stablede dekkelag (bindlag, bærelag, filterlag …) tegnes via øvre og nedre
-    konvolutt — dette unngår stjernartefakter i hjørner der mange trekanter møtes.
-    Andre komponenter (grøft, jordskj.) tegnes med lengde-filtrerte kjeder.
+    konvolutt for å vise full lagtykkelse nedover i bakken.
+    Andre komponenter (grøft, skjæring) tegnes med filtrerte kjeder.
     """
     for label, segs in named_segments.items():
         color = _named_layer_color(label)
 
         if _is_pavement_label(label):
-            # Øvre konvolutt per lag = grensesnitt mot laget over.
-            # Nedre konvolutt utelates — den tracer sideflater ned i grøft/skjæring
-            # og produserer lange diagonale artefakter i hjørnene.
-            upper = _upper_envelope_chain(segs)
+            h_segs = _filter_horiz_segs(segs)
+            upper = _upper_envelope_chain(h_segs)
             if len(upper) >= 2:
+                is_bindlag = "bindlag" in label.lower() or "bindelag" in label.lower()
+                lw = 1.8 if is_bindlag else 0.5
                 lines = ax.plot([p[0] for p in upper], [p[1] for p in upper],
-                        color=color, linewidth=0.8, linestyle="-", zorder=3)
-                lines[0].set_gid('cs:named')  # flat tag — JS snap does not need to distinguish layer names
+                        color=color, linewidth=lw, linestyle="-", zorder=3)
+                lines[0].set_gid('cs:named')
+
+            # Øvre konvolutt per lag er allerede tilstrekkelig for å vise alle grensesnitt
+            # nedover i bakken: øvre kant av Bærelag = nedre kant av Bindlag osv.
+            # Nedre konvolutt gir redundant informasjon og bidrar til artefakter.
         else:
-            # Side-komponenter: kjedete segmenter med lengde-filter
+            # Side-komponenter (grøft, skjæring, fylling): fjern nær-loddrette sideflater
+            # (vegger på TIN-solider) via slope-filter, kjedet som profil.
+            # max_slope=3.0 beholder grøfteskråninger opp til ~72° mens loddrette vegger filtreres.
             clean = [
-                (p1, p2) for p1, p2 in segs
+                (p1, p2) for p1, p2 in _filter_horiz_segs(segs, max_slope=2.0)
                 if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) >= 0.15
             ]
             for chain in _chain_segments(clean):
@@ -338,7 +365,7 @@ def _draw_named_layer_chains(
                     continue
                 lines = ax.plot([p[0] for p in chain], [p[1] for p in chain],
                         color=color, linewidth=0.7, linestyle="-", zorder=3)
-                lines[0].set_gid('cs:named')  # flat tag — JS snap does not need to distinguish layer names
+                lines[0].set_gid('cs:named')
 
 
 def _draw_named_labels(
@@ -441,12 +468,13 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
             if road_class in _PAVEMENT_CLASSES or road_class == "groft":
                 core_u.extend([u1, u2])
                 core_v.extend([v1, v2])
-    for segs in cross_section.named_segments.values():
+    for label, segs in cross_section.named_segments.items():
         for (u1, v1), (u2, v2) in segs:
             road_u.extend([u1, u2])
             road_v.extend([v1, v2])
-            core_u.extend([u1, u2])
-            core_v.extend([v1, v2])
+        # Navngitte lag holdes UTENFOR core_v: TIN-solider inkluderer bunnflater
+        # som kan ligge mange meter under vegen og trekke viewport-senteret ned.
+        # Typed _PAVEMENT_CLASSES fra segments er tilstrekkelig for y-sentrering.
 
     if not all_u:
         logger.warning("Ingen segmenter å rendre for stasjon %.1f", cross_section.station)
@@ -471,14 +499,18 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     x_range = x_hi - x_lo
     view_v = road_v if road_v else all_v
 
-    # y-range from x-range for 1:1 data scale (R700 1:200); centered on pavement geometry.
+    # y-range from x-range for 1:1 data scale (R700 1:200).
+    # Posisjonerer vegoverflaten ~30 % fra bunn slik at det er god plass til etiketter
+    # over vegen og synlig underbygning under.  Labels fra _draw_named_labels bruker
+    # typisk 3–5 m over vegoverflaten, referanselinjen er ~1 m under.
     fig_ratio = _PAPER_H_MM / _PAPER_W_MM   # ~0.707 for A3
     axes_fraction = 0.78
     y_range = x_range * fig_ratio * axes_fraction
-    v_base = core_v if core_v else view_v
-    v_mid = (min(v_base) + max(v_base)) / 2.0
-    y_lo = v_mid - y_range / 2.0
-    y_hi = v_mid + y_range / 2.0
+    v_base = core_v if core_v else (road_v if road_v else all_v)
+    v_road_top = max(v_base) if v_base else 0.0
+    # v_road_top ved 30 % fra bunn: y_lo = v_road_top - 0.30*y_range
+    y_lo = v_road_top - y_range * 0.30
+    y_hi = y_lo + y_range
 
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(y_lo, y_hi)
@@ -517,7 +549,7 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
         pavement_segs.extend(cross_section.segments.get(cls, []))
 
     if pavement_segs:
-        envelope = _upper_envelope_chain(pavement_segs)
+        envelope = _upper_envelope_chain(_filter_horiz_segs(pavement_segs))
         if len(envelope) >= 2:
             lines = ax.plot(
                 [p[0] for p in envelope],
@@ -526,7 +558,7 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
             )
             lines[0].set_gid('cs:kjørefelt')
 
-    # --- Named layer chains (individuelle dekkelagsgrenser) ---
+    # --- Named layer chains (individuelle dekkelagsgrenser fra IFC Name-attributt) ---
     if cross_section.named_segments:
         _draw_named_layer_chains(ax, cross_section.named_segments)
 
@@ -548,10 +580,6 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
                 lines = ax.plot(us, vs, **style)
                 lines[0].set_gid(f'cs:{road_class}')
 
-    # IFC-komponentetiketter fra Name-attributt
-    if cross_section.named_segments:
-        _draw_named_labels(ax, cross_section.named_segments, max(view_v))
-
     # Varseltekst dersom terrengdata mangler (R700 krever eksisterende terreng)
     if "terreng" not in cross_section.segments:
         ax.text(
@@ -560,6 +588,10 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
             "Eksisterende terreng ikke tilgjengelig",
             fontsize=5.5, color="#888888", style="italic", va="bottom",
         )
+
+    # IFC-komponentetiketter fra Name-attributt
+    if cross_section.named_segments:
+        _draw_named_labels(ax, cross_section.named_segments, max(view_v))
 
     # Profile number above plot (R700)
     ax.set_title(
@@ -580,16 +612,17 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    fmt = output_path.suffix.lstrip(".").lower() or "svg"
     try:
-        fig.savefig(str(output_path), format="svg", bbox_inches="tight")
+        fig.savefig(str(output_path), format=fmt, bbox_inches="tight", dpi=150)
     finally:
         plt.close(fig)
     return output_path
 
 
 def render_cross_section_png(cross_section: CrossSection, output_path: Path) -> Path:
-    """PNG export is outside MVP scope."""
-    raise NotImplementedError("PNG-eksport er utenfor MVP-scope. Bruk render_cross_section_svg.")
+    """Render tverrprofil som PNG (wrapper rundt render_cross_section_svg)."""
+    return render_cross_section_svg(cross_section, output_path)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 # dev.ps1 — Start backend (uvicorn) + frontend (vite) i separate vinduer
 param(
     [int]$BackendPort = 8000,
-    [int]$FrontendPort = 5173
+    [int]$FrontendPort = 5173,
+    [switch]$Reload
 )
 
 $root = $PSScriptRoot
@@ -24,7 +25,7 @@ Write-Host "Python: $python" -ForegroundColor Cyan
 Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd '$root'; Write-Host 'Backend starter på http://localhost:$BackendPort' -ForegroundColor Green; & '$python' -m uvicorn src.api.server:app --port $BackendPort --reload"
+    "cd '$root'; Write-Host 'Backend starter på http://localhost:$BackendPort' -ForegroundColor Green; & '$python' -m uvicorn src.api.server:app --port $BackendPort$(if ($Reload) { ' --reload' })"
 ) -WindowStyle Normal
 
 # Frontend

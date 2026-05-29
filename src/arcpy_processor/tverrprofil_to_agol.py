@@ -173,10 +173,10 @@ def main(argv: list[str] | None = None) -> None:
         arcpy.management.EnableAttachments(fc_path)
 
         # AddAttachments krever en match-tabell: (join_oid, file_path)
-        match_tbl = os.path.join(arcpy.env.scratchGDB, f"{stem}_attach_match")
+        match_tbl = os.path.join(gdb_path, f"{stem}_attach_match")
         if arcpy.Exists(match_tbl):
             arcpy.management.Delete(match_tbl)
-        arcpy.management.CreateTable(arcpy.env.scratchGDB, f"{stem}_attach_match")
+        arcpy.management.CreateTable(gdb_path, f"{stem}_attach_match")
         arcpy.management.AddField(match_tbl, "fc_oid", "LONG")
         arcpy.management.AddField(match_tbl, "svg_path", "TEXT", field_length=512)
 
