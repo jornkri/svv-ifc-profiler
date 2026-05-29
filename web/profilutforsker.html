@@ -2598,9 +2598,16 @@ function drawLp() {
 
     if (r.key === 'profnr') {
       const fs = Math.max(10, rh * 0.55);
+      // Adaptivt etikett-intervall: tegn tall bare så tett som det er plass til,
+      // ellers flyter de i hverandre på lange strekk. Takt-strekene beholdes hver 50 m.
+      const pxPer50 = innerW / Math.max(1, stRange / 50);
+      const minLabelPx = fs * 3.6;                 // min senter-til-senter for lesbarhet
+      const NICE = [50, 100, 200, 250, 500, 1000, 2000, 5000];
+      const labelStep = NICE.find(s => (s / 50) * pxPer50 >= minLabelPx) || NICE[NICE.length - 1];
       for (let st = Math.ceil(stMin / 50) * 50; st <= stMax; st += 50) {
         const cx = xOf(st), heavy = st % 100 === 0;
         $(`<line x1="${cx.toFixed(1)}" y1="${y0}" x2="${cx.toFixed(1)}" y2="${y0+rh}" stroke="${ink}${heavy ? '0.6' : '0.2'})" stroke-width="${heavy ? '0.8' : '0.4'}"/>`);
+        if (st % labelStep !== 0) continue;          // hopp over tall som ikke får plass
         // Hvit maskeboks under tallet for å bryte gjennomgående kolonnedeler
         $(`<rect x="${(cx - fs * 1.4).toFixed(1)}" y="${(y0 + 2).toFixed(1)}" width="${(fs * 2.8).toFixed(1)}" height="${(rh - 4).toFixed(1)}" fill="var(--card)"/>`);
         $(`<text x="${cx.toFixed(1)}" y="${mid.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs.toFixed(1)}" font-weight="700" letter-spacing="-0.01em" fill="${ink}0.92)" font-family="var(--font-sans)">${st.toFixed(0)}</text>`);
