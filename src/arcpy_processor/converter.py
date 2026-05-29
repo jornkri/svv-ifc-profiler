@@ -23,6 +23,15 @@ def _resolve_kategori(global_id: str,
     return (ce.kategori, ce.fag_gruppe, ce.ifc_klasse, ce.navn)
 
 
+def _find_guid_field(fc_path: str) -> str | None:
+    """Finn feltet som holder IFC-GlobalId i en feature class (case-insensitivt).
+    Returner None hvis ingen kandidat finnes (→ trigger fallback i kaller)."""
+    for f in arcpy.ListFields(fc_path):
+        if "globalid" in f.name.lower() or "ifcguid" in f.name.lower():
+            return f.name
+    return None
+
+
 def convert_bim(
     ifc_path: str,
     dataset_name: str,
