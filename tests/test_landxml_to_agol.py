@@ -35,14 +35,14 @@ def test_cli_prints_json_on_success(capsys):
         "published_at": "2026-05-04T10:00:00+00:00",
     }
 
-    # landxml_to_agol uses lazy imports — patch at source module level
+    # landxml_to_agol delegerer publisering til _polyline_publisher — patch der
     with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
-         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor._polyline_publisher.check_name_available"), \
          patch("src.arcpy_processor.landxml_parser.parse_landxml",
                return_value=({"L530": [(86098.0, 1283548.0, 129.4)]}, 5111)), \
-         patch("src.arcpy_processor.landxml_to_agol.create_polyline_fc",
-               return_value="C:/scratch/landxml_temp.gdb/ds_centerline"), \
-         patch("src.arcpy_processor.publisher.upload_and_publish",
+         patch("src.arcpy_processor._polyline_publisher._create_polyline_fc",
+               return_value="C:/scratch/publish_temp.gdb/ds_centerline"), \
+         patch("src.arcpy_processor._polyline_publisher.upload_and_publish",
                return_value=success_meta), \
          patch("pathlib.Path.exists", return_value=True), \
          patch("arcpy.management.GetCount", return_value=[1]):
@@ -104,12 +104,12 @@ def test_reprojection_called_when_source_differs(capsys):
     }
 
     with patch("src.arcpy_processor.auth.connect", return_value=MagicMock()), \
-         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor._polyline_publisher.check_name_available"), \
          patch("src.arcpy_processor.landxml_parser.parse_landxml",
                return_value=({"L530": [(86098.0, 1283548.0, 129.4)]}, 5111)), \
-         patch("src.arcpy_processor.landxml_to_agol.create_polyline_fc",
-               return_value="C:/scratch/landxml_temp.gdb/ds_centerline"), \
-         patch("src.arcpy_processor.publisher.upload_and_publish",
+         patch("src.arcpy_processor._polyline_publisher._create_polyline_fc",
+               return_value="C:/scratch/publish_temp.gdb/ds_centerline"), \
+         patch("src.arcpy_processor._polyline_publisher.upload_and_publish",
                return_value=success_meta), \
          patch("arcpy.management.GetCount", return_value=[1]), \
          patch("pathlib.Path.exists", return_value=True):
@@ -132,12 +132,12 @@ def test_cli_passes_token_to_connect(capsys):
     }
 
     with patch("src.arcpy_processor.auth.connect") as mock_connect, \
-         patch("src.arcpy_processor.publisher.check_name_available"), \
+         patch("src.arcpy_processor._polyline_publisher.check_name_available"), \
          patch("src.arcpy_processor.landxml_parser.parse_landxml",
                return_value=({"L530": [(86098.0, 1283548.0, 129.4)]}, 25833)), \
-         patch("src.arcpy_processor.landxml_to_agol.create_polyline_fc",
-               return_value="C:/scratch/landxml_temp.gdb/ds_centerline"), \
-         patch("src.arcpy_processor.publisher.upload_and_publish",
+         patch("src.arcpy_processor._polyline_publisher._create_polyline_fc",
+               return_value="C:/scratch/publish_temp.gdb/ds_centerline"), \
+         patch("src.arcpy_processor._polyline_publisher.upload_and_publish",
                return_value=success_meta), \
          patch("pathlib.Path.exists", return_value=True), \
          patch("arcpy.management.GetCount", return_value=[1]):
