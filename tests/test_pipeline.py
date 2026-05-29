@@ -176,3 +176,28 @@ def test_station_labels_json_written(tmp_path):
     assert len(labels) > 50
     assert "station" in labels[0]
     assert "name" in labels[0]
+
+
+def test_horizontal_alignment_json_from_ifc(tmp_path):
+    """horizontal_alignment.json skal skrives fra IFC-CL med korrekt antall segmenter."""
+    from src.ifc_processor.pipeline import run_pipeline
+    import json
+    samples = Path(__file__).parent.parent / "samples"
+    ifc_path = samples / "m_f_veg_12200_Veg.ifc"
+    cl_path = samples / "m_f-veg_12200_CL.ifc"
+    if not ifc_path.exists() or not cl_path.exists():
+        pytest.skip("12200-testfiler mangler")
+    out = tmp_path / "out"
+    run_pipeline(
+        ifc_path=ifc_path,
+        centerline_path=cl_path,
+        output_dir=out,
+        interval_m=10.0,
+        include_terrain=False,
+        include_tverrprofil=False,
+        include_lengdeprofil=False,
+    )
+    horiz = json.loads((out / "horizontal_alignment.json").read_text())
+    assert len(horiz) == 67
+    kinds = {s.get("kind") for s in horiz}
+    assert kinds <= {"line", "curve", "spiral"}

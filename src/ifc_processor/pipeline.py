@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -429,6 +430,28 @@ def run_pipeline(
         for lbl in (align_meta.station_labels if align_meta else [])
     ]
     (output_dir / "station_labels.json").write_text(json.dumps(labels_out, indent=2))
+
+    # Skriv horizontal_alignment.json (felles format for LandXML- og IFC-vei)
+    horiz_rows: list[dict] = []
+    if align_meta:
+        kind_map = {"LINE": "line", "CIRCULARARC": "curve", "CLOTHOID": "spiral"}
+        for seg in align_meta.horizontal_segments:
+            row = {
+                "kind": kind_map.get(seg.segment_type, "line"),
+                "sta_start": round(seg.start_station, 3),
+                "sta_end": round(seg.start_station + seg.length, 3),
+            }
+            if seg.segment_type == "CIRCULARARC":
+                row["radius"] = round(seg.start_radius or 0.0, 3)
+                row["dir"] = 1 if seg.is_ccw else -1
+            elif seg.segment_type == "CLOTHOID":
+                # A = sqrt(L * R) der R er radius ved klotoidens ikke-uendelige ende
+                R = seg.end_radius if seg.end_radius else seg.start_radius
+                if R and seg.length > 0:
+                    row["A"] = round(math.sqrt(seg.length * R), 3)
+                    row["dir"] = 1 if seg.is_ccw else -1
+            horiz_rows.append(row)
+    (output_dir / "horizontal_alignment.json").write_text(json.dumps(horiz_rows, indent=2))
 
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
