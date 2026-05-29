@@ -4,19 +4,15 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import re
 import sys
 from pathlib import Path
 from typing import NoReturn
 
 from dotenv import load_dotenv
 
-from .errors import ArcpyProcessorError, LANDXML_NOT_FOUND, ARCPY_UNAVAILABLE, PUBLISH_FAILED
+from .errors import ArcpyProcessorError, LANDXML_NOT_FOUND, ARCPY_UNAVAILABLE
 
 logger = logging.getLogger(__name__)
-
-TARGET_EPSG = 25833
 
 
 def _check_arcpy() -> None:
@@ -27,45 +23,6 @@ def _check_arcpy() -> None:
             ARCPY_UNAVAILABLE,
             "ArcPy er ikke tilgjengelig. Kjør scriptet fra ArcGIS Pro sitt Python-miljø.",
         ) from exc
-
-
-def create_polyline_fc(
-    points_dict: dict[str, list[tuple[float, float, float]]],
-    gdb_path: str,
-    dataset_name: str,
-    source_epsg: int,
-) -> str:
-    """Opprett PolylineZ feature class i GDB fra points_dict.
-
-    Args:
-        points_dict:  {name: [(Easting, Northing, Z), ...]}
-        gdb_path:     Full sti til .gdb-katalog.
-        dataset_name: Navn på feature class (uten suffiks).
-        source_epsg:  EPSG-kode for kilde-CRS.
-
-    Returns:
-        Full sti til opprettet feature class.
-    """
-    import arcpy
-
-    sr = arcpy.SpatialReference(source_epsg)
-    fc_name = f"{dataset_name}_centerline"
-    fc_path = os.path.join(gdb_path, fc_name)
-
-    arcpy.management.CreateFeatureclass(
-        gdb_path, fc_name, "POLYLINE", has_z="ENABLED", spatial_reference=sr
-    )
-    arcpy.management.AddField(fc_path, "name", "TEXT", field_length=100)
-    arcpy.management.AddField(fc_path, "feat_length", "DOUBLE")
-
-    with arcpy.da.InsertCursor(fc_path, ["name", "feat_length", "SHAPE@"]) as cursor:
-        for feat_name, pts in points_dict.items():
-            array = arcpy.Array([arcpy.Point(x, y, z) for x, y, z in pts])
-            polyline = arcpy.Polyline(array, sr, has_z=True)
-            cursor.insertRow([feat_name, polyline.length, polyline])
-
-    logger.info("Opprettet FC '%s' med %d feature(s)", fc_name, len(points_dict))
-    return fc_path
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -106,13 +63,11 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         _check_arcpy()
-        import arcpy
         from .auth import connect
-        from .publisher import check_name_available, upload_and_publish
         from .landxml_parser import parse_landxml
+        from ._polyline_publisher import publish_polyline_to_agol
 
         gis = connect(token=args.token, org_url=args.org_url)
-        check_name_available(gis, args.name, args.folder)
 
         points_dict, source_epsg = parse_landxml(
             Path(args.xml),
@@ -122,71 +77,15 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("Leste %d PlanFeature(s) fra %s (EPSG:%d)",
                     len(points_dict), Path(args.xml).name, source_epsg)
 
-        scratch = arcpy.env.scratchFolder
-        gdb_name = "landxml_temp.gdb"
-        gdb_path = os.path.join(scratch, gdb_name)
-        if arcpy.Exists(gdb_path):
-            arcpy.management.Delete(gdb_path)
-        arcpy.management.CreateFileGDB(scratch, gdb_name)
-
-        stem = Path(args.xml).stem
-        dataset_name = re.sub(r"[^A-Za-z0-9_]", "_", stem)[:50]
-        if dataset_name and dataset_name[0].isdigit():
-            dataset_name = "_" + dataset_name[:49]
-
-        try:
-            fc_path = create_polyline_fc(points_dict, gdb_path, dataset_name, source_epsg)
-        except ArcpyProcessorError:
-            raise
-        except Exception as exc:
-            raise ArcpyProcessorError(
-                PUBLISH_FAILED, f"Kunne ikke opprette feature class: {exc}"
-            ) from exc
-
-        try:
-            if source_epsg != TARGET_EPSG:
-                projected_path = fc_path + f"_{TARGET_EPSG}"
-                arcpy.management.Project(
-                    fc_path, projected_path, arcpy.SpatialReference(TARGET_EPSG)
-                )
-                arcpy.management.Delete(fc_path)
-                fc_path = projected_path
-                logger.info("Reprosjektert fra EPSG:%d til EPSG:%d", source_epsg, TARGET_EPSG)
-        except ArcpyProcessorError:
-            raise
-        except Exception as exc:
-            raise ArcpyProcessorError(
-                PUBLISH_FAILED, f"Reprojeksjon til EPSG:{TARGET_EPSG} feilet: {exc}"
-            ) from exc
-
-        feature_count = int(arcpy.management.GetCount(fc_path)[0])
-
-        if args.lengdeprofil:
-            lp_path = Path(args.lengdeprofil)
-            if lp_path.exists():
-                arcpy.management.EnableAttachments(fc_path)
-                match_tbl = os.path.join(gdb_path, f"{dataset_name}_lp_match")
-                if arcpy.Exists(match_tbl):
-                    arcpy.management.Delete(match_tbl)
-                arcpy.management.CreateTable(
-                    gdb_path, f"{dataset_name}_lp_match"
-                )
-                arcpy.management.AddField(match_tbl, "fc_oid", "LONG")
-                arcpy.management.AddField(match_tbl, "file_path", "TEXT", field_length=512)
-                with arcpy.da.SearchCursor(fc_path, ["OID@"]) as cur:
-                    with arcpy.da.InsertCursor(match_tbl, ["fc_oid", "file_path"]) as ins:
-                        for (oid,) in cur:
-                            ins.insertRow((oid, str(lp_path)))
-                arcpy.management.AddAttachments(
-                    fc_path, "OBJECTID", match_tbl, "fc_oid", "file_path"
-                )
-                logger.info("Festet lengdeprofil som vedlegg til %d feature(s)", feature_count)
-            else:
-                logger.warning("--lengdeprofil-fil ikke funnet: %s", args.lengdeprofil)
-
-        result = upload_and_publish(gis, gdb_path, args.name, args.folder)
-        result["feature_count"] = feature_count
-        result["source_epsg"] = source_epsg
+        result = publish_polyline_to_agol(
+            points_dict=points_dict,
+            source_epsg=source_epsg,
+            service_name=args.name,
+            folder=args.folder,
+            gis=gis,
+            source_stem=Path(args.xml).stem,
+            lengdeprofil_path=Path(args.lengdeprofil) if args.lengdeprofil else None,
+        )
 
         # Query back from AGOL in UTM33 (EPSG:25833) for local map display
         try:

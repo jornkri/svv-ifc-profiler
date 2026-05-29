@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
+from .alignment_parser import HorizontalSegment, StationLabel
 from .centerline import Centerline, _stations_from_points, load_centerline, load_vertical_profile
 from .cross_section import cut_cross_section, recenter_on_pavement, sample_stations, stitch_cross_section_gaps
 from .ifc_reader import TINLayer, read_ifc_tins
@@ -16,6 +19,95 @@ from .renderer import render_cross_section_svg, render_longitudinal_profile_svg,
 from .terrain_sampler import fetch_terrain_profile, terrain_to_segments
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AlignmentMetadata:
+    vertical_pvi: list[tuple[float, float]] = field(default_factory=list)
+    horizontal_segments: list[HorizontalSegment] = field(default_factory=list)
+    station_labels: list[StationLabel] = field(default_factory=list)
+    source_epsg: int = 25833
+
+
+def _horizontal_segments_from_landxml(path: Path) -> list[HorizontalSegment]:
+    """Konverter LandXML horisontalkurvatur → felles HorizontalSegment-format."""
+    from src.arcpy_processor.landxml_parser import parse_horizontal_alignment
+    raw = parse_horizontal_alignment(path)
+    segments: list[HorizontalSegment] = []
+    for s in raw:
+        kind = s["kind"]
+        sta_start = float(s["sta_start"])
+        length = float(s["sta_end"]) - sta_start
+        if kind == "line":
+            seg_type = "LINE"
+            start_radius = None
+            end_radius = None
+            is_ccw = None
+        elif kind == "curve":
+            seg_type = "CIRCULARARC"
+            r = float(s["radius"])
+            start_radius = r
+            end_radius = r
+            is_ccw = s.get("dir", 1) > 0
+        else:  # "spiral"
+            seg_type = "CLOTHOID"
+            A = float(s["A"])
+            R = (A * A) / length if length > 0 else None
+            start_radius = None
+            end_radius = R
+            is_ccw = s.get("dir", 1) > 0
+        segments.append(HorizontalSegment(
+            start_station=sta_start,
+            length=length,
+            start_point=(0.0, 0.0),
+            start_direction=0.0,
+            segment_type=seg_type,
+            start_radius=start_radius,
+            end_radius=end_radius,
+            is_ccw=is_ccw,
+        ))
+    return segments
+
+
+def _load_alignment_metadata(cl_path: Path | None) -> AlignmentMetadata | None:
+    """Returner felles metadata uavhengig av om kilden er LandXML eller IFC-CL."""
+    if cl_path is None:
+        return None
+    suffix = cl_path.suffix.lower()
+    if suffix == ".xml":
+        pvi = load_vertical_profile(cl_path) or []
+        horiz = _horizontal_segments_from_landxml(cl_path)
+        return AlignmentMetadata(
+            vertical_pvi=pvi,
+            horizontal_segments=horiz,
+            station_labels=[],
+            source_epsg=25833,
+        )
+    if suffix == ".ifc":
+        from .alignment_parser import load_alignment_from_ifc
+        data = load_alignment_from_ifc(cl_path)
+        return AlignmentMetadata(
+            vertical_pvi=data.vertical_profile_pvi(),
+            horizontal_segments=data.horizontal_segments,
+            station_labels=data.station_labels,
+            source_epsg=data.source_epsg,
+        )
+    return None
+
+
+def _aligned_station_offset(
+    station_labels: list[StationLabel],
+    interval_m: float,
+) -> float:
+    """Returner offset (0 ≤ offset < interval) slik at stations-grid passerer
+    gjennom IfcReferent-stasjoner.
+
+    f.eks. interval=10, første referent på 107.3 → offset 7.3 → grid: 7.3, 17.3, 27.3, ...
+    """
+    if not station_labels:
+        return 0.0
+    first = station_labels[0].station
+    return float(first % interval_m)
 
 
 def _clip_centerline_to_tins(
@@ -189,7 +281,7 @@ def run_pipeline(
         include_lengdeprofil: Generer lengdeprofil-SVG.
 
     Returns:
-        Dict med nøklene "svgs", "centerline", "metadata", "stations_json".
+        Dict med nøklene "svgs", "centerline", "metadata", "stations_json", "station_labels_json".
 
     Raises:
         ValueError: Hvis ingen senterlinje kan bestemmes.
@@ -227,8 +319,10 @@ def run_pipeline(
         return float(np.interp(station_m, _vp_sta, _vp_elev,
                                left=float(_vp_elev[0]), right=float(_vp_elev[-1])))
 
-    stations = sample_stations(centerline, interval_m)
-    logger.info("Genererer %d tverrprofiler (intervall: %.1f m)", len(stations), interval_m)
+    align_meta = _load_alignment_metadata(centerline_path)
+    offset = _aligned_station_offset(align_meta.station_labels, interval_m) if align_meta else 0.0
+    stations = sample_stations(centerline, interval_m, start_offset=offset)
+    logger.info("Genererer %d tverrprofiler (intervall: %.1f m, offset: %.3f m)", len(stations), interval_m, offset)
 
     svg_paths: list[str] = []
     metadata_rows: list[dict] = []
@@ -324,6 +418,52 @@ def run_pipeline(
             cf = (ns.left_cross_fall_pct, ns.right_cross_fall_pct) if ns else (float("nan"), float("nan"))
             lp_cross_falls.append(cf)
 
+    # Annotér referent-treff i station_rows
+    if align_meta and align_meta.station_labels:
+        tol = 0.5  # m
+        labels_sorted = sorted(align_meta.station_labels, key=lambda l: l.station)
+        for row in station_rows:
+            sm = row["station_m"]
+            for lbl in labels_sorted:
+                if abs(lbl.station - sm) <= tol:
+                    row["referent_name"] = lbl.name
+                    break
+
+    # Skriv station_labels.json (tom liste hvis ingen)
+    labels_out = [
+        {
+            "station": round(lbl.station, 3),
+            "name": lbl.name,
+            "x": round(lbl.position[0], 3),
+            "y": round(lbl.position[1], 3),
+            "z": round(lbl.position[2], 3),
+        }
+        for lbl in (align_meta.station_labels if align_meta else [])
+    ]
+    (output_dir / "station_labels.json").write_text(json.dumps(labels_out, indent=2))
+
+    # Skriv horizontal_alignment.json (felles format for LandXML- og IFC-vei)
+    horiz_rows: list[dict] = []
+    if align_meta:
+        kind_map = {"LINE": "line", "CIRCULARARC": "curve", "CLOTHOID": "spiral"}
+        for seg in align_meta.horizontal_segments:
+            row = {
+                "kind": kind_map.get(seg.segment_type, "line"),
+                "sta_start": round(seg.start_station, 3),
+                "sta_end": round(seg.start_station + seg.length, 3),
+            }
+            if seg.segment_type == "CIRCULARARC":
+                row["radius"] = round(seg.start_radius or 0.0, 3)
+                row["dir"] = 1 if seg.is_ccw else -1
+            elif seg.segment_type == "CLOTHOID":
+                # A = sqrt(L * R) der R er radius ved klotoidens ikke-uendelige ende
+                R = seg.end_radius if seg.end_radius else seg.start_radius
+                if R and seg.length > 0:
+                    row["A"] = round(math.sqrt(seg.length * R), 3)
+                    row["dir"] = 1 if seg.is_ccw else -1
+            horiz_rows.append(row)
+    (output_dir / "horizontal_alignment.json").write_text(json.dumps(horiz_rows, indent=2))
+
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
 
@@ -368,5 +508,6 @@ def run_pipeline(
         "centerline": str(cl_path),
         "metadata": str(meta_path),
         "stations_json": str(stations_json_path),
+        "station_labels_json": str(output_dir / "station_labels.json"),
         "lengdeprofil": lp_svg_path,
     }

@@ -7,7 +7,7 @@ const API_BASE = "";
 let currentStep = 1;
 let userInfo = null;
 let ifcFile = null;
-let xmlFile = null;
+let clFile = null;
 const selectedProfiles = new Set(["tverrprofil", "lengdeprofil", "normalprofil"]);
 
 // ── DOM refs ──
@@ -136,7 +136,7 @@ btnTo2.addEventListener("click", () => goToStep(2));
 btnBack1.addEventListener("click", () => goToStep(1));
 
 btnTo3.addEventListener("click", () => {
-  if (!ifcFile || !xmlFile) return;
+  if (!ifcFile || !clFile) return;
   goToStep(3);
 });
 
@@ -192,14 +192,14 @@ dzXml.addEventListener("click", (e) => {
 xmlInput.addEventListener("change", () => {
   const file = xmlInput.files[0];
   if (!file) return;
-  xmlFile = file;
+  clFile = file;
   updateDropzone("xml", file);
   checkBothFiles();
 });
 
 dzXmlSwap.addEventListener("click", (e) => {
   e.stopPropagation();
-  xmlFile = null;
+  clFile = null;
   xmlInput.value = "";
   resetDropzone("xml");
   checkBothFiles();
@@ -213,7 +213,7 @@ dzXml.addEventListener("drop", (e) => {
   dzXml.style.borderColor = "";
   const file = e.dataTransfer.files[0];
   if (file) {
-    xmlFile = file;
+    clFile = file;
     updateDropzone("xml", file);
     checkBothFiles();
   }
@@ -230,7 +230,11 @@ function updateDropzone(which, file) {
   dz.classList.add("is-filled");
   icon.innerHTML = CHECK_SVG_LARGE;
   title.textContent = file.name;
-  meta.textContent = prettyBytes(file.size) + " · lest lokalt";
+  const lower = file.name.toLowerCase();
+  const isIfcCl = which === "xml" && lower.endsWith(".ifc");
+  const isLandXml = which === "xml" && lower.endsWith(".xml");
+  const formatBadge = isIfcCl ? "IFC4X3 alignment" : isLandXml ? "LandXML 1.2" : "lest lokalt";
+  meta.textContent = prettyBytes(file.size) + " · " + formatBadge;
   cta.style.display = "none";
   swap.style.display = "";
 }
@@ -243,10 +247,10 @@ function resetDropzone(which) {
   const cta   = which === "ifc" ? dzIfcCta   : dzXmlCta;
   const swap  = which === "ifc" ? dzIfcSwap  : dzXmlSwap;
 
-  const defaultTitle = which === "ifc" ? "BIM-modell (.ifc, .rvt)" : "Senterlinje (.xml LandXML)";
+  const defaultTitle = which === "ifc" ? "BIM-modell (.ifc, .rvt)" : "Senterlinje (.xml LandXML, .ifc 4X3)";
   const defaultMeta  = which === "ifc"
     ? "Maks 500 MB · IFC2x3 / IFC4 / Revit 2022+"
-    : "LandXML 1.2 · referansesystem hentes automatisk";
+    : "LandXML 1.2 eller IFC4X3 · referansesystem hentes automatisk";
   const defaultIconHtml = which === "ifc"
     ? `<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke-width="1.6"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z" stroke="currentColor" stroke-linejoin="round"/><path d="M3 7.5 12 12l9-4.5M12 12v9" stroke="currentColor" stroke-linejoin="round"/></svg>`
     : `<svg viewBox="0 0 24 24" fill="none" width="20" height="20" stroke-width="1.6"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z" stroke="currentColor" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" stroke="currentColor"/></svg>`;
@@ -260,7 +264,7 @@ function resetDropzone(which) {
 }
 
 function checkBothFiles() {
-  btnTo3.disabled = !(ifcFile && xmlFile);
+  btnTo3.disabled = !(ifcFile && clFile);
 }
 
 // ── BIM toggle ──
@@ -321,7 +325,7 @@ btnRun.addEventListener("click", async () => {
     formError.textContent = "Tverrprofilintervall må være mellom 1 og 200";
     return;
   }
-  if (!ifcFile || !xmlFile) {
+  if (!ifcFile || !clFile) {
     formError.textContent = "Begge filer er påkrevd";
     return;
   }
@@ -335,7 +339,7 @@ btnRun.addEventListener("click", async () => {
 
   const fd = new FormData();
   fd.append("ifc_file", ifcFile);
-  fd.append("xml_file", xmlFile);
+  fd.append("cl_file", clFile);
   fd.append("name", name);
   fd.append("interval", String(interval));
   fd.append("include_tverrprofil", selectedProfiles.has("tverrprofil") ? "true" : "false");

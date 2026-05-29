@@ -39,15 +39,13 @@ def test_check_name_passes_when_free():
 def test_publish_returns_metadata():
     gis = _make_gis()
     mock_item = MagicMock()
-    mock_item.id = "abc123"
-    mock_item.homepage = "https://www.arcgis.com/home/item.html?id=abc123"
     mock_fs = MagicMock()
+    mock_fs.id = "abc123"
     mock_fs.url = "https://services.arcgis.com/xxx/FeatureServer"
+    mock_fs.homepage = "https://www.arcgis.com/home/item.html?id=abc123"
     mock_fs.layers = [MagicMock(), MagicMock()]
     mock_item.publish.return_value = mock_fs
-    mock_job = MagicMock()
-    mock_job.result.return_value = mock_item
-    gis.content.folders.get.return_value.add.return_value = mock_job
+    gis.content.add.return_value = mock_item
 
     from src.arcpy_processor import publisher
     import importlib; importlib.reload(publisher)
@@ -72,7 +70,7 @@ def test_publish_returns_metadata():
 
 def test_publish_raises_publish_failed_on_error():
     gis = _make_gis()
-    gis.content.folders.get.return_value.add.side_effect = Exception("Upload feilet")
+    gis.content.add.side_effect = Exception("Upload feilet")
 
     from src.arcpy_processor import publisher
     import importlib; importlib.reload(publisher)
@@ -95,9 +93,7 @@ def test_publish_uses_etrs89_utm33_spatial_reference():
     mock_fs.url = "https://services.arcgis.com/xxx/FeatureServer"
     mock_fs.layers = []
     mock_item.publish.return_value = mock_fs
-    mock_job = MagicMock()
-    mock_job.result.return_value = mock_item
-    gis.content.folders.get.return_value.add.return_value = mock_job
+    gis.content.add.return_value = mock_item
 
     from src.arcpy_processor import publisher
     import importlib; importlib.reload(publisher)

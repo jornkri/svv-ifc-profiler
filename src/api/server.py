@@ -84,7 +84,7 @@ async def create_job(
     request: Request,
     background_tasks: BackgroundTasks,
     ifc_file: UploadFile = File(...),
-    xml_file: UploadFile = File(...),
+    cl_file: UploadFile = File(...),
     name: str = Form(...),
     interval: float = Form(10.0),
     publish_bim: bool = Form(False),
@@ -93,13 +93,14 @@ async def create_job(
     include_tverrprofil: bool = Form(True),
     include_lengdeprofil: bool = Form(True),
 ) -> dict:
-    """Motta IFC + LandXML, start pipeline-jobb i bakgrunnen."""
+    """Motta IFC + senterlinje (LandXML eller IFC4X3), start pipeline-jobb i bakgrunnen."""
     if "access_token" not in request.session:
         raise HTTPException(401, "Ikke innlogget — bruk /auth/login")
     if not ifc_file.filename or not ifc_file.filename.lower().endswith(".ifc"):
         raise HTTPException(400, "ifc_file må være en .ifc-fil")
-    if not xml_file.filename or not xml_file.filename.lower().endswith(".xml"):
-        raise HTTPException(400, "xml_file må være en .xml LandXML-fil")
+    cl_name = (cl_file.filename or "").lower()
+    if not (cl_name.endswith(".xml") or cl_name.endswith(".ifc")):
+        raise HTTPException(400, "cl_file må være en .xml LandXML- eller .ifc IFC4X3-fil")
     if not (1 <= interval <= 100):
         raise HTTPException(400, "interval må være mellom 1 og 100 meter")
 
@@ -110,20 +111,21 @@ async def create_job(
     job_dir.mkdir()
 
     ifc_path = job_dir / "model.ifc"
-    xml_path = job_dir / "centerline.xml"
+    cl_suffix = ".ifc" if cl_name.endswith(".ifc") else ".xml"
+    cl_path = job_dir / f"centerline{cl_suffix}"
 
     with ifc_path.open("wb") as f:
         while chunk := await ifc_file.read(1024 * 1024):
             f.write(chunk)
-    with xml_path.open("wb") as f:
-        while chunk := await xml_file.read(1024 * 1024):
+    with cl_path.open("wb") as f:
+        while chunk := await cl_file.read(1024 * 1024):
             f.write(chunk)
 
     background_tasks.add_task(
         job_runner.run_job,
         job_id=job_id,
         ifc_path=ifc_path,
-        xml_path=xml_path,
+        cl_path=cl_path,
         name=name,
         interval=interval,
         access_token=fresh_token,
@@ -272,8 +274,14 @@ def get_job_geojson(job_id: str) -> dict:
     stations_file = job_dir / "output" / "stations.json"
     cl_geojson_file = job_dir / "output" / "centerline.geojson"
     cl_xml_file = job_dir / "centerline.xml"
+    cl_ifc_file = job_dir / "centerline.ifc"
 
-    epsg = _get_landxml_epsg(cl_xml_file) if cl_xml_file.exists() else 5111
+    if cl_ifc_file.exists():
+        epsg = 25833  # IFC4X3-senterlinje er i EUREF89 UTM33 (EPSG:25833)
+    elif cl_xml_file.exists():
+        epsg = _get_landxml_epsg(cl_xml_file)
+    else:
+        epsg = 5111
     transformer = _make_transformer(epsg)
 
     def _xy(x: float, y: float) -> tuple[float, float]:
@@ -347,3 +355,15 @@ def get_svg(job_id: str, filename: str) -> FileResponse:
     if not svg_path.exists() or svg_path.suffix.lower() != ".svg":
         raise HTTPException(404, "SVG ikke funnet")
     return FileResponse(str(svg_path), media_type="image/svg+xml")
+
+
+@app.get("/api/jobs/{job_id}/station-labels")
+def get_station_labels(job_id: str) -> list[dict]:
+    """Returner IfcReferent-stasjoneringsmerker for jobben (tom liste hvis ikke IFC-CL)."""
+    path = UPLOAD_DIR / job_id / "output" / "station_labels.json"
+    if not path.exists():
+        return []
+    try:
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        return []
