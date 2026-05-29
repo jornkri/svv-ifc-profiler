@@ -180,7 +180,7 @@ def test_create_job_passes_refreshed_token_to_run_job():
             "/api/jobs",
             data={"name": "S", "interval": "10"},
             files={"ifc_file": ("m.ifc", io.BytesIO(b"x")),
-                   "xml_file": ("c.xml", io.BytesIO(b"<x/>"))},
+                   "cl_file": ("c.xml", io.BytesIO(b"<x/>"))},
         )
 
     mock_refresh.assert_called_once()
