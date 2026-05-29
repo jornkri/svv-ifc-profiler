@@ -36,14 +36,36 @@ def test_shoulder_width_is_additional_beyond_carriageway():
 
 
 def test_cross_fall_pct():
-    # 3.5m wide, drops 0.105m → 3%
+    # 3.5m wide, drops 0.105m → 3 %. Takfall: venstre faller mot venstre (+),
+    # høyre faller mot høyre (−) — motsatt fortegn.
     cs = _cs(kjørefelt=[
         ((-3.5, -0.105), (0.0, 0.0)),
         ((0.0, 0.0), (3.5, -0.105)),
     ])
     ns = compute_normal_section(cs)
     assert abs(ns.left_cross_fall_pct - 3.0) < 0.2
-    assert abs(ns.right_cross_fall_pct - 3.0) < 0.2
+    assert abs(ns.right_cross_fall_pct + 3.0) < 0.2
+
+
+def test_cross_fall_sign_convention():
+    """Takfall → motsatt fortegn på sidene; ensidig fall (overhøyde) → samme fortegn."""
+    # Takfall (begge sider faller bort fra senterlinja)
+    tak = _cs(kjørefelt=[
+        ((-3.5, -0.105), (0.0, 0.0)),
+        ((0.0, 0.0), (3.5, -0.105)),
+    ])
+    ns_tak = compute_normal_section(tak)
+    assert ns_tak.left_cross_fall_pct > 0
+    assert ns_tak.right_cross_fall_pct < 0
+
+    # Ensidig fall mot høyre: hele tverrsnittet heller samme veg
+    ban = _cs(kjørefelt=[
+        ((-3.5, 0.105), (0.0, 0.0)),
+        ((0.0, 0.0), (3.5, -0.105)),
+    ])
+    ns_ban = compute_normal_section(ban)
+    assert ns_ban.left_cross_fall_pct < 0
+    assert ns_ban.right_cross_fall_pct < 0
 
 
 def test_slope_ratio_from_skjaering():
@@ -134,7 +156,7 @@ def test_cross_fall_ignores_non_road_segments():
     ])
     ns = compute_normal_section(cs)
     assert abs(ns.left_cross_fall_pct - 3.0) < 0.5, f"venstre var {ns.left_cross_fall_pct}"
-    assert abs(ns.right_cross_fall_pct - 3.0) < 0.5, f"høyre var {ns.right_cross_fall_pct}"
+    assert abs(ns.right_cross_fall_pct + 3.0) < 0.5, f"høyre var {ns.right_cross_fall_pct}"
 
 
 def test_cross_fall_uses_median_for_robustness():
@@ -149,8 +171,9 @@ def test_cross_fall_uses_median_for_robustness():
         ((4.0, -0.17), (5.0, -0.20)),  # 3 %
     ])
     ns = compute_normal_section(cs)
-    # Middel = (3+3+3+8+3)/5 = 4.0, median = 3.0 → forventer ~3
-    assert abs(ns.right_cross_fall_pct - 3.0) < 0.3
+    # Høyre side faller mot høyre → negativt fortegn.
+    # Middel = −(3+3+3+8+3)/5 = −4.0, median = −3.0 → forventer ~−3
+    assert abs(ns.right_cross_fall_pct + 3.0) < 0.3
 
 
 def test_cross_fall_segment_spanning_centreline():

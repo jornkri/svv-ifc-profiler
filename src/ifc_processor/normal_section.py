@@ -39,10 +39,16 @@ def _outer_u(segs: list, left: bool) -> float:
 def _cross_fall(segs: list, left: bool) -> float:
     """Beregner tverrfall (%) som median av segmentene på angitt side.
 
-    Filtrerer ut segmenter med slope > 15 % — disse er ikke kjørebane (typisk
+    Filtrerer ut segmenter med |slope| > 15 % — disse er ikke kjørebane (typisk
     rekkverk-kant, kantstein, eller numerisk støy der du≈0). Median er mer
-    robust enn middel mot enkeltavvik. Returnerer abs-verdi (positiv) for å
-    holde eksisterende konvensjon.
+    robust enn middel mot enkeltavvik.
+
+    Fortegnet bevares: tverrfallet er den signerte transversal-gradienten
+    dv/du (regnet i retning økende u, dvs. fra venstre mot høyre). Uttrykket er
+    uavhengig av segmentets punktrekkefølge fordi teller og nevner snur fortegn
+    sammen. For takfall gir dette motsatt fortegn på venstre (+) og høyre (−)
+    side; ved overhøyde/ensidig fall får begge sider samme fortegn. Det lar
+    lengdeprofilen skille takfall fra banket (jf. cross_fall_l/-r i stations.json).
     """
     slopes = []
     for (u1, v1), (u2, v2) in segs:
@@ -51,12 +57,11 @@ def _cross_fall(segs: list, left: bool) -> float:
             continue
         if not left and mid_u < 0:
             continue
-        du = abs(u2 - u1)
-        dv = abs(v2 - v1)
-        if du < 1e-6:
+        du = u2 - u1
+        if abs(du) < 1e-6:
             continue
-        pct = dv / du * 100
-        if pct > 15:  # ikke kjørebane
+        pct = (v2 - v1) / du * 100  # signert gradient i retning økende u
+        if abs(pct) > 15:  # ikke kjørebane
             continue
         slopes.append(pct)
     if not slopes:

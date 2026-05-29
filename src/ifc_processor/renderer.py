@@ -715,7 +715,7 @@ def _draw_tverrfall_row(
     row_half = 0.38
 
     valid = [
-        (s, (lp + rp) / 2)
+        (s, (abs(lp) + abs(rp)) / 2)  # snitt av tverrfallets størrelse (fortegn-uavhengig)
         for s, (lp, rp) in zip(stations, cross_falls)
         if not (math.isnan(lp) and math.isnan(rp))
         for lp, rp in [(
