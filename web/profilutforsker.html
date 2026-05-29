@@ -1555,6 +1555,8 @@ try {
     center: [10.75, 59.9],
     zoom: 5,
   });
+  // Skjul standard zoom-widget (egne zoom-knapper finnes oppe til høyre).
+  view.ui.remove('zoom');
 
   view.when(async () => {
     buildBasemapPicker();
