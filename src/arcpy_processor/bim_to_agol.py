@@ -12,6 +12,13 @@ from dotenv import load_dotenv
 
 from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
 
+# Module-level import so patch.object(bim_to_agol, "connect", ...) works in tests.
+# The actual connect() call happens inside main() after _check_arcpy() passes.
+try:
+    from .auth import connect  # noqa: F401
+except Exception:  # pragma: no cover – arcgis not installed in test env
+    connect = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,9 +76,9 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         _check_arcpy()
-        from .auth import connect
-        from .converter import convert_bim, delete_empty_fcs
+        from .converter import convert_bim, merge_and_categorize
         from .publisher import check_name_available, upload_and_publish
+        from src.ifc_processor.bim_classifier import classify_ifc
 
         gis = connect(token=args.token, org_url=args.org_url)
         check_name_available(gis, args.name, args.folder)
@@ -90,8 +97,12 @@ def main(argv: list[str] | None = None) -> None:
                 "BIMFileToGeodatabase produserte ingen feature classes. "
                 "Sjekk at IFC-filen inneholder geometri.",
             )
-        fc_paths = delete_empty_fcs(fc_paths, "")
-        gdb_path = _gdb_path_from_fcs(fc_paths)
+
+        classification = classify_ifc(args.ifc)
+        gdb_path = merge_and_categorize(
+            fc_paths, classification,
+            input_wkid=args.input_wkid, output_wkid=args.output_wkid,
+        )
 
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         print(json.dumps(result))
