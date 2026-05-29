@@ -1,5 +1,38 @@
+from pathlib import Path
+
 import pytest
-from src.ifc_processor.bim_classifier import classify_from_fields
+from src.ifc_processor.bim_classifier import classify_from_fields, classify_ifc, ClassifiedElement
+
+SAMPLE = Path(__file__).parent.parent / "samples" / "m_f_veg_12200_Veg.ifc"
+
+
+@pytest.mark.slow
+def test_classify_ifc_against_sample():
+    if not SAMPLE.exists():
+        pytest.skip("12200 IFC-sample mangler")
+    result = classify_ifc(SAMPLE)
+
+    # Returnerer dict keyet på GlobalId med ClassifiedElement-verdier
+    assert isinstance(result, dict)
+    assert all(isinstance(v, ClassifiedElement) for v in result.values())
+
+    kats = [ce.kategori for ce in result.values()]
+    grupper = {ce.fag_gruppe for ce in result.values()}
+
+    # Alle 92 grøfter (IfcDistributionChamberElement) skal være Grøft/Drenering
+    grofter = [ce for ce in result.values() if ce.ifc_klasse == "IfcDistributionChamberElement"]
+    assert len(grofter) == 92
+    assert all(ce.kategori == "Grøft" and ce.fag_gruppe == "Drenering" for ce in grofter)
+
+    # Forventede fag-grupper er representert
+    assert {"Vegoverbygning", "Vegbane", "Underbygning", "Terreng", "Drenering"} <= grupper
+
+    # Annotasjoner/struktur er utelatt
+    assert not any(ce.ifc_klasse in {"IfcAnnotation", "IfcRoadPart", "IfcRoad", "IfcSite"}
+                   for ce in result.values())
+
+    # Ingenting med solid geometri skal ende som Uklassifisert
+    assert kats.count("Uklassifisert") == 0
 
 
 @pytest.mark.parametrize("ifc_klasse,pt,ot,name,expected", [

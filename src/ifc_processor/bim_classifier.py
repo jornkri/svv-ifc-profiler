@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import ifcopenshell
+
 # IFC-produkter uten solid geometri — utelates fra både 3D- og plan-laget.
 SKIP_CLASSES = {"IfcAnnotation", "IfcRoadPart", "IfcRoad", "IfcSite", "IfcGeomodel"}
 
@@ -64,3 +66,22 @@ def classify_from_fields(ifc_klasse: str, predefined_type: str | None,
             return ("Fylling", "Terreng")
         return ("Planum", "Underbygning")  # constructionbed / subgrade / øvrig
     return ("Uklassifisert", "Annet")
+
+
+def classify_ifc(ifc_path) -> dict[str, ClassifiedElement]:
+    """Les IFC-fil og returner {GlobalId: ClassifiedElement} for alle produkter
+    med solid geometri (annotasjoner/struktur utelates)."""
+    ifc = ifcopenshell.open(str(ifc_path))
+    out: dict[str, ClassifiedElement] = {}
+    for el in ifc.by_type("IfcProduct"):
+        cls = el.is_a()
+        if cls in SKIP_CLASSES:
+            continue
+        gid = el.GlobalId
+        navn = getattr(el, "Name", None) or ""
+        pt = getattr(el, "PredefinedType", None)
+        pt = str(pt) if pt is not None else None
+        ot = getattr(el, "ObjectType", None)
+        kategori, fag_gruppe = classify_from_fields(cls, pt, ot, navn)
+        out[gid] = ClassifiedElement(gid, cls, navn, kategori, fag_gruppe)
+    return out
