@@ -1880,6 +1880,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
 
     document.getElementById('map-info').classList.remove('hidden');
     document.getElementById('map-legend').classList.remove('hidden');
+    updateLegendPos();
 
     const extent = stLayer.fullExtent;
     if (extent && view) {
@@ -2115,8 +2116,9 @@ async function selectStation(idx) {
     document.getElementById('legend-selected').style.display = 'flex';
   }
 
-  // Pan to station
+  // Pan to station — centre in the visible map area (not behind the panels)
   if (view && stations[idx]) {
+    updateViewPadding();
     stLayer.queryFeatures({
       objectIds: [s.oid], returnGeometry: true, outSpatialReference: { wkid: 25833 }
     }).then(fset => {
@@ -2399,6 +2401,7 @@ function openLp() {
       'PR ' + s0.stasjon_m.toFixed(0) + ' – ' + sN.stasjon_m.toFixed(0);
   }
   setTimeout(drawLp, 280);
+  updateLegendPos();
 }
 function toggleLp() {
   lpOpen = !lpOpen;
@@ -2407,6 +2410,7 @@ function toggleLp() {
   const icon = document.getElementById('lp-toggle-icon');
   icon.querySelector('path').setAttribute('d', lpOpen ? 'M2 7l3.5-4 3.5 4' : 'M2 3l3.5 4 3.5-4');
   if (lpOpen) setTimeout(drawLp, 280);
+  updateLegendPos();
 }
 
 function toggleLpScale() {
@@ -2969,6 +2973,7 @@ function _initLpHandle() {
         const newH = Math.max(120, Math.min(window.innerHeight - 100, startH + delta));
         document.getElementById('lp').style.height = newH + 'px';
         if (lpOpen) drawLp();
+        updateLegendPos();
       }
     };
     const onUp = () => {
@@ -3022,7 +3027,41 @@ function mapHome() {
   }
 }
 
-window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(); });
+// Inset the view's logical centre so goTo() centres in the part of the map
+// NOT covered by the profile panels. Reads live geometry, so it adapts to any
+// zoom scale and however the panels have been resized/maximised/closed.
+function updateViewPadding() {
+  if (!view) return;
+  const mapRect = document.getElementById('map-container').getBoundingClientRect();
+  let right = 0, bottom = 0;
+  const cs = document.getElementById('cs');
+  if (csOpen && cs && !cs.classList.contains('closed')) {
+    const r = cs.getBoundingClientRect();
+    right = Math.max(0, mapRect.right - r.left);
+  }
+  const lp = document.getElementById('lp');
+  if (lpOpen && lp && !lp.classList.contains('closed')) {
+    const r = lp.getBoundingClientRect();
+    bottom = Math.max(0, mapRect.bottom - r.top);
+  }
+  view.padding = { top: 0, left: 0, right, bottom };
+}
+
+// Lift the map legend above the lengdeprofil panel so it stays visible when the
+// panel is open/expanded. (The horizontal offset for the side drawer is CSS.)
+function updateLegendPos() {
+  const legend = document.getElementById('map-legend');
+  if (!legend) return;
+  let bottom = 14;
+  const lp = document.getElementById('lp');
+  if (lpOpen && lp) {
+    // height is stable during the open/close transform animation
+    bottom = lp.getBoundingClientRect().height + 12;
+  }
+  legend.style.bottom = bottom + 'px';
+}
+
+window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(); updateLegendPos(); });
 
 // Expose functions used by inline onclick handlers (required in ES module context)
 Object.assign(window, {
