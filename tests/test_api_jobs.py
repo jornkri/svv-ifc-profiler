@@ -505,6 +505,33 @@ def test_get_job_response_includes_xb_url():
     assert resp.json()["xb_url"] == "https://experience.arcgis.com/builder/?id=xyz"
 
 
+def test_get_station_labels_returns_empty_for_landxml_job(client, tmp_path, monkeypatch):
+    """LandXML-jobb uten station_labels.json skal gi tom liste (ikke 404)."""
+    monkeypatch.setattr("src.api.server.UPLOAD_DIR", tmp_path)
+    job_dir = tmp_path / "fake-job-id"
+    (job_dir / "output").mkdir(parents=True)
+    (job_dir / "output" / "metadata.json").write_text('{"stations":[]}')
+
+    response = client.get("/api/jobs/fake-job-id/station-labels")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_station_labels_returns_data_when_present(client, tmp_path, monkeypatch):
+    """station-labels skal returnere innholdet i station_labels.json."""
+    monkeypatch.setattr("src.api.server.UPLOAD_DIR", tmp_path)
+    job_dir = tmp_path / "fake-job-id"
+    (job_dir / "output").mkdir(parents=True)
+    (job_dir / "output" / "station_labels.json").write_text(
+        '[{"station": 100.0, "name": "P 100", "x": 0, "y": 0, "z": 0}]'
+    )
+
+    response = client.get("/api/jobs/fake-job-id/station-labels")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["name"] == "P 100"
+
+
 def test_create_job_accepts_ifc_cl(client):
     """POST /api/jobs godtar cl_file med .ifc-ending og ruter med .ifc-sti."""
     _login(client)

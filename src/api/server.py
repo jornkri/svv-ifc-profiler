@@ -343,3 +343,15 @@ def get_svg(job_id: str, filename: str) -> FileResponse:
     if not svg_path.exists() or svg_path.suffix.lower() != ".svg":
         raise HTTPException(404, "SVG ikke funnet")
     return FileResponse(str(svg_path), media_type="image/svg+xml")
+
+
+@app.get("/api/jobs/{job_id}/station-labels")
+def get_station_labels(job_id: str) -> list[dict]:
+    """Returner IfcReferent-stasjoneringsmerker for jobben (tom liste hvis ikke IFC-CL)."""
+    path = UPLOAD_DIR / job_id / "output" / "station_labels.json"
+    if not path.exists():
+        return []
+    try:
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        return []
