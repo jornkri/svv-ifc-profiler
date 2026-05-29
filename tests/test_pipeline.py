@@ -201,3 +201,44 @@ def test_horizontal_alignment_json_from_ifc(tmp_path):
     assert len(horiz) == 67
     kinds = {s.get("kind") for s in horiz}
     assert kinds <= {"line", "curve", "spiral"}
+
+
+@pytest.mark.slow
+def test_12200_full_run_with_ifc_cl(tmp_path):
+    """Full pipeline mot 12200-modellen med IFC-CL — verifiser at output ser fornuftig ut."""
+    samples = Path(__file__).parent.parent / "samples"
+    ifc_path = samples / "m_f_veg_12200_Veg.ifc"
+    cl_path = samples / "m_f-veg_12200_CL.ifc"
+    if not ifc_path.exists() or not cl_path.exists():
+        pytest.skip("12200-testfiler mangler")
+    out = tmp_path / "out"
+
+    result = run_pipeline(
+        ifc_path=ifc_path,
+        centerline_path=cl_path,
+        output_dir=out,
+        interval_m=20.0,
+        include_terrain=False,            # rask: ingen Kartverket-kall
+        include_tverrprofil=True,
+        include_lengdeprofil=True,
+    )
+
+    # Sanity checks — alle output-filer skrevet
+    assert (out / "centerline.geojson").exists()
+    assert (out / "stations.json").exists()
+    assert (out / "metadata.json").exists()
+    assert (out / "horizontal_alignment.json").exists()
+    assert (out / "station_labels.json").exists()
+    assert (out / "lengdeprofil.svg").exists()
+
+    stations = json.loads((out / "stations.json").read_text())
+    assert len(stations) > 50, "12200 er ~2 km — forventer minst 50 stasjoner ved 20 m"
+
+    labels = json.loads((out / "station_labels.json").read_text())
+    assert len(labels) > 50
+
+    horiz = json.loads((out / "horizontal_alignment.json").read_text())
+    assert len(horiz) == 67
+
+    # Tverrprofil-SVGer er en liste med filstier
+    assert isinstance(result.get("svgs"), list)

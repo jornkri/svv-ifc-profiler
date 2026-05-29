@@ -20,7 +20,10 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -q"
+addopts = '-ra -q -m "not slow"'
+markers = [
+    "slow: tregere integrasjonstester (kjør med -m slow)",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
