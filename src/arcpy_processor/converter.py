@@ -8,8 +8,19 @@ from pathlib import Path
 import arcpy
 
 from .errors import ArcpyProcessorError, BIM_CONVERSION_FAILED, NO_FEATURES
+from src.ifc_processor.bim_classifier import ClassifiedElement
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_kategori(global_id: str,
+                      classification: dict[str, ClassifiedElement]) -> tuple[str, str, str, str]:
+    """Returner (kategori, fag_gruppe, ifc_klasse, navn) for en GlobalId.
+    Ukjent GlobalId → Uklassifisert (mister ingenting stille)."""
+    ce = classification.get(global_id)
+    if ce is None:
+        return ("Uklassifisert", "Annet", "", "")
+    return (ce.kategori, ce.fag_gruppe, ce.ifc_klasse, ce.navn)
 
 
 def convert_bim(
