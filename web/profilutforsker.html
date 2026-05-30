@@ -250,6 +250,35 @@ html[data-theme="dark"] .layer-row.active { background: rgba(255,255,255,.04); }
 
 /* ── MAP OVERLAYS ── */
 #map-container { position: absolute; inset: 0; }
+#map-2d, #map-3d { position: absolute; inset: 0; }
+#map-3d { display: none; }
+#map-container.is-3d #map-2d { display: none; }
+#map-container.is-3d #map-3d { display: block; }
+
+/* 3D-melding (mangler scene-lag) */
+.scene-msg {
+  position: absolute; inset: 0; z-index: 4;
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 8px; pointer-events: none;
+  text-align: center; padding: 24px;
+}
+.scene-msg.visible { display: flex; }
+.scene-msg .ic { font-size: 40px; opacity: .2; }
+.scene-msg .t { font-size: 15px; font-weight: 600; color: var(--ink-3); opacity: .8; }
+.scene-msg .s { font-size: 12px; color: var(--ink-3); opacity: .55; max-width: 280px; }
+
+/* Segmentert 2D/3D-veksler i topbaren */
+.viewmode-seg {
+  display: inline-flex; align-items: center;
+  background: rgba(255,255,255,.06); border-radius: 6px; padding: 2px;
+}
+.viewmode-seg button {
+  height: 26px; padding: 0 12px; border: 0; border-radius: 4px;
+  background: transparent; color: rgba(255,255,255,.7);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.viewmode-seg button.active { background: var(--accent); color: #fff; }
 
 .map-info {
   position: absolute; top: 14px; left: 14px; z-index: 6;
@@ -696,6 +725,11 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
       <span id="load-txt">Laster…</span>
     </div>
     <div class="top-divider"></div>
+    <div class="viewmode-seg" id="viewmode-seg">
+      <button id="vm-2d" class="active" onclick="setViewMode('2d')">2D</button>
+      <button id="vm-3d" onclick="setViewMode('3d')">3D</button>
+    </div>
+    <div class="top-divider"></div>
     <button class="top-btn" id="btn-lp" onclick="toggleLp()" title="Lengdeprofil">
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none" class="icon">
         <path d="M1 9 Q3 3 6 5 Q9 7 12 2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
@@ -761,7 +795,15 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 
   <!-- MAP AREA -->
   <div class="map-area" id="map-area">
-    <div id="map-container"></div>
+    <div id="map-container">
+      <div id="map-2d"></div>
+      <div id="map-3d"></div>
+      <div class="scene-msg" id="scene-msg">
+        <div class="ic">🧊</div>
+        <div class="t">Ingen 3D-modell for dette prosjektet</div>
+        <div class="s">Prosjektet mangler publisert 3D-lag. Kjør opplastning på nytt for å publisere 3D til AGOL.</div>
+      </div>
+    </div>
 
     <!-- Empty state -->
     <div id="empty">
@@ -1073,6 +1115,10 @@ let widenings = [];  // [{sta_start, sta_end, val_m}, ...]  (breddeutvidelse pr 
 let lpZoom = 1;
 let _lpDrag = { active: false, sx: 0, sy: 0, sl: 0, st: 0, moved: 0 };
 let csOpen = false;
+let viewMode = '2d';        // '2d' | '3d'
+let view3d = null;          // SceneView
+let map3d = null;           // Map for 3D
+let scene3dReady = false;   // lazy-init flagg
 let csMaximized = false;
 let layerVis = { centerline: true, stations: true, bim: true };
 let currentToken = null;
@@ -1086,6 +1132,16 @@ let currentCoordMap = null;
 let measureMode = 'idle'; // 'idle' | 'wait_a' | 'wait_b' | 'result'
 let measurement = null;   // {a: {svgX, svgY, x_m, z_m, loose}, b: ...}
 let hoverIdx = -1;
+
+// ── VIEW MODE (2D/3D) ──────────────────────────────────────────────────
+function setViewMode(mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+  document.getElementById('map-container').classList.toggle('is-3d', mode === '3d');
+  document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
+  document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
+  // initScene() og synk legges til i senere tasks.
+}
 
 // ── BASEMAP ────────────────────────────────────────────────────────────
 function setBasemap(id) {
@@ -1581,7 +1637,7 @@ try {
   const map = new Map({ basemap });
 
   view = new MapView({
-    container: document.getElementById('map-container'),
+    container: document.getElementById('map-2d'),
     map,
     center: [10.75, 59.9],
     zoom: 5,
@@ -3213,7 +3269,7 @@ Object.assign(window, {
   toggleTheme, toggleLp, toggleLpScale, openCs, closeCs, toggleCsMax,
   toggleLayer, toggleSidebar, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
-  toggleBasemapPicker, setBasemap,
+  toggleBasemapPicker, setBasemap, setViewMode,
   lpZoomIn, lpZoomOut, lpZoomReset,
   toggleLegend,
 });
