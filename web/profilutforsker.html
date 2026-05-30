@@ -1143,7 +1143,7 @@ function setViewMode(mode) {
   document.getElementById('map-container').classList.toggle('is-3d', mode === '3d');
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
-  if (mode === '3d') initScene();
+  if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
 }
 
 async function initScene() {
@@ -1164,6 +1164,7 @@ async function initScene() {
   view3d = new SceneView({
     container: document.getElementById('map-3d'),
     map: map3d,
+    viewingMode: 'local',   // EPSG:25833-data — lokal scene unngår global reprojeksjon
     center: [10.75, 59.9],
     zoom: 5,
     qualityProfile: 'high',
