@@ -1084,6 +1084,9 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 'use strict';
 
 const API = 'http://localhost:8000';
+const SCENE_BASEMAP_URL = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheBilder/MapServer';
+const SCENE_TERRAIN_URL  = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheTerreng/ImageServer';
+
 const BASEMAPS = [
   { id: 'kanvas', label: 'Kanvas',    type: 'vtl',  swatch: '#e8e4d8',
     url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer' },
@@ -1140,7 +1143,40 @@ function setViewMode(mode) {
   document.getElementById('map-container').classList.toggle('is-3d', mode === '3d');
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
-  // initScene() og synk legges til i senere tasks.
+  if (mode === '3d') initScene();
+}
+
+async function initScene() {
+  if (scene3dReady) return;
+  scene3dReady = true;  // sett tidlig så vi ikke dobbelt-initialiserer ved raske klikk
+
+  const Map = window._Map, SceneView = window._SceneView;
+  const TileLayer = window._TileLayer, ElevationLayer = window._ElevationLayer, Ground = window._Ground;
+
+  const ground = new Ground({ layers: [new ElevationLayer({ url: SCENE_TERRAIN_URL })] });
+  const basemap = new window._Basemap({
+    baseLayers: [new TileLayer({ url: SCENE_BASEMAP_URL })],
+    title: 'Bilder',
+  });
+
+  map3d = new Map({ basemap, ground });
+
+  view3d = new SceneView({
+    container: document.getElementById('map-3d'),
+    map: map3d,
+    center: [10.75, 59.9],
+    zoom: 5,
+    qualityProfile: 'high',
+    ui: { components: ['attribution'] },
+  });
+
+  window._view3d = view3d;
+  window._map3d = map3d;
+
+  // 3D-jobblag lastes i Task 3 hvis et prosjekt allerede er valgt.
+  if (typeof loadScene3dLayers === 'function' && currentJobId) {
+    loadScene3dLayers().catch(e => console.warn('3D-lag:', e));
+  }
 }
 
 // ── BASEMAP ────────────────────────────────────────────────────────────
@@ -1609,13 +1645,18 @@ function makePillUrl(text) {
 
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
-  const [Map, MapView, VectorTileLayer, TileLayer, FeatureLayer, Basemap, esriId, GraphicsLayer, Graphic] =
+  const [Map, MapView, SceneView, VectorTileLayer, TileLayer, FeatureLayer,
+         SceneLayer, ElevationLayer, Ground, Basemap, esriId, GraphicsLayer, Graphic] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
       '@arcgis/core/views/MapView.js',
+      '@arcgis/core/views/SceneView.js',
       '@arcgis/core/layers/VectorTileLayer.js',
       '@arcgis/core/layers/TileLayer.js',
       '@arcgis/core/layers/FeatureLayer.js',
+      '@arcgis/core/layers/SceneLayer.js',
+      '@arcgis/core/layers/ElevationLayer.js',
+      '@arcgis/core/Ground.js',
       '@arcgis/core/Basemap.js',
       '@arcgis/core/identity/IdentityManager.js',
       '@arcgis/core/layers/GraphicsLayer.js',
@@ -1627,6 +1668,12 @@ try {
   window._VectorTileLayer = VectorTileLayer;
   window._TileLayer = TileLayer;
   window._Basemap = Basemap;
+  window._SceneView = SceneView;
+  window._SceneLayer = SceneLayer;
+  window._ElevationLayer = ElevationLayer;
+  window._Ground = Ground;
+  window._Map = Map;
+  window._GraphicsLayer = GraphicsLayer;
 
   const kanvasCfg = BASEMAPS.find(b => b.id === 'kanvas');
   const basemap = new Basemap({
