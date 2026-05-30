@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -41,6 +42,56 @@ def check_name_available(gis: GIS, name: str, folder: str) -> None:  # noqa: ARG
             f"En Feature Service med navn '{name}' finnes allerede i organisasjonen. "
             "Velg et annet navn eller slett det eksisterende itemet.",
         )
+
+
+def publish_3d_object_layer(
+    gis: GIS, feature_service_item, name: str, folder: str
+) -> dict | None:
+    """Best-effort: publiser et 3D Object Scene Layer fra et hosted *multipatch*
+    feature layer (kilden er ``feature_service_item``).
+
+    Dette er REST-operasjonen bak AGOL-knappen «Publish 3D object layer».
+    ``arcgis 2.4.x`` har ingen offentlig metode for dette, og den eksakte
+    ``publishParameters``-formen for multipatch→sceneService er ikke offentlig
+    dokumentert. Funksjonen er derfor **myk**: enhver feil → ``None`` (logges),
+    slik at resten av pipelinen fortsetter. Feature-laget kan da publiseres til
+    3D Object Layer med ett klikk i AGOL.
+
+    Returns:
+        ``{"scene_url": ..., "scene_item_id": ...}`` ved suksess, ellers ``None``.
+    """
+    scene_name = re.sub(r"[^A-Za-z0-9_]", "_", name)
+    try:
+        # Speiler Item._publish: kilde-item som featureService, output sceneService.
+        services = gis._portal.publish_item(
+            itemid=feature_service_item.id,
+            fileType="featureService",
+            publishParameters={"name": scene_name},
+            outputType="sceneService",
+            owner=getattr(feature_service_item, "owner", None),
+            folder=folder or None,
+            buildInitialCache=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort, alt skal degraderes mykt
+        logger.warning(
+            "Automatisk 3D Object Layer-publisering feilet (%s). Feature-laget er "
+            "publisert — publiser 3D-laget manuelt i AGOL via «Publish › 3D object "
+            "layer».", exc,
+        )
+        return None
+
+    svc = (services or [{}])[0]
+    if not svc or svc.get("success") is False:
+        logger.warning(
+            "3D Object Layer-publisering returnerte ingen tjeneste (%s). Publiser "
+            "3D-laget manuelt i AGOL.", svc.get("error") if svc else "tomt svar",
+        )
+        return None
+
+    scene_url = svc.get("serviceurl") or svc.get("serviceURL") or svc.get("serviceUrl")
+    scene_item_id = svc.get("serviceItemId")
+    logger.info("Publisert 3D Object Scene Layer: %s", scene_url)
+    return {"scene_url": scene_url, "scene_item_id": scene_item_id}
 
 
 def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:

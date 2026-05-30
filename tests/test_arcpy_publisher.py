@@ -129,3 +129,59 @@ def test_publish_cleans_up_when_archive_fails():
             publisher.upload_and_publish(gis, "/scratch/bim_temp.gdb", "Test", "SVV")
         assert exc_info.value.code == PUBLISH_FAILED
         mock_remove.assert_not_called()  # zip finnes ikke, skal ikke forsøke slette
+
+
+# ── publish_3d_object_layer (best-effort scene layer) ──
+
+def _fs_item(item_id="fl1", owner="me"):
+    it = MagicMock()
+    it.id = item_id
+    it.owner = owner
+    return it
+
+
+def test_publish_3d_object_layer_returns_scene_url_on_success():
+    """Suksess: returnerer scene-URL + item-id og kaller publish_item med
+    featureService→sceneService."""
+    gis = MagicMock()
+    gis._portal.publish_item.return_value = [{
+        "type": "Scene Service",
+        "serviceItemId": "scene99",
+        "serviceurl": "https://tiles.arcgis.com/xxx/SceneServer",
+    }]
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    res = publisher.publish_3d_object_layer(gis, _fs_item(), "Vei_3D", "SVV")
+
+    assert res is not None
+    assert res["scene_url"] == "https://tiles.arcgis.com/xxx/SceneServer"
+    assert res["scene_item_id"] == "scene99"
+    # Riktig kilde-type og output-type ble sendt
+    kwargs = gis._portal.publish_item.call_args.kwargs
+    assert kwargs.get("fileType") == "featureService"
+    assert kwargs.get("outputType") == "sceneService"
+    assert kwargs.get("itemid") == "fl1"
+
+
+def test_publish_3d_object_layer_returns_none_on_exception():
+    """Myk degradering: feil i publish_item → None (ikke kast)."""
+    gis = MagicMock()
+    gis._portal.publish_item.side_effect = Exception("Not enabled on org")
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    assert publisher.publish_3d_object_layer(gis, _fs_item(), "Vei_3D", "SVV") is None
+
+
+def test_publish_3d_object_layer_returns_none_when_service_unsuccessful():
+    """publish_item kan returnere success=False uten å kaste → None."""
+    gis = MagicMock()
+    gis._portal.publish_item.return_value = [{"success": False, "error": "boom"}]
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    assert publisher.publish_3d_object_layer(gis, _fs_item(), "Vei_3D", "SVV") is None

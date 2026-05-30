@@ -120,19 +120,25 @@ def test_merge_and_categorize_orchestration(monkeypatch):
     from src.ifc_processor.bim_classifier import ClassifiedElement
     classification = {"G1": ClassifiedElement("G1", "IfcKerb", "Kantstein 1", "Kantstein", "Vegbane")}
 
-    gdb = conv.merge_and_categorize(
+    gdb_3d, gdb_plan = conv.merge_and_categorize(
         ["/scratch/bim_temp.gdb/ds/Courses", "/scratch/bim_temp.gdb/ds/Kerbs"],
         classification,
         scratch="/scratch",
     )
 
-    assert gdb.endswith("bim_out.gdb")
+    # To separate single-lags GDB-er: multipatch i bim_3d.gdb, 2D i bim_plan.gdb
+    assert gdb_3d.endswith("bim_3d.gdb")
+    assert gdb_plan.endswith("bim_plan.gdb")
+    # Multipatch merges inn i bim_3d.gdb
+    assert calls["merge"][1].endswith("bim_3d.gdb\\bim_3d") or \
+        calls["merge"][1].endswith("bim_3d.gdb/bim_3d")
     # Begge kilde-FC-ene ble merget
     assert len(calls["merge"][0]) == 2
     # Kategori ble skrevet til raden (kategori, fag_gruppe, ifc_klasse, navn)
     assert calls["rows"][0][1:] == ["Kantstein", "Vegbane", "IfcKerb", "Kantstein 1"]
-    # Fотavtrykk laget og kategori join-et tilbake
+    # Fотavtrykk laget i bim_plan.gdb og kategori join-et tilbake
     assert calls["footprint"] is not None
+    assert "bim_plan.gdb" in calls["footprint"][1]
     assert calls["joinfield"] is not None
 
 

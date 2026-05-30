@@ -60,6 +60,8 @@ class JobState:
     centerline_url: str | None = None
     sections_url: str | None = None
     bim_url: str | None = None
+    bim_scene_url: str | None = None
+    bim_plan_url: str | None = None
     xb_url: str | None = None
     error: str | None = None
     output_dir: Path | None = field(default=None, repr=False)
@@ -82,6 +84,8 @@ def _persist_state(state: JobState) -> None:
                 "centerline_url": state.centerline_url,
                 "sections_url": state.sections_url,
                 "bim_url": state.bim_url,
+                "bim_scene_url": state.bim_scene_url,
+                "bim_plan_url": state.bim_plan_url,
                 "xb_url": state.xb_url,
                 "error": state.error,
             }),
@@ -260,6 +264,8 @@ def run_job(
                 "centerline_url": state.centerline_url,
                 "sections_url": state.sections_url,
                 "bim_url": state.bim_url,
+                "bim_scene_url": state.bim_scene_url,
+                "bim_plan_url": state.bim_plan_url,
                 "xb_url": state.xb_url,
             }.items() if v}
             if _agol:
@@ -315,6 +321,8 @@ def run_job(
                 )
                 bim_result = json.loads(bim_proc.stdout)
                 state.bim_url = bim_result.get("url")
+                state.bim_scene_url = bim_result.get("bim_scene_url")
+                state.bim_plan_url = bim_result.get("bim_plan_url")
                 logger.info("[%s] BIM stdout: %s", job_id, bim_proc.stdout.strip())
                 logger.info("[%s] BIM stderr: %s", job_id, bim_proc.stderr.strip())
                 _persist_agol_urls()

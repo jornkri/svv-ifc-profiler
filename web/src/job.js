@@ -121,6 +121,7 @@ const errorNotice      = document.getElementById("error-notice");
 const linkCl           = document.getElementById("link-cl");
 const linkTp           = document.getElementById("link-tp");
 const linkBim          = document.getElementById("link-bim");
+const linkBimPlan      = document.getElementById("link-bim-plan");
 
 // ── Helpers ──
 function elapsed() {
@@ -300,6 +301,10 @@ function showResult(data) {
   if (data.bim_url) {
     linkBim.style.display = "";
     linkBim.href = data.bim_url;
+  }
+  if (linkBimPlan && data.bim_plan_url) {
+    linkBimPlan.style.display = "";
+    linkBimPlan.href = data.bim_plan_url;
   }
 
   // Error notice for warnings
