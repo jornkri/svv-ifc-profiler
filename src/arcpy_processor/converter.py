@@ -8,8 +8,33 @@ from pathlib import Path
 import arcpy
 
 from .errors import ArcpyProcessorError, BIM_CONVERSION_FAILED, NO_FEATURES
+from src.ifc_processor.bim_classifier import ClassifiedElement
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_kategori(global_id: str,
+                      classification: dict[str, ClassifiedElement]) -> tuple[str, str, str, str]:
+    """Returner (kategori, fag_gruppe, ifc_klasse, navn) for en GlobalId.
+    Ukjent GlobalId → Uklassifisert (mister ingenting stille)."""
+    ce = classification.get(global_id)
+    if ce is None:
+        return ("Uklassifisert", "Annet", "", "")
+    return (ce.kategori, ce.fag_gruppe, ce.ifc_klasse, ce.navn)
+
+
+def _find_guid_field(fc_path: str) -> str | None:
+    """Finn feltet som holder IFC-GlobalId (case-insensitivt). Foretrekker et
+    eksplisitt 'ifcguid'-felt; ellers et 'globalid'-felt som IKKE er ArcGIS sin
+    egen UUID-type ('GlobalID'), så vi ikke joiner på feil nøkkel. None hvis ingen."""
+    fields = list(arcpy.ListFields(fc_path))
+    for f in fields:
+        if "ifcguid" in f.name.lower():
+            return f.name
+    for f in fields:
+        if "globalid" in f.name.lower() and f.type != "GlobalID":
+            return f.name
+    return None
 
 
 def convert_bim(
@@ -112,6 +137,92 @@ def convert_bim(
             arcpy.env.workspace = old_ws
 
     return [os.path.join(dataset_path, fc) for fc in remaining_fcs]
+
+
+_KAT_FIELDS = [("kategori", 60), ("fag_gruppe", 40), ("ifc_klasse", 60), ("navn", 200)]
+
+
+def merge_and_categorize(
+    fc_paths: list[str],
+    classification: dict[str, ClassifiedElement],
+    *,
+    scratch: str | None = None,
+    input_wkid: int | None = None,
+    output_wkid: int = 25833,
+) -> str:
+    """Slå sammen multipatch-FC-er til ett 3D-lag, join kategori via GlobalId,
+    og avled et 2D-fотavtrykkslag. Returner sti til utdata-GDB med to FC-er.
+
+    Raises:
+        ArcpyProcessorError: BIM_CONVERSION_FAILED ved geometrifeil, eller hvis
+        GlobalId-felt mangler (join ikke mulig — se spec for fallback).
+    """
+    scratch = scratch or arcpy.env.scratchFolder
+    out_gdb = os.path.join(scratch, "bim_out.gdb")
+    if arcpy.Exists(out_gdb):
+        arcpy.management.Delete(out_gdb)
+    arcpy.management.CreateFileGDB(scratch, "bim_out.gdb")
+
+    bim_3d = os.path.join(out_gdb, "bim_3d")
+    bim_plan = os.path.join(out_gdb, "bim_plan")
+
+    try:
+        arcpy.management.Merge(fc_paths, bim_3d)
+
+        guid_field = _find_guid_field(bim_3d)
+        if guid_field is None:
+            raise ArcpyProcessorError(
+                BIM_CONVERSION_FAILED,
+                "Fant ikke IFC-GlobalId-felt i GDB — kan ikke joine kategori. "
+                "Inspiser feltene (arcpy.ListFields) og koble classify_from_fields "
+                "mot ObjectType/Name som fallback (se spec).",
+            )
+
+        for fname, flen in _KAT_FIELDS:
+            arcpy.management.AddField(bim_3d, fname, "TEXT", field_length=flen)
+        arcpy.management.AddField(bim_3d, "bim_id", "LONG")
+        arcpy.management.CalculateField(bim_3d, "bim_id", "!OBJECTID!", "PYTHON3")
+
+        cursor_fields = [guid_field, "kategori", "fag_gruppe", "ifc_klasse", "navn"]
+        matched = 0
+        with arcpy.da.UpdateCursor(bim_3d, cursor_fields) as cur:
+            for r in cur:
+                vals = _resolve_kategori(r[0], classification)
+                if vals[0] != "Uklassifisert":
+                    matched += 1
+                r[1], r[2], r[3], r[4] = vals
+                cur.updateRow(r)
+        if classification and matched == 0:
+            raise ArcpyProcessorError(
+                BIM_CONVERSION_FAILED,
+                f"Ingen features matchet IFC-GlobalId fra klassifiseringen (join-felt "
+                f"'{guid_field}'). Sannsynlig feil join-nøkkel — verifiser at feltet "
+                "inneholder IFC-GlobalId og ikke ArcGIS sin UUID-GlobalID.",
+            )
+
+        # 2D-fотavtrykk, ett per kildeobjekt (gruppert på stabil bim_id)
+        arcpy.ddd.MultiPatchFootprint(bim_3d, bim_plan, group_field="bim_id")
+        arcpy.management.JoinField(
+            bim_plan, "bim_id", bim_3d, "bim_id",
+            ["kategori", "fag_gruppe", "ifc_klasse", "navn"],
+        )
+
+        if input_wkid and input_wkid != output_wkid:
+            sr = arcpy.SpatialReference(output_wkid)
+            for fc in (bim_3d, bim_plan):
+                proj = fc + "_p"
+                arcpy.management.Project(fc, proj, sr)
+                arcpy.management.Delete(fc)
+                arcpy.management.Rename(proj, fc)
+    except ArcpyProcessorError:
+        raise
+    except Exception as exc:
+        raise ArcpyProcessorError(
+            BIM_CONVERSION_FAILED,
+            f"Kategorisering/fотavtrykk feilet: {exc}",
+        ) from exc
+
+    return out_gdb
 
 
 def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:  # noqa: ARG001

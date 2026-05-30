@@ -10,24 +10,9 @@ from typing import NoReturn
 
 from dotenv import load_dotenv
 
-from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES, PUBLISH_FAILED
+from .errors import ArcpyProcessorError, IFC_NOT_FOUND, ARCPY_UNAVAILABLE, NO_FEATURES
 
 logger = logging.getLogger(__name__)
-
-
-def _gdb_path_from_fcs(fc_paths: list[str]) -> str:
-    """Utled GDB-sti fra første FC-sti (format: /scratch/bim_temp.gdb/dataset/FC)."""
-    if not fc_paths:
-        raise ArcpyProcessorError(PUBLISH_FAILED, "Intern feil: fc_paths er tom")
-    parts = Path(fc_paths[0]).parts
-    try:
-        gdb_idx = next(i for i, p in enumerate(parts) if p.endswith(".gdb"))
-    except StopIteration:
-        raise ArcpyProcessorError(
-            PUBLISH_FAILED,
-            f"Intern feil: ingen .gdb-komponent i sti: {fc_paths[0]}",
-        ) from None
-    return str(Path(*parts[:gdb_idx + 1]))
 
 
 def _check_arcpy() -> None:
@@ -70,8 +55,9 @@ def main(argv: list[str] | None = None) -> None:
     try:
         _check_arcpy()
         from .auth import connect
-        from .converter import convert_bim, delete_empty_fcs
+        from .converter import convert_bim, merge_and_categorize
         from .publisher import check_name_available, upload_and_publish
+        from src.ifc_processor.bim_classifier import classify_ifc
 
         gis = connect(token=args.token, org_url=args.org_url)
         check_name_available(gis, args.name, args.folder)
@@ -90,8 +76,10 @@ def main(argv: list[str] | None = None) -> None:
                 "BIMFileToGeodatabase produserte ingen feature classes. "
                 "Sjekk at IFC-filen inneholder geometri.",
             )
-        fc_paths = delete_empty_fcs(fc_paths, "")
-        gdb_path = _gdb_path_from_fcs(fc_paths)
+
+        classification = classify_ifc(args.ifc)
+        # convert_bim har allerede reprosjektert til output_wkid — ikke reprosjekter på nytt.
+        gdb_path = merge_and_categorize(fc_paths, classification)
 
         result = upload_and_publish(gis, gdb_path, args.name, args.folder)
         print(json.dumps(result))

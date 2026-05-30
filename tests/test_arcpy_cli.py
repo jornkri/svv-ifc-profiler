@@ -62,8 +62,8 @@ def test_cli_prints_json_on_success(capsys):
     with patch("src.arcpy_processor.auth.connect", return_value=mock_gis), \
          patch("src.arcpy_processor.publisher.check_name_available"), \
          patch("src.arcpy_processor.converter.convert_bim", return_value=["fc1", "fc2"]), \
-         patch("src.arcpy_processor.converter.delete_empty_fcs", return_value=["fc1", "fc2"]), \
-         patch("src.arcpy_processor.bim_to_agol._gdb_path_from_fcs", return_value="/scratch/bim_temp.gdb"), \
+         patch("src.ifc_processor.bim_classifier.classify_ifc", return_value={}), \
+         patch("src.arcpy_processor.converter.merge_and_categorize", return_value="/scratch/bim_out.gdb"), \
          patch("src.arcpy_processor.publisher.upload_and_publish", return_value=success_meta), \
          patch("pathlib.Path.exists", return_value=True):
 
@@ -117,9 +117,8 @@ def test_cli_passes_token_and_org_url_to_connect(capsys):
     with patch("src.arcpy_processor.auth.connect", return_value=mock_gis) as mock_connect, \
          patch("src.arcpy_processor.publisher.check_name_available"), \
          patch("src.arcpy_processor.converter.convert_bim", return_value=["fc1"]), \
-         patch("src.arcpy_processor.converter.delete_empty_fcs", return_value=["fc1"]), \
-         patch("src.arcpy_processor.bim_to_agol._gdb_path_from_fcs",
-               return_value="/scratch/bim_temp.gdb"), \
+         patch("src.ifc_processor.bim_classifier.classify_ifc", return_value={}), \
+         patch("src.arcpy_processor.converter.merge_and_categorize", return_value="/scratch/bim_out.gdb"), \
          patch("src.arcpy_processor.publisher.upload_and_publish",
                return_value=success_meta), \
          patch("pathlib.Path.exists", return_value=True):
