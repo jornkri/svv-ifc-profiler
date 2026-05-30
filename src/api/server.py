@@ -153,6 +153,8 @@ def get_job(job_id: str) -> dict:
         "centerline_url": state.centerline_url,
         "sections_url": state.sections_url,
         "bim_url": state.bim_url,
+        "bim_scene_url": state.bim_scene_url,
+        "bim_plan_url": state.bim_plan_url,
         "xb_url": state.xb_url,
         "error": state.error,
     }
@@ -183,6 +185,8 @@ def list_jobs() -> list[dict]:
                     "centerline_url": agol_urls.get("centerline_url"),
                     "sections_url": agol_urls.get("sections_url"),
                     "bim_url": agol_urls.get("bim_url"),
+                    "bim_scene_url": agol_urls.get("bim_scene_url"),
+                    "bim_plan_url": agol_urls.get("bim_plan_url"),
                     "xb_url": agol_urls.get("xb_url"),
                 })
             except Exception:

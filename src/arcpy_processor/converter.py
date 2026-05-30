@@ -149,22 +149,35 @@ def merge_and_categorize(
     scratch: str | None = None,
     input_wkid: int | None = None,
     output_wkid: int = 25833,
-) -> str:
-    """Slå sammen multipatch-FC-er til ett 3D-lag, join kategori via GlobalId,
-    og avled et 2D-fотavtrykkslag. Returner sti til utdata-GDB med to FC-er.
+) -> tuple[str, str]:
+    """Bygg to single-lags GDB-er fra multipatch-kildene:
+
+    - ``bim_3d.gdb`` med ett multipatch-lag ``bim_3d`` (kategori join-et via
+      GlobalId). Dette er et *rent multipatch* feature layer — kravet for at
+      ArcGIS Online skal kunne publisere et 3D Object Layer fra det.
+    - ``bim_plan.gdb`` med ett 2D-lag ``bim_plan`` (fotavtrykk + kategori).
+
+    Lagene skilles i hver sin GDB slik at de kan publiseres som separate
+    hosted feature layers (3D-laget kan ikke ligge i samme tjeneste som et
+    2D-lag og samtidig være kilde for et 3D Object Layer).
+
+    Returns:
+        ``(gdb_3d_path, gdb_plan_path)``.
 
     Raises:
         ArcpyProcessorError: BIM_CONVERSION_FAILED ved geometrifeil, eller hvis
         GlobalId-felt mangler (join ikke mulig — se spec for fallback).
     """
     scratch = scratch or arcpy.env.scratchFolder
-    out_gdb = os.path.join(scratch, "bim_out.gdb")
-    if arcpy.Exists(out_gdb):
-        arcpy.management.Delete(out_gdb)
-    arcpy.management.CreateFileGDB(scratch, "bim_out.gdb")
+    gdb_3d = os.path.join(scratch, "bim_3d.gdb")
+    gdb_plan = os.path.join(scratch, "bim_plan.gdb")
+    for gdb, gdb_name in ((gdb_3d, "bim_3d.gdb"), (gdb_plan, "bim_plan.gdb")):
+        if arcpy.Exists(gdb):
+            arcpy.management.Delete(gdb)
+        arcpy.management.CreateFileGDB(scratch, gdb_name)
 
-    bim_3d = os.path.join(out_gdb, "bim_3d")
-    bim_plan = os.path.join(out_gdb, "bim_plan")
+    bim_3d = os.path.join(gdb_3d, "bim_3d")
+    bim_plan = os.path.join(gdb_plan, "bim_plan")
 
     try:
         arcpy.management.Merge(fc_paths, bim_3d)
@@ -222,7 +235,7 @@ def merge_and_categorize(
             f"Kategorisering/fотavtrykk feilet: {exc}",
         ) from exc
 
-    return out_gdb
+    return gdb_3d, gdb_plan
 
 
 def delete_empty_fcs(fc_paths: list[str], dataset_path: str) -> list[str]:  # noqa: ARG001

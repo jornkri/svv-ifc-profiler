@@ -63,8 +63,11 @@ def test_cli_prints_json_on_success(capsys):
          patch("src.arcpy_processor.publisher.check_name_available"), \
          patch("src.arcpy_processor.converter.convert_bim", return_value=["fc1", "fc2"]), \
          patch("src.ifc_processor.bim_classifier.classify_ifc", return_value={}), \
-         patch("src.arcpy_processor.converter.merge_and_categorize", return_value="/scratch/bim_out.gdb"), \
+         patch("src.arcpy_processor.converter.merge_and_categorize",
+               return_value=("/scratch/bim_3d.gdb", "/scratch/bim_plan.gdb")), \
          patch("src.arcpy_processor.publisher.upload_and_publish", return_value=success_meta), \
+         patch("src.arcpy_processor.publisher.publish_3d_object_layer",
+               return_value={"scene_url": "https://x/SceneServer", "scene_item_id": "s1"}), \
          patch("pathlib.Path.exists", return_value=True):
 
         from src.arcpy_processor.bim_to_agol import main
@@ -76,7 +79,8 @@ def test_cli_prints_json_on_success(capsys):
     captured = capsys.readouterr()
     result = json.loads(captured.out)
     assert result["status"] == "ok"
-    assert result["item_id"] == "abc123"
+    assert result["bim_3d_item_id"] == "abc123"
+    assert result["url"] == "https://x/SceneServer"
 
 
 def test_cli_exits_1_and_prints_error_json_on_failure(capsys):
@@ -118,7 +122,8 @@ def test_cli_passes_token_and_org_url_to_connect(capsys):
          patch("src.arcpy_processor.publisher.check_name_available"), \
          patch("src.arcpy_processor.converter.convert_bim", return_value=["fc1"]), \
          patch("src.ifc_processor.bim_classifier.classify_ifc", return_value={}), \
-         patch("src.arcpy_processor.converter.merge_and_categorize", return_value="/scratch/bim_out.gdb"), \
+         patch("src.arcpy_processor.converter.merge_and_categorize",
+               return_value=("/scratch/bim_3d.gdb", "/scratch/bim_plan.gdb")), \
          patch("src.arcpy_processor.publisher.upload_and_publish",
                return_value=success_meta), \
          patch("pathlib.Path.exists", return_value=True):

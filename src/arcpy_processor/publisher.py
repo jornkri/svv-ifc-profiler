@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -43,8 +44,79 @@ def check_name_available(gis: GIS, name: str, folder: str) -> None:  # noqa: ARG
         )
 
 
-def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
+def publish_3d_object_layer(
+    gis: GIS, feature_service_item, name: str, folder: str
+) -> dict | None:
+    """Best-effort: publiser et 3D Object Scene Layer fra et hosted *multipatch*
+    feature layer (kilden er ``feature_service_item``).
+
+    Dette er REST-operasjonen bak AGOL-knappen «Publish 3D object layer».
+    ``arcgis 2.4.x`` har ingen offentlig metode for dette, og den eksakte
+    ``publishParameters``-formen for multipatch→sceneService er ikke offentlig
+    dokumentert. Funksjonen er derfor **myk**: enhver feil → ``None`` (logges),
+    slik at resten av pipelinen fortsetter. Feature-laget kan da publiseres til
+    3D Object Layer med ett klikk i AGOL.
+
+    Returns:
+        ``{"scene_url": ..., "scene_item_id": ...}`` ved suksess, ellers ``None``.
+    """
+    scene_name = re.sub(r"[^A-Za-z0-9_]", "_", name)
+    try:
+        # Speiler Item._publish: kilde-item som featureService, output sceneService.
+        services = gis._portal.publish_item(
+            itemid=feature_service_item.id,
+            fileType="featureService",
+            publishParameters={"name": scene_name},
+            outputType="sceneService",
+            owner=getattr(feature_service_item, "owner", None),
+            folder=folder or None,
+            buildInitialCache=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort, alt skal degraderes mykt
+        logger.warning(
+            "Automatisk 3D Object Layer-publisering feilet (%s). Feature-laget er "
+            "publisert — publiser 3D-laget manuelt i AGOL via «Publish › 3D object "
+            "layer».", exc,
+        )
+        return None
+
+    svc = (services or [{}])[0]
+    if not svc or svc.get("success") is False:
+        logger.warning(
+            "3D Object Layer-publisering returnerte ingen tjeneste (%s). Publiser "
+            "3D-laget manuelt i AGOL.", svc.get("error") if svc else "tomt svar",
+        )
+        return None
+
+    scene_url = svc.get("serviceurl") or svc.get("serviceURL") or svc.get("serviceUrl")
+    scene_item_id = svc.get("serviceItemId")
+    logger.info("Publisert 3D Object Scene Layer: %s", scene_url)
+
+    # Scene-itemet arver feature-lagets tittel — sett ren tittel ({name}_3D).
+    if scene_item_id:
+        try:
+            sc_item = gis.content.get(scene_item_id)
+            if sc_item is not None:
+                sc_item.update(item_properties={"title": scene_name})
+        except Exception as title_exc:
+            logger.warning("Kunne ikke sette tittel '%s' på scene-item: %s",
+                           scene_name, title_exc)
+
+    return {"scene_url": scene_url, "scene_item_id": scene_item_id}
+
+
+def upload_and_publish(
+    gis: GIS, gdb_path: str, name: str, folder: str, *, target_sr: int | None = 25833
+) -> dict:
     """Zip GDB, last opp til AGOL og publiser som hosted feature service.
+
+    Args:
+        target_sr: WKID som AGOL skal reprosjektere til ved publisering, eller
+            ``None`` for å publisere uten reprosjektering. **Viktig:** for
+            multipatch (3D) MÅ dette være ``None`` — en `targetSR`-reprosjektering
+            ved publisering dropper Z-koordinatene og flater multipatch til 2D-
+            polygon (verifisert mot AGOL). GDB-en er allerede reprosjektert lokalt
+            av `convert_bim`, så data ligger uansett i ønsket CRS.
 
     Returns:
         Dict med status, url, item_id, item_url, feature_count,
@@ -79,6 +151,10 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
 
         # AGOL can lag after upload before the item is queriable for publish.
         # Retry with backoff to handle the propagation delay.
+        publish_params = {"name": name}
+        if target_sr is not None:
+            publish_params["targetSR"] = {"wkid": target_sr, "latestWkid": target_sr}
+
         publish_delays = [3, 6, 12, 20]
         fs_item = None
         last_exc = None
@@ -87,7 +163,7 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
                 logger.info("Venter %ds før publisering (forsøk %d)…", delay, attempt)
                 time.sleep(delay)
             try:
-                fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
+                fs_item = item.publish(publish_parameters=publish_params)
                 break
             except Exception as exc:
                 last_exc = exc
@@ -98,6 +174,13 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
         if fs_item is None:
             raise last_exc
         logger.info("Publisert feature service: %s", fs_item.url)
+
+        # Den publiserte tjenesten arver GDB-itemets tittel ("{name}_gdb").
+        # Sett den tilbake til ønsket navn så item-tittelen blir ren.
+        try:
+            fs_item.update(item_properties={"title": name})
+        except Exception as title_exc:
+            logger.warning("Kunne ikke sette tittel '%s' på publisert item: %s", name, title_exc)
 
         # Slett kilde-GDB-item — bare Feature Service trengs i AGOL.
         try:
