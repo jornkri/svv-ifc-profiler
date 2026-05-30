@@ -114,6 +114,33 @@ def test_publish_uses_etrs89_utm33_spatial_reference():
     assert params.get("name") == "Test", "publish_parameters må inneholde name"
 
 
+def test_publish_omits_targetsr_when_target_sr_none():
+    """target_sr=None → INGEN targetSR i publish_parameters (bevarer multipatch/Z)."""
+    gis = _make_gis()
+    mock_item = MagicMock()
+    mock_fs = MagicMock()
+    mock_fs.url = "https://services.arcgis.com/xxx/FeatureServer"
+    mock_fs.layers = []
+    mock_item.publish.return_value = mock_fs
+    gis.content.add.return_value = mock_item
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch("src.arcpy_processor.publisher._zip_gdb"), \
+         patch("src.arcpy_processor.publisher.os.path.exists", return_value=True), \
+         patch("src.arcpy_processor.publisher.os.remove"), \
+         patch("src.arcpy_processor.publisher.os.path.getsize", return_value=1000000):
+
+        publisher.upload_and_publish(gis, "/scratch/bim_3d.gdb", "Test3D", "SVV",
+                                     target_sr=None)
+
+    params = mock_item.publish.call_args.kwargs.get("publish_parameters")
+    assert params is not None
+    assert "targetSR" not in params, "targetSR skal IKKE sendes når target_sr=None"
+    assert params.get("name") == "Test3D"
+
+
 def test_publish_cleans_up_when_archive_fails():
     gis = _make_gis()
 

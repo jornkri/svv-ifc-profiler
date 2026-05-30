@@ -94,8 +94,18 @@ def publish_3d_object_layer(
     return {"scene_url": scene_url, "scene_item_id": scene_item_id}
 
 
-def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
+def upload_and_publish(
+    gis: GIS, gdb_path: str, name: str, folder: str, *, target_sr: int | None = 25833
+) -> dict:
     """Zip GDB, last opp til AGOL og publiser som hosted feature service.
+
+    Args:
+        target_sr: WKID som AGOL skal reprosjektere til ved publisering, eller
+            ``None`` for å publisere uten reprosjektering. **Viktig:** for
+            multipatch (3D) MÅ dette være ``None`` — en `targetSR`-reprosjektering
+            ved publisering dropper Z-koordinatene og flater multipatch til 2D-
+            polygon (verifisert mot AGOL). GDB-en er allerede reprosjektert lokalt
+            av `convert_bim`, så data ligger uansett i ønsket CRS.
 
     Returns:
         Dict med status, url, item_id, item_url, feature_count,
@@ -130,6 +140,10 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
 
         # AGOL can lag after upload before the item is queriable for publish.
         # Retry with backoff to handle the propagation delay.
+        publish_params = {"name": name}
+        if target_sr is not None:
+            publish_params["targetSR"] = {"wkid": target_sr, "latestWkid": target_sr}
+
         publish_delays = [3, 6, 12, 20]
         fs_item = None
         last_exc = None
@@ -138,7 +152,7 @@ def upload_and_publish(gis: GIS, gdb_path: str, name: str, folder: str) -> dict:
                 logger.info("Venter %ds før publisering (forsøk %d)…", delay, attempt)
                 time.sleep(delay)
             try:
-                fs_item = item.publish(publish_parameters={"name": name, "targetSR": {"wkid": 25833, "latestWkid": 25833}})
+                fs_item = item.publish(publish_parameters=publish_params)
                 break
             except Exception as exc:
                 last_exc = exc

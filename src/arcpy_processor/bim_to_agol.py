@@ -91,7 +91,9 @@ def main(argv: list[str] | None = None) -> None:
 
         # 1) Publiser det rene multipatch-laget som eget feature layer.
         #    Dette er den «associated feature layer» et 3D Object Layer bygges på.
-        result_3d = upload_and_publish(gis, gdb_3d, args.name, args.folder)
+        #    target_sr=None: IKKE reprosjekter ved publisering — det dropper Z og
+        #    flater multipatch til polygon. GDB-en er allerede i riktig CRS lokalt.
+        result_3d = upload_and_publish(gis, gdb_3d, args.name, args.folder, target_sr=None)
 
         # 2) Best-effort: publiser et 3D Object Scene Layer fra feature-laget.
         #    Feiler det, beholder vi feature-laget (kan publiseres manuelt i AGOL).

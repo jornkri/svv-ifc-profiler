@@ -31,7 +31,7 @@ def test_main_publishes_3d_and_plan_as_separate_services(monkeypatch, capsys):
 
     from src.arcpy_processor import bim_to_agol
 
-    def _upload(gis, gdb_path, name, folder):
+    def _upload(gis, gdb_path, name, folder, *, target_sr=25833):
         # Returner ulik metadata per GDB så vi kan skille 3D fra plan
         if gdb_path.endswith("bim_3d.gdb"):
             return {"status": "ok", "url": "https://x/3D/FeatureServer",
@@ -59,6 +59,11 @@ def test_main_publishes_3d_and_plan_as_separate_services(monkeypatch, capsys):
     # To separate publiseringer: bim_3d.gdb og bim_plan.gdb
     published_gdbs = {c.args[1] for c in m_pub.call_args_list}
     assert published_gdbs == {"/s/bim_3d.gdb", "/s/bim_plan.gdb"}
+    # 3D-laget MÅ publiseres med target_sr=None (bevarer multipatch);
+    # plan-laget reprosjekteres som normalt (default).
+    by_gdb = {c.args[1]: c for c in m_pub.call_args_list}
+    assert by_gdb["/s/bim_3d.gdb"].kwargs.get("target_sr") is None
+    assert "target_sr" not in by_gdb["/s/bim_plan.gdb"].kwargs
     # 3D-feature-laget ble brukt som kilde for scene-publisering
     m_scene.assert_called_once()
     # Navn sjekket for både 3D-tjeneste og plan-tjeneste
@@ -81,7 +86,7 @@ def test_main_degrades_when_scene_publish_fails(monkeypatch, capsys):
 
     from src.arcpy_processor import bim_to_agol
 
-    def _upload(gis, gdb_path, name, folder):
+    def _upload(gis, gdb_path, name, folder, *, target_sr=25833):
         if gdb_path.endswith("bim_3d.gdb"):
             return {"status": "ok", "url": "https://x/3D/FeatureServer",
                     "item_id": "fl3d", "layer_count": 1}
