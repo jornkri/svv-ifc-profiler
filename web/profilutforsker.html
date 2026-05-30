@@ -838,16 +838,20 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <span>Kjørefelt / vegbane</span>
         </div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(255,140,0,.78)"></span>
+          <span class="sw rect" style="background:rgba(255,140,0,.75)"></span>
           <span>Skulder</span>
         </div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(245,212,0,.78)"></span>
-          <span>Grøft / Skjæring / Fylling</span>
+          <span class="sw rect" style="background:rgba(140,100,50,.75)"></span>
+          <span>Vegkant / kantstein</span>
         </div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(220,40,120,.78)"></span>
-          <span>Gang-/sykkelveg</span>
+          <span class="sw rect" style="background:rgba(245,212,0,.72)"></span>
+          <span>Grøft / skjæring / fylling</span>
+        </div>
+        <div class="legend-row">
+          <span class="sw rect" style="background:rgba(200,170,120,.72)"></span>
+          <span>Forsterkning / underbygning</span>
         </div>
       </div>
     </div>
@@ -984,7 +988,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <div class="handle-actions" onclick="event.stopPropagation()">
           <button class="btn-mini" id="btn-lp-scale" onclick="toggleLpScale()">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1h8v8H1z" stroke="currentColor" stroke-width="1.2"/><path d="M3 3h4v4H3z" stroke="currentColor" stroke-width="1"/></svg>
-            Tilpass
+            1:5 skala
           </button>
           <button class="btn-mini" onclick="toggleLp()">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" id="lp-toggle-icon"><path d="M2 3l3.5 4 3.5-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -1703,7 +1707,9 @@ async function loadJobs() {
       opt.value = j.job_id;
       opt.dataset.centerlineUrl = j.centerline_url || '';
       opt.dataset.sectionsUrl = j.sections_url || '';
-      opt.dataset.bimUrl = j.bim_url || '';
+      // 2D-kartet (C-plan) skal bruke det flate plan-laget, ikke 3D-/scene-laget.
+      // Fall tilbake til bim_url for eldre jobber som kun publiserte ett lag.
+      opt.dataset.bimUrl = j.bim_plan_url || j.bim_url || '';
       opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
       if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
       sel.appendChild(opt);
@@ -1908,19 +1914,49 @@ function setLoading(on, txt) {
 }
 
 // ── BIM LAYER ──────────────────────────────────────────────────────────
-function makeBimRenderer() {
-  // Arcade expression normalizes raw IFC Name to R700 category
+function makeBimRenderer(catFields = ['kategori']) {
+  // bim_plan-laget bærer ferdig server-beregnet kategori (fra bim_classifier).
+  // Vi grupperer disse til R700-planfarger. Faller tilbake til å utlede fra rå
+  // IFC-Name for eldre enkeltlag-jobber som ikke har kategori-feltet.
+  // catFields oppdages dynamisk — feltet kan hete kategori, kategori_1 e.l. etter
+  // JoinField/publisering, og det «tomme» kan ligge foran det utfylte. Vi coalescer
+  // til første ikke-tomme verdi.
+  const coalesce = (catFields.length ? catFields : ['kategori'])
+    .map(f => `if (k == "" && HasValue($feature, "${f}") && $feature["${f}"] != "") k = Lower($feature["${f}"]);`)
+    .join('\n    ');
   const valueExpression = `
+    // Matcher på ASCII-trygge delstrenger/prefiks fordi æ/ø/å i kategori-verdiene
+    // kan komme som mojibake gjennom GDB→AGOL (samme grunn som bim_classifier.py).
+    var k = "";
+    ${coalesce}
+    if (k != "" && Find("uklassifisert", k) == -1) {
+      // vegbane: Kjørefelt, Slitelag, Bindlag, Bærelag
+      if (Find("kj", k) == 0 || Find("slitelag", k) > -1 ||
+          Find("bindlag", k) > -1 || Find("relag", k) > -1)
+        return "vegbane";
+      if (Find("skulder", k) > -1) return "skulder";
+      if (Find("kantstein", k) > -1) return "vegkant";
+      // terreng: Grøft, Skjæring, Fylling, Avrunding
+      if (Find("gr", k) == 0 || Find("skj", k) > -1 ||
+          Find("fylling", k) > -1 || Find("avrunding", k) > -1)
+        return "terreng";
+      // forsterkning/underbygning: Forsterket grunn, Forsterkningslag, Filterlag, Planum
+      if (Find("forster", k) > -1 || Find("filterlag", k) > -1 || Find("planum", k) > -1)
+        return "underbygning";
+      return "other";
+    }
+    // Fallback: utled fra rå IFC-Name (eldre enkeltlag-jobber)
     var n = Lower(IIF(HasValue($feature, "Name"), $feature["Name"], ""));
     if (Find("bindlag", n) > -1 || Find("slitelag", n) > -1 ||
         Find("baerelag", n) > -1 || Find("bærelag", n) > -1 ||
-        Find("forsterkningslag", n) > -1 || Find("vegbane", n) > -1 ||
+        Find("vegbane", n) > -1 ||
         Find("kjørefelt", n) > -1 || Find("kjorefelt", n) > -1)
-      return "kjørefelt";
+      return "vegbane";
     if (Find("skulder", n) > -1) return "skulder";
-    if (Find("grøft", n) > -1 || Find("groft", n) > -1) return "grøft";
-    if (Find("skjæring", n) > -1 || Find("skjaering", n) > -1) return "skjæring";
-    if (Find("fylling", n) > -1) return "fylling";
+    if (Find("grøft", n) > -1 || Find("groft", n) > -1 ||
+        Find("skjæring", n) > -1 || Find("skjaering", n) > -1 ||
+        Find("fylling", n) > -1 || Find("forsterkningslag", n) > -1)
+      return "terreng";
     if (Find("gangveg", n) > -1 || Find("sykkelveg", n) > -1 ||
         Find("fortau", n) > -1 || Find("gang-", n) > -1) return "gang_sykkel";
     if (Find("rekkverk", n) > -1) return "rekkverk";
@@ -1935,18 +1971,17 @@ function makeBimRenderer() {
   return {
     type: 'unique-value',
     valueExpression,
-    defaultLabel: 'Annet',
+    defaultLabel: 'Uklassifisert',
     defaultSymbol: fill(160, 160, 160, 80, 100, 100, 100),
     uniqueValueInfos: [
-      { value: 'kjørefelt', label: 'Kjørefelt / vegbane',     symbol: fill(100, 100, 108, 220,  60,  60,  70) },
-      { value: 'skulder',   label: 'Skulder',                  symbol: fill(255, 140,   0, 200, 200, 100,   0) },
-      { value: 'grøft',     label: 'Grøft',                    symbol: fill(245, 212,   0, 200, 180, 150,   0) },
-      { value: 'skjæring',  label: 'Skjæring',                 symbol: fill(245, 212,   0, 160, 180, 150,   0) },
-      { value: 'fylling',   label: 'Fylling',                  symbol: fill(245, 200,  60, 160, 180, 140,   0) },
+      { value: 'vegbane',     label: 'Kjørefelt / vegbane',    symbol: fill(100, 100, 108, 220,  60,  60,  70) },
+      { value: 'skulder',     label: 'Skulder',                symbol: fill(255, 140,   0, 190, 200, 100,   0) },
+      { value: 'vegkant',     label: 'Vegkant / kantstein',    symbol: fill(140, 100,  50, 190, 100,  70,  30) },
+      { value: 'terreng',     label: 'Grøft / skjæring / fylling', symbol: fill(245, 212, 0, 180, 180, 150, 0) },
+      { value: 'underbygning', label: 'Forsterkning / underbygning', symbol: fill(200, 170, 120, 180, 150, 120, 70) },
       { value: 'gang_sykkel', label: 'Gang-/sykkelveg',        symbol: fill(220,  40, 120, 200, 160,   0,  80) },
-      { value: 'rekkverk',  label: 'Rekkverk',
+      { value: 'rekkverk',    label: 'Rekkverk',
         symbol: { type: 'simple-line', color: [0, 160, 50, 220], width: 2, style: 'short-dash' } },
-      { value: 'vegkant',   label: 'Vegkant / kantstein',      symbol: fill(140, 100,  50, 180, 100,  70,  30) },
     ],
   };
 }
@@ -1965,11 +2000,9 @@ async function loadBimLayers(bimUrl) {
   const layerList = (info.layers || []);
   if (!layerList.length) { console.warn('BIM service: ingen lag funnet'); return; }
 
-  const renderer = makeBimRenderer();
   bimLayers = layerList.map(l => new FeatureLayer({
     url: `${bimUrl}/${l.id}`,
-    outFields: ['Name', 'name'],
-    renderer,
+    outFields: ['*'],   // hent alle felt — kategori-feltet kan hete kategori_1 e.l.
     opacity: 0.85,
     title: l.name,
   }));
@@ -1983,10 +2016,15 @@ async function loadBimLayers(bimUrl) {
   if (selectedLayer) map.reorder(selectedLayer, map.layers.length - 1);
   if (hoverLayer)   map.reorder(hoverLayer,   map.layers.length - 1);
 
-  // Count total features
+  // Load, detect the actual kategori field name (kan være "kategori_1" etter
+  // JoinField/publisering), assign renderer, and count features.
   let total = 0;
   await Promise.allSettled(bimLayers.map(async l => {
     await l.load();
+    const catFields = (l.fields || [])
+      .map(f => f.name)
+      .filter(n => /^kategori(_\d+)?$/i.test(n));
+    l.renderer = makeBimRenderer(catFields.length ? catFields : ['kategori']);
     const q = await l.queryFeatureCount({ where: '1=1' });
     total += q;
   }));
@@ -2418,7 +2456,7 @@ function toggleLp() {
 function toggleLpScale() {
   lpScaleMode = lpScaleMode === '1:5' ? 'fit' : '1:5';
   const btn = document.getElementById('btn-lp-scale');
-  if (btn) btn.lastChild.textContent = lpScaleMode === '1:5' ? ' Tilpass' : ' 1:5 skala';
+  if (btn) btn.lastChild.textContent = lpScaleMode === '1:5' ? ' 1:5 skala' : ' Tilpass';
   if (lpOpen) drawLp();
 }
 
@@ -2495,27 +2533,34 @@ function drawLp() {
   const xOf = st => ((st - stMin) / stRange) * innerW;
   const yOf = el => GPT + (graphH - GPT - GPB) * (1 - (el - elMin) / (elMax - elMin));
 
-  // Colors
-  const CR  = '#1f8a4a';
-  const CF  = isDark ? 'rgba(31,138,74,.08)' : 'rgba(31,138,74,.10)';
-  const CT  = isDark ? '#9b7a2e' : '#8b5e1a';
-  const CC  = '#e0228e';
+  // Dynamic y-grid steps (target ~5-8 major lines regardless of elevation range)
+  const elRange = elMax - elMin;
+  const NICE_Y = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
+  const majorStep = NICE_Y.find(s => s >= elRange / 6) ?? NICE_Y[NICE_Y.length - 1];
+  const minorStep = majorStep / 2;
+  const isMajorY = y => Math.abs((y / majorStep) - Math.round(y / majorStep)) < 0.001;
+
+  // Colors — R700 lengdeprofil er rent svart-hvitt: linjetype og -tykkelse bærer
+  // betydningen, ikke farge. Kun den interaktive markøren (CC) beholder kulør.
   const ink = isDark ? 'rgba(232,237,242,' : 'rgba(14,26,38,';
+  const CR  = `${ink}1)`;     // prosjektert profil — kraftig heltrukken
+  const CT  = `${ink}0.9)`;   // eksisterende terreng — tynnere, med terrengsymbol
+  const CC  = '#e0228e';      // interaktiv markør (stasjon under peker)
 
   // SVG parts
   const p = [];
   const $ = s => p.push(s);
 
   // ── GRAPH AREA ─────────────────────────────────────────────
-  // H-grid 5m minor
-  for (let y = Math.ceil(elMin / 5) * 5; y <= elMax; y += 5) {
-    if (y % 10 === 0) continue;
+  // H-grid minor
+  for (let y = Math.ceil(elMin / minorStep) * minorStep; y <= elMax; y += minorStep) {
+    if (isMajorY(y)) continue;
     const cy = yOf(y);
     if (cy < GPT - 1 || cy > graphH + 1) continue;
     $(`<line x1="0" y1="${cy.toFixed(1)}" x2="${innerW}" y2="${cy.toFixed(1)}" stroke="${ink}0.07)" stroke-width="0.5"/>`);
   }
-  // H-grid 10m major
-  for (let y = Math.ceil(elMin / 10) * 10; y <= elMax; y += 10) {
+  // H-grid major
+  for (let y = Math.ceil(elMin / majorStep) * majorStep; y <= elMax; y += majorStep) {
     const cy = yOf(y);
     if (cy < GPT - 1 || cy > graphH + 1) continue;
     $(`<line x1="0" y1="${cy.toFixed(1)}" x2="${innerW}" y2="${cy.toFixed(1)}" stroke="${ink}0.28)" stroke-width="0.7"/>`);
@@ -2541,21 +2586,51 @@ function drawLp() {
   // Graph boundary line
   $(`<line x1="0" y1="${graphH}" x2="${innerW}" y2="${graphH}" stroke="${ink}1)" stroke-width="1.5"/>`);
 
-  // Fill under design profile
-  let fillD = `M0,${graphH}`;
-  for (const s of stations) fillD += ` L${xOf(s.stasjon_m).toFixed(1)},${yOf(s.z).toFixed(1)}`;
-  fillD += ` L${innerW},${graphH} Z`;
-  $(`<path d="${fillD}" fill="${CF}"/>`);
+  // R700 har ikke fyll under veglinja — bare rene linjer mot rutenettet.
 
-  // Terrain line (dashed)
+  // Eksisterende terreng: tynn heltrukken linje med terrengsymbol
+  // (grupper av korte skråstreker hengende under linja — klassisk bakkelinje).
   if (hasT) {
-    let td = '', ok = false;
+    // Del opp i sammenhengende segmenter (hopp over null-hull i terrengdata).
+    const segs = [];
+    let cur = [];
     for (const s of stations) {
-      if (s.z_terreng == null) { ok = false; continue; }
-      const cx = xOf(s.stasjon_m).toFixed(1), cy = yOf(s.z_terreng).toFixed(1);
-      td += ok ? ` L${cx},${cy}` : `M${cx},${cy}`; ok = true;
+      if (s.z_terreng == null) { if (cur.length > 1) segs.push(cur); cur = []; continue; }
+      cur.push([xOf(s.stasjon_m), yOf(s.z_terreng)]);
     }
-    if (td) $(`<path d="${td}" fill="none" stroke="${CT}" stroke-width="1.2" stroke-dasharray="6,4"/>`);
+    if (cur.length > 1) segs.push(cur);
+
+    const GROUP_GAP = 34, TICK_LEN = 7, TICK_DX = 3, TICKS = 3;
+    const lean = [-0.42, 0.91];   // skråstrek ned + litt mot venstre («///»)
+    for (const pts of segs) {
+      // heltrukken terrenglinje
+      let td = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+      for (let i = 1; i < pts.length; i++) td += ` L${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)}`;
+      $(`<path d="${td}" fill="none" stroke="${CT}" stroke-width="0.9" stroke-linejoin="round"/>`);
+
+      // terrengsymbol: grupper av tre korte skråstreker fordelt jevnt langs buelengden
+      let acc = 0, next = 18;
+      for (let i = 1; i < pts.length; i++) {
+        const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+        const dx = x1 - x0, dy = y1 - y0;
+        const segLen = Math.hypot(dx, dy);
+        if (segLen < 0.01) continue;
+        const ux = dx / segLen, uy = dy / segLen;
+        while (next <= acc + segLen) {
+          const t = next - acc;
+          const px = x0 + ux * t, py = y0 + uy * t;
+          for (let k = 0; k < TICKS; k++) {
+            const bx = px + ux * (k - 1) * TICK_DX;
+            const by = py + uy * (k - 1) * TICK_DX;
+            const ex = bx + lean[0] * TICK_LEN;
+            const ey = by + lean[1] * TICK_LEN;
+            $(`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${CT}" stroke-width="0.7"/>`);
+          }
+          next += GROUP_GAP;
+        }
+        acc += segLen;
+      }
+    }
   }
 
   // Design profile line
@@ -2588,8 +2663,13 @@ function drawLp() {
   $(`<line x1="${lx-28}" y1="${ly}" x2="${lx-6}" y2="${ly}" stroke="${CR}" stroke-width="2"/>`);
   $(`<text x="${lx-32}" y="${ly+3.5}" text-anchor="end" font-size="8.5" fill="${CR}" font-family="var(--font-sans)">Prosjektert profil</text>`);
   if (hasT) {
-    $(`<line x1="${lx-28}" y1="${ly+14}" x2="${lx-6}" y2="${ly+14}" stroke="${CT}" stroke-width="1.2" stroke-dasharray="6,4"/>`);
-    $(`<text x="${lx-32}" y="${ly+17.5}" text-anchor="end" font-size="8.5" fill="${CT}" font-family="var(--font-sans)">Eksisterende terreng</text>`);
+    const ty = ly + 14;
+    $(`<line x1="${lx-28}" y1="${ty}" x2="${lx-6}" y2="${ty}" stroke="${CT}" stroke-width="0.9"/>`);
+    for (let k = 0; k < 3; k++) {
+      const bx = lx - 19 + k * 3;
+      $(`<line x1="${bx.toFixed(1)}" y1="${ty}" x2="${(bx-2.4).toFixed(1)}" y2="${(ty+5.2).toFixed(1)}" stroke="${CT}" stroke-width="0.7"/>`);
+    }
+    $(`<text x="${lx-32}" y="${ty+3.5}" text-anchor="end" font-size="8.5" fill="${CT}" font-family="var(--font-sans)">Eksisterende terreng</text>`);
   }
 
   // ── SCHEMA BLOCK ──────────────────────────────────────────────────────
@@ -2845,7 +2925,7 @@ function drawLp() {
   // ── Build gutter HTML ─────────────────────────────────────────────────
   const labelFs = Math.max(9, Math.min(11, 9 + (lpZoom - 1) * 0.5));
   let gh = `<div style="position:absolute;top:4px;right:6px;font-size:9px;font-weight:600;color:var(--ink-3);font-family:var(--font-sans)">H.o.h.</div>`;
-  for (let y = Math.ceil(elMin / 10) * 10; y <= elMax; y += 10) {
+  for (let y = Math.ceil(elMin / majorStep) * majorStep; y <= elMax; y += majorStep) {
     const cy = yOf(y);
     if (cy < GPT - 2 || cy > graphH + 2) continue;
     gh += `<div style="position:absolute;right:8px;top:${(cy-6).toFixed(0)}px;font-size:10.5px;font-family:var(--font-mono);color:var(--ink-2);line-height:1">${y}</div>`;
