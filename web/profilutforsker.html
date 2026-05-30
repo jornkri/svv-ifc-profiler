@@ -1148,6 +1148,10 @@ function setViewMode(mode) {
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
   if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
+  if (mode === '3d' && scene3dReady && currentIdx >= 0) {
+    fly3dToStation(currentIdx);
+    mark3dStation(stations[currentIdx]);
+  }
 }
 
 async function initScene() {
@@ -2255,6 +2259,52 @@ async function loadScene3dLayers() {
   map3d.add(selected3dLayer);
 }
 
+// Beregn enhets-tangent langs senterlinja ved stasjon idx (samme logikk som 2D-tverrsnittslinja).
+function clTangent(idx) {
+  let dx, dy;
+  if (idx > 0 && idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx - 1].x;
+    dy = stations[idx + 1].y - stations[idx - 1].y;
+  } else if (idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx].x;
+    dy = stations[idx + 1].y - stations[idx].y;
+  } else {
+    dx = stations[idx].x - stations[idx - 1].x;
+    dy = stations[idx].y - stations[idx - 1].y;
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  return { tx: dx / len, ty: dy / len };
+}
+
+function mark3dStation(s) {
+  if (!selected3dLayer || !window._Graphic) return;
+  selected3dLayer.removeAll();
+  selected3dLayer.add(new window._Graphic({
+    geometry: { type: 'point', x: s.x, y: s.y, spatialReference: { wkid: 25833 } },
+    symbol: {
+      type: 'point-3d',
+      symbolLayers: [{
+        type: 'object', resource: { primitive: 'sphere' },
+        width: 8, height: 8, depth: 8, material: { color: [224, 34, 142] },
+      }],
+    },
+  }));
+}
+
+// Fly kameraet til en stasjon: stå ~120 m bak/over langs senterlinja, tilt ned mot profilen.
+function fly3dToStation(idx) {
+  if (!view3d || !stations[idx]) return;
+  const s = stations[idx];
+  const { tx, ty } = clTangent(idx);
+  const BACK = 120, UP = 70;  // meter
+  view3d.goTo({
+    position: { x: s.x - tx * BACK, y: s.y - ty * BACK, z: (s.z || 0) + UP,
+                spatialReference: { wkid: 25833 } },
+    heading: (Math.atan2(tx, ty) * 180 / Math.PI + 360) % 360,
+    tilt: 65,
+  }, { duration: 700, easing: 'ease-in-out' }).catch(() => {});
+}
+
 // ── STATION SELECTION ──────────────────────────────────────────────────
 async function selectStation(idx) {
   if (idx < 0 || idx >= stations.length) return;
@@ -2393,6 +2443,12 @@ async function selectStation(idx) {
         );
       }
     }).catch(() => {});
+  }
+
+  // 3D-synk: marker punktet alltid; fly kameraet kun når 3D er aktivt.
+  if (scene3dReady) {
+    mark3dStation(s);
+    if (viewMode === '3d') fly3dToStation(idx);
   }
 }
 
