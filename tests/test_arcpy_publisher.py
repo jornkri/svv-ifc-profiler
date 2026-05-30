@@ -66,6 +66,8 @@ def test_publish_returns_metadata():
     assert result["item_id"] == "abc123"
     assert result["url"] == "https://services.arcgis.com/xxx/FeatureServer"
     assert result["layer_count"] == 2
+    # Publisert item skal få ren tittel (uten "_gdb"-suffiks fra opplastingen)
+    mock_fs.update.assert_called_once_with(item_properties={"title": "Vei_Kleverud"})
 
 
 def test_publish_raises_publish_failed_on_error():
@@ -190,6 +192,10 @@ def test_publish_3d_object_layer_returns_scene_url_on_success():
     assert kwargs.get("fileType") == "featureService"
     assert kwargs.get("outputType") == "sceneService"
     assert kwargs.get("itemid") == "fl1"
+    # Scene-item får ren tittel ({name}_3D)
+    gis.content.get.assert_called_with("scene99")
+    gis.content.get.return_value.update.assert_called_once_with(
+        item_properties={"title": "Vei_3D"})
 
 
 def test_publish_3d_object_layer_returns_none_on_exception():

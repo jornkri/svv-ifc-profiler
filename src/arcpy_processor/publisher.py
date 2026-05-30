@@ -91,6 +91,17 @@ def publish_3d_object_layer(
     scene_url = svc.get("serviceurl") or svc.get("serviceURL") or svc.get("serviceUrl")
     scene_item_id = svc.get("serviceItemId")
     logger.info("Publisert 3D Object Scene Layer: %s", scene_url)
+
+    # Scene-itemet arver feature-lagets tittel — sett ren tittel ({name}_3D).
+    if scene_item_id:
+        try:
+            sc_item = gis.content.get(scene_item_id)
+            if sc_item is not None:
+                sc_item.update(item_properties={"title": scene_name})
+        except Exception as title_exc:
+            logger.warning("Kunne ikke sette tittel '%s' på scene-item: %s",
+                           scene_name, title_exc)
+
     return {"scene_url": scene_url, "scene_item_id": scene_item_id}
 
 
@@ -163,6 +174,13 @@ def upload_and_publish(
         if fs_item is None:
             raise last_exc
         logger.info("Publisert feature service: %s", fs_item.url)
+
+        # Den publiserte tjenesten arver GDB-itemets tittel ("{name}_gdb").
+        # Sett den tilbake til ønsket navn så item-tittelen blir ren.
+        try:
+            fs_item.update(item_properties={"title": name})
+        except Exception as title_exc:
+            logger.warning("Kunne ikke sette tittel '%s' på publisert item: %s", name, title_exc)
 
         # Slett kilde-GDB-item — bare Feature Service trengs i AGOL.
         try:
