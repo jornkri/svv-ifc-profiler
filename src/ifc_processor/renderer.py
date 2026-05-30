@@ -32,18 +32,41 @@ _STYLE: dict[str, dict] = {
     "unknown":     {"color": "#888888", "linewidth": 0.5, "linestyle": "--", "zorder": 1},
 }
 
-# Avstand mellom tikk-merker og tikk-lengde for R700 TerrengrofilJord (meter, modellenhet).
-# R700 Vedlegg 3: tikklengde ≈ 25 % av intervallet, dvs. ~0.25 m ved 1 m intervall.
-_TERRAIN_TICK_INTERVAL = 1.0   # 1 m = 5 mm på papir ved 1:200
-_TERRAIN_TICK_LEN      = 0.25  # R700 TerrengrofilJord: kort tikk, ikke dominerende
+# Terrengsymbol (R700 TerrengprofilJord) — identisk look som lengdeprofilen:
+# tynn heltrukken linje + grupper på tre korte skråstreker som henger under linja.
+_TERRAIN_GROUP_GAP    = 2.5   # m mellom tikk-grupper (senter-til-senter)
+_TERRAIN_TICKS_GROUP  = 3     # antall skråstreker per gruppe
+_TERRAIN_TICK_SPACING = 0.3   # m mellom strekene i en gruppe (langs linja)
+_TERRAIN_TICK_LEN     = 0.45  # m skråstrek-lengde
+
+
+def _point_and_tangent(
+    chain: list[tuple[float, float]], seg_lengths: list[float], target: float
+) -> tuple[float, float, float, float]:
+    """(u, v, tu, tv) ved buelengde `target` langs kjeden (tu,tv = enhetstangent)."""
+    acc = 0.0
+    for i, seg_len in enumerate(seg_lengths):
+        if seg_len < 1e-9:
+            continue
+        if target <= acc + seg_len + 1e-9:
+            t = min(max((target - acc) / seg_len, 0.0), 1.0)
+            u1, v1 = chain[i]
+            u2, v2 = chain[i + 1]
+            return (u1 + t * (u2 - u1), v1 + t * (v2 - v1),
+                    (u2 - u1) / seg_len, (v2 - v1) / seg_len)
+        acc += seg_len
+    u1, v1 = chain[-2]
+    u2, v2 = chain[-1]
+    last = seg_lengths[-1] or 1.0
+    return chain[-1][0], chain[-1][1], (u2 - u1) / last, (v2 - v1) / last
 
 
 def _draw_terrain_chain(ax, chain: list[tuple[float, float]], gid: str | None = None) -> None:
-    """R700 TerrengrofilJord: hel linje + korte skråstreker ved fast vinkel.
+    """R700 TerrengprofilJord — lik lengdeprofilen: hel linje + grupper på tre korte
+    skråstreker som henger under terrenglinja, jevnt fordelt langs buelengden.
 
-    Tikkene resamples langs hele kjedens totale buelengde slik at de fordeles
-    jevnt uavhengig av enkelt-segmentlengder fra TIN-snittet.  Uten dette gir
-    korte TIN-triangler klynger av tikker med store gap mellom.
+    Tikkene resamples langs hele kjedens totale buelengde slik at gruppene fordeles
+    jevnt uavhengig av enkelt-segmentlengder fra TIN-snittet.
     """
     if len(chain) < 2:
         return
@@ -61,33 +84,26 @@ def _draw_terrain_chain(ax, chain: list[tuple[float, float]], gid: str | None = 
     if total_len < 1e-6:
         return
 
-    # R700 TerrengrofilJord: tikkene peker skrått opp fra terrenglinjen.
-    # 110° = 70° til venstre for positiv x-akse (\ retning oppover-venstre).
-    _angle = math.radians(110)
-    tick_du = _TERRAIN_TICK_LEN * math.cos(_angle)
-    tick_dv = _TERRAIN_TICK_LEN * math.sin(_angle)
+    # Skråstrek-retning: ned + litt mot venstre, så den henger under linja («\»), lik
+    # lengdeprofilen. dv/du er valgt slik at strekene ser like bratte ut til tross for
+    # den vertikale overhøyden (1:200) i tverrsnittet.
+    tick_du = -0.45 * _TERRAIN_TICK_LEN
+    tick_dv = -0.89 * _TERRAIN_TICK_LEN
 
-    n_ticks = max(1, int(total_len / _TERRAIN_TICK_INTERVAL))
-    tick_targets = [(k + 0.5) / n_ticks * total_len for k in range(n_ticks)]
-
-    accumulated = 0.0
-    tick_idx = 0
-    for i, seg_len in enumerate(seg_lengths):
-        if seg_len < 1e-9:
-            continue
-        u1, v1 = chain[i]
-        u2, v2 = chain[i + 1]
-        while tick_idx < len(tick_targets) and tick_targets[tick_idx] <= accumulated + seg_len + 1e-9:
-            t = min(max((tick_targets[tick_idx] - accumulated) / seg_len, 0.0), 1.0)
-            uc = u1 + t * (u2 - u1)
-            vc = v1 + t * (v2 - v1)
+    n_groups = max(1, int(total_len / _TERRAIN_GROUP_GAP))
+    half = (_TERRAIN_TICKS_GROUP - 1) / 2.0
+    for g in range(n_groups):
+        center = (g + 0.5) / n_groups * total_len
+        uc, vc, tu, tv = _point_and_tangent(chain, seg_lengths, center)
+        for k in range(_TERRAIN_TICKS_GROUP):
+            off = (k - half) * _TERRAIN_TICK_SPACING
+            bu = uc + tu * off
+            bv = vc + tv * off
             ax.plot(
-                [uc, uc + tick_du],
-                [vc, vc + tick_dv],
+                [bu, bu + tick_du],
+                [bv, bv + tick_dv],
                 color="black", linewidth=0.6, zorder=2,
             )
-            tick_idx += 1
-        accumulated += seg_len
 
 _TOL = 1e-3  # toleranse for sammenkjeding av endepunkter (meter) — 1 mm håndterer IFC-presisjon
 
