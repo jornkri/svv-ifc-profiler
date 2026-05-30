@@ -321,9 +321,23 @@ kbd {
 .map-area.with-right-drawer .map-legend { right: calc(var(--drawer-right-w) + 14px); }
 .map-area.with-right-drawer.xp-max .map-legend { right: calc(min(1000px, 100vw - 320px) + 14px); }
 .map-legend h3 {
-  margin: 0 0 6px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
+  margin: 0; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
   color: var(--ink-4); text-transform: uppercase;
 }
+.legend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.legend-body { margin-top: 6px; }
+.legend-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; margin: -2px -4px -2px 0;
+  border: none; background: transparent; border-radius: 4px; cursor: pointer;
+  color: var(--ink-3); flex-shrink: 0;
+  transition: background .15s, color .15s;
+}
+.legend-toggle:hover { background: var(--line-2); color: var(--ink-1); }
+.legend-toggle svg { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
+.map-legend.collapsed { min-width: 0; }
+.map-legend.collapsed .legend-body { display: none; }
+.map-legend.collapsed .legend-toggle svg { transform: rotate(180deg); }
 .map-legend.hidden { display: none; }
 .legend-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
 .legend-row .sw { width: 16px; height: 8px; border-radius: 1px; flex: 0 0 16px; }
@@ -817,7 +831,16 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 
     <!-- Legend -->
     <div class="map-legend hidden" id="map-legend">
-      <h3>Tegnforklaring</h3>
+      <div class="legend-head">
+        <h3>Tegnforklaring</h3>
+        <button class="legend-toggle" id="legend-toggle" onclick="toggleLegend()"
+                title="Minimer tegnforklaring" aria-label="Minimer tegnforklaring" aria-expanded="true">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <path d="M2 4l3.5 3.5L9 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="legend-body" id="legend-body">
       <div class="legend-row">
         <span class="sw line" style="color:var(--accent)"></span>
         <span>Senterlinje (prosjektert)</span>
@@ -853,6 +876,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <span class="sw rect" style="background:rgba(200,170,120,.72)"></span>
           <span>Forsterkning / underbygning</span>
         </div>
+      </div>
       </div>
     </div>
 
@@ -1039,6 +1063,9 @@ let selectedLayer = null;
 let stations = [];
 let currentIdx = -1;
 let currentJobId = null;
+// Mål-skala kartet zoomer inn til når en profil velges (klikk/lengdeprofil/nav).
+// ≈1:2500 rammer én profil + tverrsnittsmarkøren tydelig. Juster ved behov.
+const PROFILE_SELECT_SCALE = 2500;
 let lpOpen = false;
 let lpScaleMode = '1:5';  // '1:5' | 'fit'
 let horCurves = [];  // [{kind, sta_start, sta_end, radius?, A?, dir?}, ...]
@@ -2156,14 +2183,21 @@ async function selectStation(idx) {
     document.getElementById('legend-selected').style.display = 'flex';
   }
 
-  // Pan to station — centre in the visible map area (not behind the panels)
+  // Pan to station — centre in the visible map area (not behind the panels).
+  // Zoom inn til detaljnivå (≈1:2500) slik at valgt profil + tverrsnittsmarkøren
+  // vises tydelig. Beholder brukerens zoom hvis de allerede står tettere innzoomet
+  // (zoomer aldri *ut*) — så et klikk fra oversikten henter deg inn til riktig nivå.
   if (view && stations[idx]) {
     updateViewPadding();
+    const targetScale = Math.min(view.scale || PROFILE_SELECT_SCALE, PROFILE_SELECT_SCALE);
     stLayer.queryFeatures({
       objectIds: [s.oid], returnGeometry: true, outSpatialReference: { wkid: 25833 }
     }).then(fset => {
       if (fset.features[0]?.geometry) {
-        view.goTo({ target: fset.features[0].geometry }, { duration: 250, easing: 'ease-in-out' });
+        view.goTo(
+          { target: fset.features[0].geometry, scale: targetScale },
+          { duration: 450, easing: 'ease-in-out' },
+        );
       }
     }).catch(() => {});
   }
@@ -2882,28 +2916,43 @@ function drawLp() {
         $(`<text x="${(innerW/2).toFixed(1)}" y="${(yMid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">tverrfalldata mangler</text>`);
       }
 
-    } else if (r.key === 'profh') {
-      const valFs = Math.max(7, Math.min(11, rh * 0.22));
-      const step = lpZoom >= 1.5 ? 10 : 20;
-      for (let st = Math.ceil(stMin / step) * step; st <= stMax; st += step) {
-        const s = _lpNearest(st);
-        const cx = xOf(s.stasjon_m).toFixed(1);
-        $(`<text x="${cx}" y="${(mid+2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${CR}" font-family="var(--font-mono)" transform="rotate(-90,${cx},${mid.toFixed(1)})">${s.z.toFixed(2)}</text>`);
-      }
+    } else if (r.key === 'profh' || r.key === 'terrengh') {
+      // R700 rubrikk: ren tabell med én celle per profil-stasjon, vertikale
+      // celleskiller, og verdien rotert 90° sentrert i cella. Vi maskerer først
+      // bort grafens fine V-rutenett bak raden så tabellen blir ren som i R700.
+      const isTerr = r.key === 'terrengh';
+      const color = isTerr ? CT : CR;
+      const getVal = isTerr ? (s => s.z_terreng) : (s => s.z);
 
-    } else if (r.key === 'terrengh') {
-      const valFs = Math.max(7, Math.min(11, rh * 0.22));
-      const step = lpZoom >= 1.5 ? 10 : 20;
-      const hasTd = stations.some(s => s.z_terreng != null);
-      if (hasTd) {
-        for (let st = Math.ceil(stMin / step) * step; st <= stMax; st += step) {
-          const s = _lpNearest(st);
-          if (s.z_terreng == null) continue;
-          const cx = xOf(s.stasjon_m).toFixed(1);
-          $(`<text x="${cx}" y="${(mid+2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${CT}" font-family="var(--font-mono)" transform="rotate(-90,${cx},${mid.toFixed(1)})">${s.z_terreng.toFixed(2)}</text>`);
-        }
-      } else {
+      if (isTerr && !stations.some(s => s.z_terreng != null)) {
         $(`<text x="${(innerW/2).toFixed(1)}" y="${(mid+3.5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${ink}0.28)" font-family="var(--font-sans)" font-style="italic">terrengdata mangler</text>`);
+      } else {
+        // Maskér bort V-rutenettet bak raden, og gjenopprett radskillet på toppen.
+        $(`<rect x="0" y="${y0}" width="${innerW.toFixed(1)}" height="${rh}" fill="var(--card)"/>`);
+        if (ri > 0) $(`<line x1="0" y1="${y0}" x2="${innerW}" y2="${y0}" stroke="${ink}0.65)" stroke-width="0.8"/>`);
+
+        const valFs = Math.max(7, Math.min(11, rh * 0.22));
+        // Én celle per faktiske stasjon, men tynn ut så roterte tall ikke overlapper.
+        const minPx = Math.max(10, valFs * 1.4);
+        const shown = [];
+        let lastX = -Infinity;
+        for (const s of stations) {
+          const cx = xOf(s.stasjon_m);
+          if (cx - lastX < minPx) continue;
+          shown.push({ s, cx });
+          lastX = cx;
+        }
+        // Celleskiller på midtpunktet mellom nabostasjoner (yttergrensene er radkanten).
+        for (let i = 1; i < shown.length; i++) {
+          const xB = (shown[i - 1].cx + shown[i].cx) / 2;
+          $(`<line x1="${xB.toFixed(1)}" y1="${y0}" x2="${xB.toFixed(1)}" y2="${(y0 + rh).toFixed(1)}" stroke="${ink}0.4)" stroke-width="0.5"/>`);
+        }
+        // Verdien rotert 90° sentrert i cella.
+        for (const { s, cx } of shown) {
+          const v = getVal(s);
+          if (v == null) continue;
+          $(`<text x="${cx.toFixed(1)}" y="${(mid + 2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${color}" font-family="var(--font-mono)" transform="rotate(-90,${cx.toFixed(1)},${mid.toFixed(1)})">${v.toFixed(2)}</text>`);
+        }
       }
     }
   }
@@ -3143,6 +3192,20 @@ function updateLegendPos() {
   legend.style.bottom = bottom + 'px';
 }
 
+// Minimer/utvid tegnforklaringen. Beholder header (tittel + knapp) synlig;
+// chevron-ikonet roteres for å vise tilstanden.
+function toggleLegend() {
+  const legend = document.getElementById('map-legend');
+  const btn = document.getElementById('legend-toggle');
+  if (!legend) return;
+  const collapsed = legend.classList.toggle('collapsed');
+  if (btn) {
+    btn.title = collapsed ? 'Vis tegnforklaring' : 'Minimer tegnforklaring';
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-expanded', String(!collapsed));
+  }
+}
+
 window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(); updateLegendPos(); });
 
 // Expose functions used by inline onclick handlers (required in ES module context)
@@ -3152,6 +3215,7 @@ Object.assign(window, {
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
   toggleBasemapPicker, setBasemap,
   lpZoomIn, lpZoomOut, lpZoomReset,
+  toggleLegend,
 });
 </script>
 </body>
