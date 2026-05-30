@@ -1103,6 +1103,10 @@ let view = null;
 let clLayer = null;
 let stLayer = null;
 let bimLayers = [];
+let cl3d = null;            // senterlinje i 3D
+let st3d = null;            // stasjonspunkter i 3D
+let sceneLayer3d = null;    // vegmodell (SceneLayer eller FeatureLayer-fallback)
+let selected3dLayer = null; // GraphicsLayer for valgt/markør i 3D
 let hoverLayer = null;
 let selectedLayer = null;
 let stations = [];
@@ -1841,6 +1845,7 @@ async function loadJobs() {
       // 2D-kartet (C-plan) skal bruke det flate plan-laget, ikke 3D-/scene-laget.
       // Fall tilbake til bim_url for eldre jobber som kun publiserte ett lag.
       opt.dataset.bimUrl = j.bim_plan_url || j.bim_url || '';
+      opt.dataset.bimSceneUrl = j.bim_scene_url || '';
       opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
       if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
       sel.appendChild(opt);
@@ -1853,11 +1858,13 @@ document.getElementById('job-select').addEventListener('change', async e => {
   const jobId = sel.value;
   if (!jobId) return;
   const opt = sel.options[sel.selectedIndex];
+  window._jobSceneUrl = opt.dataset.bimSceneUrl || '';
   await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '');
 });
 
 async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
   currentJobId = jobId;
+  window._jobUrls = { centerlineUrl, sectionsUrl, bimUrl };
   stations = [];
   horCurves = [];
   currentIdx = -1;
@@ -1867,6 +1874,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
   if (stLayer && window._map) window._map.remove(stLayer);
   for (const l of bimLayers) { if (window._map) window._map.remove(l); }
   clLayer = null; stLayer = null; bimLayers = [];
+  clearScene3dJobLayers();
 
   document.getElementById('grp-bim').style.display = 'none';
   document.getElementById('legend-bim').style.display = 'none';
@@ -2031,6 +2039,9 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
     // Load BIM layer in background — non-blocking
     if (bimUrl) loadBimLayers(bimUrl).catch(e => console.warn('BIM-lag:', e));
 
+    // Last 3D-scenelag hvis scenen allerede er initialisert (ellers gjør initScene det).
+    if (scene3dReady) loadScene3dLayers().catch(e => console.warn('3D-lag:', e));
+
   } catch (err) {
     console.error('loadJob:', err);
   } finally {
@@ -2164,6 +2175,84 @@ async function loadBimLayers(bimUrl) {
   document.getElementById('legend-bim').style.display = '';
   document.getElementById('cnt-bim').textContent = total.toLocaleString('nb-NO');
   document.getElementById('cnt-bim').style.display = '';
+}
+
+// ── 3D-SCENE: JOBBLAG ──────────────────────────────────────────────────
+function clearScene3dJobLayers() {
+  if (!map3d) return;
+  for (const l of [sceneLayer3d, cl3d, st3d, selected3dLayer]) {
+    if (l) map3d.remove(l);
+  }
+  sceneLayer3d = null; cl3d = null; st3d = null; selected3dLayer = null;
+}
+
+async function loadScene3dLayers() {
+  if (!scene3dReady || !map3d) return;
+  clearScene3dJobLayers();
+
+  const urls = window._jobUrls || {};
+  const sceneUrl = window._jobSceneUrl || '';
+  const FeatureLayer = window._FeatureLayer;
+  const SceneLayer   = window._SceneLayer;
+  const GraphicsLayer = window._GraphicsLayer;
+
+  const msg = document.getElementById('scene-msg');
+  msg.classList.remove('visible');
+
+  // 1) Vegmodell: SceneLayer fra bim_scene_url, ellers FeatureLayer-fallback fra bim_url.
+  if (sceneUrl) {
+    sceneLayer3d = new SceneLayer({ url: sceneUrl, title: 'Vegmodell (3D)' });
+    map3d.add(sceneLayer3d);
+  } else if (urls.bimUrl) {
+    sceneLayer3d = new FeatureLayer({
+      url: urls.bimUrl + '/0',
+      title: 'Vegmodell (3D)',
+      elevationInfo: { mode: 'absolute-height' },
+    });
+    map3d.add(sceneLayer3d);
+  } else {
+    msg.classList.add('visible');  // ingen 3D-modell tilgjengelig
+  }
+
+  // 2) Senterlinje (drapert).
+  if (urls.centerlineUrl) {
+    cl3d = new FeatureLayer({
+      url: urls.centerlineUrl + '/0',
+      elevationInfo: { mode: 'on-the-ground' },
+      renderer: {
+        type: 'simple',
+        symbol: {
+          type: 'line-3d',
+          symbolLayers: [{ type: 'line', size: 3, material: { color: [27, 94, 32] } }],
+        },
+      },
+    });
+    map3d.add(cl3d);
+  }
+
+  // 3) Stasjonspunkter (drapert).
+  if (urls.sectionsUrl) {
+    st3d = new FeatureLayer({
+      url: urls.sectionsUrl + '/0',
+      outFields: ['*'],
+      elevationInfo: { mode: 'on-the-ground' },
+      renderer: {
+        type: 'simple',
+        symbol: {
+          type: 'point-3d',
+          symbolLayers: [{
+            type: 'object', resource: { primitive: 'sphere' },
+            width: 4, height: 4, depth: 4, material: { color: [255, 255, 255, 0.9] },
+          }],
+        },
+      },
+    });
+    map3d.add(st3d);
+  }
+
+  // 4) Eget graphics-lag for valgt-markør (legges øverst).
+  selected3dLayer = new GraphicsLayer({ listMode: 'hide', elevationInfo: { mode: 'on-the-ground' } });
+  map3d.add(selected3dLayer);
 }
 
 // ── STATION SELECTION ──────────────────────────────────────────────────
