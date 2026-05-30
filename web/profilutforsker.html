@@ -1613,7 +1613,7 @@ function drawCrossSectionLine(s, idx, xTicks) {
     dx = stations[idx].x - stations[idx - 1].x;
     dy = stations[idx].y - stations[idx - 1].y;
   }
-  const len = Math.hypot(dx, dy);
+  const len = Math.hypot(dx, dy) || 1;
   const tx = dx / len, ty = dy / len;   // unit tangent along CL
   const px = -ty, py = tx;              // unit perpendicular (cross-section direction)
 
@@ -2294,15 +2294,19 @@ function mark3dStation(s) {
 // Fly kameraet til en stasjon: stå ~120 m bak/over langs senterlinja, tilt ned mot profilen.
 function fly3dToStation(idx) {
   if (!view3d || !stations[idx]) return;
-  const s = stations[idx];
-  const { tx, ty } = clTangent(idx);
-  const BACK = 120, UP = 70;  // meter
-  view3d.goTo({
-    position: { x: s.x - tx * BACK, y: s.y - ty * BACK, z: (s.z || 0) + UP,
-                spatialReference: { wkid: 25833 } },
-    heading: (Math.atan2(tx, ty) * 180 / Math.PI + 360) % 360,
-    tilt: 65,
-  }, { duration: 700, easing: 'ease-in-out' }).catch(() => {});
+  // Vent til SceneView er klar (goTo på en ikke-klar view avvises) — løses umiddelbart
+  // hvis allerede klar, så dette dekker både første veksling og senere kall.
+  view3d.when(() => {
+    const s = stations[idx];
+    const { tx, ty } = clTangent(idx);
+    const BACK = 120, UP = 70;  // meter
+    return view3d.goTo({
+      position: { x: s.x - tx * BACK, y: s.y - ty * BACK, z: (s.z || 0) + UP,
+                  spatialReference: { wkid: 25833 } },
+      heading: (Math.atan2(tx, ty) * 180 / Math.PI + 360) % 360,
+      tilt: 65,
+    }, { duration: 700, easing: 'ease-in-out' });
+  }).catch(() => {});
 }
 
 // ── STATION SELECTION ──────────────────────────────────────────────────
