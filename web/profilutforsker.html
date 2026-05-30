@@ -1858,13 +1858,13 @@ document.getElementById('job-select').addEventListener('change', async e => {
   const jobId = sel.value;
   if (!jobId) return;
   const opt = sel.options[sel.selectedIndex];
-  window._jobSceneUrl = opt.dataset.bimSceneUrl || '';
-  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '');
+  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '', opt.dataset.bimSceneUrl || '');
 });
 
-async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '') {
+async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneUrl = '') {
   currentJobId = jobId;
   window._jobUrls = { centerlineUrl, sectionsUrl, bimUrl };
+  window._jobSceneUrl = bimSceneUrl;
   stations = [];
   horCurves = [];
   currentIdx = -1;
