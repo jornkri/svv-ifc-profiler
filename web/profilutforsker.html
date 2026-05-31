@@ -1150,9 +1150,10 @@ function setViewMode(mode) {
   if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
   // Synk omtrentlig utsnitt mellom 2D og 3D når ingen stasjon styrer kameraet.
   if (mode === '3d' && scene3dReady && currentIdx < 0 && view && view3d && view.center) {
-    view3d.goTo({ center: [view.center.longitude, view.center.latitude], zoom: view.zoom },
-                { duration: 0 }).catch(() => {});
-  } else if (mode === '2d' && view && view3d && view3d.center) {
+    const c = [view.center.longitude, view.center.latitude], z = view.zoom;
+    // Vent på SceneView-readiness (goTo på ikke-klar view er no-op på første veksling).
+    view3d.when(() => view3d.goTo({ center: c, zoom: z }, { duration: 0 })).catch(() => {});
+  } else if (mode === '2d' && currentIdx < 0 && view && view3d && view3d.center) {
     view.goTo({ center: [view3d.center.longitude, view3d.center.latitude] },
               { duration: 0 }).catch(() => {});
   }
