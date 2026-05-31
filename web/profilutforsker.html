@@ -1877,6 +1877,7 @@ async function loadJobs() {
       // Fall tilbake til bim_url for eldre jobber som kun publiserte ett lag.
       opt.dataset.bimUrl = j.bim_plan_url || j.bim_url || '';
       opt.dataset.bimSceneUrl = j.bim_scene_url || '';
+      opt.dataset.bim3dUrl = j.bim_url || '';
       opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
       if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
       sel.appendChild(opt);
@@ -1889,12 +1890,12 @@ document.getElementById('job-select').addEventListener('change', async e => {
   const jobId = sel.value;
   if (!jobId) return;
   const opt = sel.options[sel.selectedIndex];
-  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '', opt.dataset.bimSceneUrl || '');
+  await loadJob(jobId, opt.dataset.centerlineUrl, opt.dataset.sectionsUrl, opt.dataset.bimUrl || '', opt.dataset.bimSceneUrl || '', opt.dataset.bim3dUrl || '');
 });
 
-async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneUrl = '') {
+async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneUrl = '', bim3dUrl = '') {
   currentJobId = jobId;
-  window._jobUrls = { centerlineUrl, sectionsUrl, bimUrl };
+  window._jobUrls = { centerlineUrl, sectionsUrl, bimUrl, bim3dUrl };
   window._jobSceneUrl = bimSceneUrl;
   stations = [];
   horCurves = [];
@@ -2234,9 +2235,9 @@ async function loadScene3dLayers() {
   if (sceneUrl) {
     sceneLayer3d = new SceneLayer({ url: sceneUrl, title: 'Vegmodell (3D)' });
     map3d.add(sceneLayer3d);
-  } else if (urls.bimUrl) {
+  } else if (urls.bim3dUrl) {
     sceneLayer3d = new FeatureLayer({
-      url: urls.bimUrl + '/0',
+      url: urls.bim3dUrl + '/0',
       title: 'Vegmodell (3D)',
       elevationInfo: { mode: 'absolute-height' },
     });
