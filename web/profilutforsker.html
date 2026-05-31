@@ -1147,6 +1147,7 @@ function setViewMode(mode) {
   document.getElementById('map-container').classList.toggle('is-3d', mode === '3d');
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
+  const wasReady = scene3dReady;
   if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
   // Synk omtrentlig utsnitt mellom 2D og 3D når ingen stasjon styrer kameraet.
   if (mode === '3d' && scene3dReady && currentIdx < 0 && view && view3d && view.center) {
@@ -1162,9 +1163,11 @@ function setViewMode(mode) {
     mark3dStation(stations[currentIdx]);
   }
   // Fallback-melding (mangler 3D-modell) skal kun vises når 3D er fremme.
+  // wasReady: på første veksling eier loadScene3dLayers (via initScene) meldingen;
+  // her re-asserterer vi den kun ved senere veksling når scenen allerede var klar.
   const msg = document.getElementById('scene-msg');
   if (mode === '2d') msg.classList.remove('visible');
-  else if (scene3dReady && !sceneLayer3d && currentJobId) msg.classList.add('visible');
+  else if (wasReady && !sceneLayer3d && currentJobId) msg.classList.add('visible');
 }
 
 async function initScene() {
@@ -3437,7 +3440,7 @@ function mapHome() {
   if (viewMode === '3d' && view3d && st3d && st3d.fullExtent) {
     view3d.goTo({ target: st3d.fullExtent.expand(1.5) }, { duration: 500 }).catch(() => {});
   } else if (stLayer && stLayer.fullExtent) {
-    view.goTo({ target: stLayer.fullExtent.expand(1.5) }, { duration: 500 });
+    view.goTo({ target: stLayer.fullExtent.expand(1.5) }, { duration: 500 }).catch(() => {});
   }
 }
 
