@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> None:
         from .converter import convert_bim, merge_and_categorize
         from .publisher import (
             check_name_available,
-            publish_3d_object_layer,
+            publish_3d_object_scene_layer,
             upload_and_publish,
         )
         from src.ifc_processor.bim_classifier import classify_ifc
@@ -95,14 +95,16 @@ def main(argv: list[str] | None = None) -> None:
         #    flater multipatch til polygon. GDB-en er allerede i riktig CRS lokalt.
         result_3d = upload_and_publish(gis, gdb_3d, args.name, args.folder, target_sr=None)
 
-        # 2) Best-effort: publiser et 3D Object Scene Layer fra feature-laget.
-        #    Feiler det, beholder vi feature-laget (kan publiseres manuelt i AGOL).
-        scene = None
-        item_id_3d = result_3d.get("item_id")
-        if item_id_3d:
-            fs_item = gis.content.get(item_id_3d)
-            if fs_item is not None:
-                scene = publish_3d_object_layer(gis, fs_item, f"{args.name}_3D", args.folder)
+        # 2) Best-effort: bygg et PROSJISERT (25833) 3D Object Scene Layer fra
+        #    multipatch-laget via SLPK (Output Coordinate System = output_wkid).
+        #    Et scene-lag publisert direkte fra feature-tjenesten havner i global
+        #    WGS84 og gir «coordinate system mismatch» i en lokal 25833-scene.
+        #    Feiler det, beholder vi multipatch-feature-laget (bim_3d_url) som
+        #    3D-fallback (samme geometri, 25833, kan tegnes i en lokal SceneView).
+        multipatch_fc = str(Path(gdb_3d) / "bim_3d")
+        scene = publish_3d_object_scene_layer(
+            gis, multipatch_fc, f"{args.name}_3D", args.folder, wkid=args.output_wkid
+        )
 
         # 3) Publiser 2D-plan-laget som eget feature layer.
         result_plan = upload_and_publish(gis, gdb_plan, plan_name, args.folder)
@@ -113,7 +115,7 @@ def main(argv: list[str] | None = None) -> None:
             # url peker på det mest nyttige laget: scene hvis publisert, ellers 3D-FL.
             "url": scene_url or result_3d.get("url"),
             "bim_3d_url": result_3d.get("url"),
-            "bim_3d_item_id": item_id_3d,
+            "bim_3d_item_id": result_3d.get("item_id"),
             "bim_scene_url": scene_url,
             "bim_scene_item_id": scene.get("scene_item_id") if scene else None,
             "bim_plan_url": result_plan.get("url"),

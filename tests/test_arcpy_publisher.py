@@ -218,3 +218,66 @@ def test_publish_3d_object_layer_returns_none_when_service_unsuccessful():
     import importlib; importlib.reload(publisher)
 
     assert publisher.publish_3d_object_layer(gis, _fs_item(), "Vei_3D", "SVV") is None
+
+
+# ── publish_3d_object_scene_layer (projisert 25833 SLPK → scene layer) ──
+
+def test_publish_3d_scene_layer_slpk_success():
+    """Bygger 25833-SLPK og publiserer den → scene-URL/-id; setter ren tittel."""
+    gis = MagicMock()
+    slpk_item = MagicMock()
+    scene_item = MagicMock()
+    scene_item.url = "https://tiles.arcgis.com/xxx/SceneServer"
+    scene_item.id = "scene25833"
+    slpk_item.publish.return_value = scene_item
+    gis.content.add.return_value = slpk_item
+
+    mock_arcpy = MagicMock()
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch.dict("sys.modules", {"arcpy": mock_arcpy}), \
+         patch("src.arcpy_processor.publisher.os.path.exists", return_value=True), \
+         patch("src.arcpy_processor.publisher.os.remove"):
+        res = publisher.publish_3d_object_scene_layer(
+            gis, "/scratch/bim_3d.gdb/bim_3d", "Vei_3D", "SVV", wkid=25833)
+
+    assert res == {"scene_url": "https://tiles.arcgis.com/xxx/SceneServer",
+                   "scene_item_id": "scene25833"}
+    # SLPK bygd med eksplisitt 25833 Output Coordinate System fra multipatch-laget
+    call = mock_arcpy.management.Create3DObjectSceneLayerPackage.call_args
+    assert call.kwargs["in_dataset"] == "/scratch/bim_3d.gdb/bim_3d"
+    assert call.kwargs["texture_optimization"] == "NONE"
+    mock_arcpy.SpatialReference.assert_called_with(25833)
+    # SLPK lastet opp som Scene Package og scene-item fikk ren tittel
+    assert gis.content.add.call_args.kwargs["item_properties"]["type"] == "Scene Package"
+    scene_item.update.assert_called_once_with(item_properties={"title": "Vei_3D"})
+
+
+def test_publish_3d_scene_layer_slpk_none_on_build_failure():
+    """Create3DObjectSceneLayerPackage kaster → None, ingen opplasting."""
+    gis = MagicMock()
+    mock_arcpy = MagicMock()
+    mock_arcpy.management.Create3DObjectSceneLayerPackage.side_effect = Exception("tool failed")
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch.dict("sys.modules", {"arcpy": mock_arcpy}), \
+         patch("src.arcpy_processor.publisher.os.path.exists", return_value=False):
+        assert publisher.publish_3d_object_scene_layer(
+            gis, "/s/bim_3d.gdb/bim_3d", "Vei_3D", "SVV") is None
+    gis.content.add.assert_not_called()
+
+
+def test_publish_3d_scene_layer_slpk_none_without_arcpy():
+    """arcpy utilgjengelig → myk degradering til None."""
+    gis = MagicMock()
+
+    from src.arcpy_processor import publisher
+    import importlib; importlib.reload(publisher)
+
+    with patch.dict("sys.modules", {"arcpy": None}):
+        assert publisher.publish_3d_object_scene_layer(
+            gis, "/s/bim_3d.gdb/bim_3d", "Vei_3D", "SVV") is None

@@ -105,6 +105,102 @@ def publish_3d_object_layer(
     return {"scene_url": scene_url, "scene_item_id": scene_item_id}
 
 
+def publish_3d_object_scene_layer(
+    gis: GIS, multipatch_fc: str, name: str, folder: str, *, wkid: int = 25833
+) -> dict | None:
+    """Best-effort: bygg et PROSJISERT (EPSG:``wkid``) 3D Object Scene Layer fra et
+    rent multipatch feature class og publiser det til AGOL.
+
+    Hvorfor ikke publisere scene-laget direkte fra det hostede feature-laget
+    (slik :func:`publish_3d_object_layer` gjør): AGOL bygger da scene-laget i
+    *global* WGS84, og et slikt lag kan IKKE brukes i en lokal, projisert
+    (EPSG:25833) scene — webklienten får «coordinate system mismatch». Ved å
+    bygge en SLPK lokalt med arcpy og sette *Output Coordinate System* eksplisitt
+    til 25833 (et velkjent projisert CRS, som i3s støtter for lokale scener),
+    havner scene-laget i 25833 og aligner med GeocacheTerreng/GeocacheBilder.
+
+    Krav: ``multipatch_fc`` må være multipatch med *absolutte* høyder (Z) — det er
+    tilfellet for laget ``bim_3d`` fra :func:`converter.merge_and_categorize`.
+
+    Returns:
+        ``{"scene_url": ..., "scene_item_id": ...}`` ved suksess, ellers ``None``
+        (myk degradering — kalleren beholder multipatch-feature-laget som fallback).
+    """
+    scene_name = re.sub(r"[^A-Za-z0-9_]", "_", name)
+    try:
+        import arcpy
+    except ImportError:
+        logger.warning("arcpy utilgjengelig — hopper over projisert 3D scene-lag.")
+        return None
+
+    # SLPK skrives i scratch-mappa (forelder til .gdb-en som holder multipatch-laget).
+    gdb_dir = os.path.dirname(multipatch_fc)
+    scratch_dir = os.path.dirname(gdb_dir) or gdb_dir
+    slpk_path = os.path.join(scratch_dir, f"{scene_name}.slpk")
+
+    try:
+        # texture_optimization=NONE: IFC-multipatch har ingen teksturer.
+        # transform_method=None: kilde og output er samme datum (EUREF89), ingen
+        # datumtransformasjon nødvendig.
+        arcpy.management.Create3DObjectSceneLayerPackage(
+            in_dataset=multipatch_fc,
+            out_slpk=slpk_path,
+            out_coor_system=arcpy.SpatialReference(wkid),
+            transform_method=None,
+            texture_optimization="NONE",
+        )
+        logger.info("Bygde 25833 SLPK: %s", slpk_path)
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning(
+            "Create3DObjectSceneLayerPackage feilet (%s). Hopper over projisert "
+            "3D scene-lag — multipatch-feature-laget kan brukes i 3D i stedet.", exc,
+        )
+        return None
+
+    slpk_item = None
+    try:
+        item_props = {
+            "title": f"{scene_name}_slpk",
+            "type": "Scene Package",
+            "tags": "IFC,BIM,SVV,3D",
+            "snippet": f"3D Object Scene Layer (EPSG:{wkid}) fra IFC: {scene_name}",
+        }
+        slpk_item = gis.content.add(
+            item_properties=item_props, data=slpk_path, folder=folder or None
+        )
+        if slpk_item is None:
+            logger.warning("Opplasting av SLPK returnerte None — hopper over scene-lag.")
+            return None
+
+        scene_item = slpk_item.publish()
+        scene_url = getattr(scene_item, "url", None)
+        scene_item_id = getattr(scene_item, "id", None)
+        logger.info("Publisert projisert (EPSG:%d) 3D Object Scene Layer: %s", wkid, scene_url)
+
+        # Scene-itemet arver SLPK-tittelen — sett ren tittel ({name}_3D).
+        try:
+            scene_item.update(item_properties={"title": scene_name})
+        except Exception as title_exc:  # noqa: BLE001
+            logger.warning("Kunne ikke sette tittel '%s' på scene-item: %s",
+                           scene_name, title_exc)
+
+        return {"scene_url": scene_url, "scene_item_id": scene_item_id}
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning(
+            "Publisering av SLPK til scene-lag feilet (%s). SLPK-itemet ligger i "
+            "AGOL og kan publiseres manuelt.", exc,
+        )
+        return None
+    finally:
+        # Lokal SLPK-fil er ikke nødvendig etter opplasting (best-effort opprydning;
+        # OneDrive/antivirus kan låse fila kort etter skriving).
+        if os.path.exists(slpk_path):
+            try:
+                os.remove(slpk_path)
+            except OSError as rm_exc:
+                logger.warning("Kunne ikke slette midlertidig SLPK %s: %s", slpk_path, rm_exc)
+
+
 def upload_and_publish(
     gis: GIS, gdb_path: str, name: str, folder: str, *, target_sr: int | None = 25833
 ) -> dict:

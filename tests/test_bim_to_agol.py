@@ -47,7 +47,7 @@ def test_main_publishes_3d_and_plan_as_separate_services(monkeypatch, capsys):
                return_value=("/s/bim_3d.gdb", "/s/bim_plan.gdb")) as m_cat, \
          patch("src.arcpy_processor.publisher.upload_and_publish",
                side_effect=_upload) as m_pub, \
-         patch("src.arcpy_processor.publisher.publish_3d_object_layer",
+         patch("src.arcpy_processor.publisher.publish_3d_object_scene_layer",
                return_value={"scene_url": "https://x/SceneServer",
                              "scene_item_id": "scene1"}) as m_scene:
         with pytest.raises(SystemExit) as exc:
@@ -64,8 +64,12 @@ def test_main_publishes_3d_and_plan_as_separate_services(monkeypatch, capsys):
     by_gdb = {c.args[1]: c for c in m_pub.call_args_list}
     assert by_gdb["/s/bim_3d.gdb"].kwargs.get("target_sr") is None
     assert "target_sr" not in by_gdb["/s/bim_plan.gdb"].kwargs
-    # 3D-feature-laget ble brukt som kilde for scene-publisering
+    # Det rene multipatch-laget (bim_3d) ble brukt som kilde for scene-publisering,
+    # og scene-laget bygges i 25833 (output_wkid).
     m_scene.assert_called_once()
+    scene_src = m_scene.call_args.args[1].replace("\\", "/")
+    assert scene_src.endswith("bim_3d.gdb/bim_3d")
+    assert m_scene.call_args.kwargs.get("wkid") == 25833
     # Navn sjekket for både 3D-tjeneste og plan-tjeneste
     checked_names = {c.args[1] for c in m_chk.call_args_list}
     assert "svc" in checked_names and "svc_plan" in checked_names
@@ -100,7 +104,7 @@ def test_main_degrades_when_scene_publish_fails(monkeypatch, capsys):
          patch("src.arcpy_processor.converter.merge_and_categorize",
                return_value=("/s/bim_3d.gdb", "/s/bim_plan.gdb")), \
          patch("src.arcpy_processor.publisher.upload_and_publish", side_effect=_upload), \
-         patch("src.arcpy_processor.publisher.publish_3d_object_layer",
+         patch("src.arcpy_processor.publisher.publish_3d_object_scene_layer",
                return_value=None):
         with pytest.raises(SystemExit) as exc:
             bim_to_agol.main(["--ifc", str(SAMPLE), "--name", "svc", "--folder", ""])
