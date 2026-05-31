@@ -1148,6 +1148,14 @@ function setViewMode(mode) {
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
   if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
+  // Synk omtrentlig utsnitt mellom 2D og 3D når ingen stasjon styrer kameraet.
+  if (mode === '3d' && scene3dReady && currentIdx < 0 && view && view3d && view.center) {
+    view3d.goTo({ center: [view.center.longitude, view.center.latitude], zoom: view.zoom },
+                { duration: 0 }).catch(() => {});
+  } else if (mode === '2d' && view && view3d && view3d.center) {
+    view.goTo({ center: [view3d.center.longitude, view3d.center.latitude] },
+              { duration: 0 }).catch(() => {});
+  }
   if (mode === '3d' && scene3dReady && currentIdx >= 0) {
     fly3dToStation(currentIdx);
     mark3dStation(stations[currentIdx]);
@@ -1186,6 +1194,17 @@ async function initScene() {
   if (typeof loadScene3dLayers === 'function' && currentJobId) {
     loadScene3dLayers().catch(e => console.warn('3D-lag:', e));
   }
+
+  view3d.on('click', async (event) => {
+    if (!st3d) return;
+    const resp = await view3d.hitTest(event, { include: [st3d] });
+    if (resp.results.length > 0) {
+      const g = resp.results[0].graphic;
+      const oid = g.attributes && g.attributes.OBJECTID;
+      const idx = stations.findIndex(s => s.oid === oid);
+      if (idx >= 0) selectStation(idx);
+    }
+  });
 }
 
 // ── BASEMAP ────────────────────────────────────────────────────────────
