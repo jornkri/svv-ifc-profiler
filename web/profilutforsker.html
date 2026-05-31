@@ -1161,6 +1161,10 @@ function setViewMode(mode) {
     fly3dToStation(currentIdx);
     mark3dStation(stations[currentIdx]);
   }
+  // Fallback-melding (mangler 3D-modell) skal kun vises når 3D er fremme.
+  const msg = document.getElementById('scene-msg');
+  if (mode === '2d') msg.classList.remove('visible');
+  else if (scene3dReady && !sceneLayer3d && currentJobId) msg.classList.add('visible');
 }
 
 async function initScene() {
@@ -3411,9 +3415,12 @@ function toggleLayer(name) {
   row.classList.toggle('muted', !layerVis[name]);
   if (name === 'bim') {
     bimLayers.forEach(l => { l.visible = layerVis[name]; });
+    if (sceneLayer3d) sceneLayer3d.visible = layerVis[name];
   } else {
     const layer = name === 'centerline' ? clLayer : stLayer;
     if (layer) layer.visible = layerVis[name];
+    const layer3d = name === 'centerline' ? cl3d : st3d;
+    if (layer3d) layer3d.visible = layerVis[name];
   }
 }
 
@@ -3423,10 +3430,13 @@ function toggleSidebar() {
 
 // ── MAP CONTROLS ───────────────────────────────────────────────────────
 function mapZoom(delta) {
-  if (view) view.zoom += delta;
+  const v = (viewMode === '3d' && view3d) ? view3d : view;
+  if (v) v.zoom += delta;
 }
 function mapHome() {
-  if (stLayer && stLayer.fullExtent) {
+  if (viewMode === '3d' && view3d && st3d && st3d.fullExtent) {
+    view3d.goTo({ target: st3d.fullExtent.expand(1.5) }, { duration: 500 }).catch(() => {});
+  } else if (stLayer && stLayer.fullExtent) {
     view.goTo({ target: stLayer.fullExtent.expand(1.5) }, { duration: 500 });
   }
 }
