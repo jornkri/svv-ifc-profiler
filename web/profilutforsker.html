@@ -1188,15 +1188,23 @@ async function initScene() {
   view3d = new SceneView({
     container: document.getElementById('map-3d'),
     map: map3d,
-    viewingMode: 'local',   // EPSG:25833-data — lokal scene unngår global reprojeksjon
-    center: [10.75, 59.9],
+    viewingMode: 'local',            // lokal scene (ikke global globe)
+    spatialReference: { wkid: 25833 }, // ALLE lag er EPSG:25833 — tving scenen til samme
+                                       // CRS, ellers beregnes elevasjons-tiles i feil rutenett (404).
+    center: { longitude: 10.75, latitude: 59.9 }, // WGS84-punkt → projiseres til scene-CRS
     zoom: 5,
     qualityProfile: 'high',
-    ui: { components: ['attribution'] },
   });
 
   window._view3d = view3d;
   window._map3d = map3d;
+
+  // Rydd standard-widgetene ETTER at viewet er klart (egne zoom-knapper finnes
+  // oppe til høyre). Å sette ui.components i konstruktøren trigget en placement-
+  // feil i SDK 5.0; å fjerne dem post-ready er trygt (samme mønster som 2D-viewet).
+  view3d.when(() => {
+    try { view3d.ui.remove(['zoom', 'navigation-toggle', 'compass']); } catch (_) {}
+  }).catch(() => {});
 
   // 3D-jobblag lastes i Task 3 hvis et prosjekt allerede er valgt.
   if (typeof loadScene3dLayers === 'function' && currentJobId) {
