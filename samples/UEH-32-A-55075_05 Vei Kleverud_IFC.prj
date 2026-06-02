@@ -1,1 +1,46 @@
 PROJCS["ETRS_1989_NTM_Zone_11",GEOGCS["GCS_ETRS_1989",DATUM["D_ETRS_1989",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",100000.0],PARAMETER["False_Northing",1000000.0],PARAMETER["Central_Meridian",11.5],PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",58.0],UNIT["Meter",1.0],AUTHORITY["EPSG",5111]]
+
+
+ Nå har jeg hele kjeden klar, og jeg kan svare presist. Du misforstår tallene — men det er en helt naturlig forveksling.
+
+  Kort svar: R er radius, ikke kurvatur
+
+  R=1000 betyr at vegen der følger en sirkelbue med radius 1000 meter. Det er ikke "maks kurvatur" — det er nesten det motsatte.
+
+  Sammenhengen er omvendt proporsjonal:
+
+  ▎ kurvatur = 1 / R
+
+  - Stor R (f.eks. 1000 m) → liten kurvatur → slak, nesten rett kurve
+  - Liten R (f.eks. 110 m) → stor kurvatur → skarp, krapp sving
+
+  En sirkel med radius 1000 m er enorm. Over de få hundre meterne du ser i lengdeprofilet vil en R=1000-bue se praktisk talt rett ut på kartet. Så det at vegen ser rett ut akkurat der R=1000 står, er helt riktig og
+  konsistent — ikke en feil.
+
+  I skjermbildet ditt er det motsatt vei du bør lese alarmsignal: R=110 er den skarpeste svingen (krappest kurvatur), mens R=1000 er den slakeste.
+
+  Hvor tallet kommer fra
+
+  Verdien er ikke beregnet/gjettet av appen — den leses direkte fra IFC-modellen:
+
+  - alignment_parser.py:178-194 henter StartRadiusOfCurvature / EndRadiusOfCurvature fra IfcAlignmentHorizontalSegment (IFC4X3).
+  - Frontenden henter dette via /api/jobs/{id}/horizontal-alignment og tegner R=${Math.round(hc.radius)} i Hor.kurv-raden (profilutforsker.html:3097).
+
+  Så R=1000 er den prosjekterte radiusen prosjekteringsingeniøren har lagt inn i vegmodellen.
+
+  Til orientering — de tre segmenttypene i raden
+
+  ┌───────────────────────────────┬─────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │            Etikett            │   Segment   │                                                       Betydning                                                        │
+  ├───────────────────────────────┼─────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ R=…                           │ CIRCULARARC │ Sirkelbue med fast radius (meter). Stor R = slak.                                                                      │
+  ├───────────────────────────────┼─────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ A=…                           │ CLOTHOID    │ Overgangskurve (klotoide). A er klotoideparameteren, ikke radius — binder en rett strekning gradvis sammen med en bue. │
+  ├───────────────────────────────┼─────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ (ingen etikett, lang-stiplet) │ LINE        │ Helt rett strekning (uendelig radius).                                                                                 │
+  └───────────────────────────────┴─────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Dette stemmer også med R700: i lengdeprofilet "stiples kurvepunktene inn vertikalt", og horisontalkurvaturen vises som en egen rubrikk-rad — som er nøyaktig det appen gjør.
+
+  Konklusjon: Tallene er korrekte. R=1000 betyr "slak kurve, nesten rett", ikke "maks kurvatur". Vil du at jeg legger til en liten forklaring/tooltip i appen (f.eks. "R = kurveradius i meter — stor verdi = slak kurve") så
+  det blir tydeligere for andre brukere?

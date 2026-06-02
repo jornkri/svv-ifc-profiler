@@ -35,8 +35,8 @@
 
   --map-bg:       #e8ebe4;
 
-  --road-gray:    #b0b5b8;
-  --road-yellow:  #e8c94a;
+  --road-gray:    #BBBCBC;
+  --road-yellow:  #FFE080;
   --road-existing:#9aac98;
 
   --r-sm: 5px;
@@ -771,7 +771,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
       <div class="sb-grp-title">Prosjekterte</div>
       <div class="layer-row active" id="row-centerline" onclick="toggleLayer('centerline')">
         <button class="layer-toggle on" id="tog-centerline">✓</button>
-        <div class="layer-swatch" style="width:18px;height:3px;border-radius:1px;background:var(--accent);border:0;margin:5px 0"></div>
+        <div class="layer-swatch" style="width:18px;height:3px;border-radius:0;background:#000;border:0;margin:5px 0"></div>
         <span class="layer-name">Senterlinje</span>
         <span class="layer-count" id="cnt-centerline" style="display:none">—</span>
       </div>
@@ -899,11 +899,11 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <hr class="legend-divider">
         <div class="legend-row" style="opacity:.6;margin-bottom:1px"><span style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4)">R700 · BIM</span></div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(100,100,108,.87)"></span>
+          <span class="sw rect" style="background:rgba(187,188,188,.87)"></span>
           <span>Kjørefelt / vegbane</span>
         </div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(255,140,0,.75)"></span>
+          <span class="sw rect" style="background:rgba(222,166,1,.75)"></span>
           <span>Skulder</span>
         </div>
         <div class="legend-row">
@@ -911,7 +911,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <span>Vegkant / kantstein</span>
         </div>
         <div class="legend-row">
-          <span class="sw rect" style="background:rgba(245,212,0,.72)"></span>
+          <span class="sw rect" style="background:rgba(255,224,128,.72)"></span>
           <span>Grøft / skjæring / fylling</span>
         </div>
         <div class="legend-row">
@@ -1086,6 +1086,8 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 const API = 'http://localhost:8000';
 const SCENE_BASEMAP_URL = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheBilder/MapServer';
 const SCENE_TERRAIN_URL  = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheTerreng/ImageServer';
+// 3D-vegmodellen kommer fra jobbens eget publiserte scene-lag (bim_scene_url, en
+// SceneServer/i3s i EPSG:25833). Terreng + flyfoto legges på i kode (konstantene over).
 
 const BASEMAPS = [
   { id: 'kanvas', label: 'Kanvas',    type: 'vtl',  swatch: '#e8e4d8',
@@ -1103,10 +1105,10 @@ let view = null;
 let clLayer = null;
 let stLayer = null;
 let bimLayers = [];
-let cl3d = null;            // senterlinje i 3D
-let st3d = null;            // stasjonspunkter i 3D
-let sceneLayer3d = null;    // vegmodell (SceneLayer eller FeatureLayer-fallback)
-let selected3dLayer = null; // GraphicsLayer for valgt/markør i 3D
+let sceneLayer3d = null;    // vegmodell (SceneLayer / i3s — eneste måte å vise multipatch i 3D)
+let cl3d = null;            // senterlinje i 3D (drapert)
+let st3d = null;            // profilpunkt i 3D (m/callout-labels)
+let selected3dLayer = null; // GraphicsLayer for markør på valgt stasjon i 3D
 let hoverLayer = null;
 let selectedLayer = null;
 let stations = [];
@@ -1117,6 +1119,12 @@ let currentJobId = null;
 const PROFILE_SELECT_SCALE = 2500;
 let lpOpen = false;
 let lpScaleMode = '1:5';  // '1:5' | 'fit'
+const lpRowCollapsed = {};  // key → bool; persists across drawLp() calls
+
+function toggleLpRow(key) {
+  lpRowCollapsed[key] = !lpRowCollapsed[key];
+  if (lpOpen) drawLp();
+}
 let horCurves = [];  // [{kind, sta_start, sta_end, radius?, A?, dir?}, ...]
 let widenings = [];  // [{sta_start, sta_end, val_m}, ...]  (breddeutvidelse pr seksjon)
 let lpZoom = 1;
@@ -1126,6 +1134,10 @@ let viewMode = '2d';        // '2d' | '3d'
 let view3d = null;          // SceneView
 let map3d = null;           // Map for 3D
 let scene3dReady = false;   // lazy-init flagg
+let scene3dHost = null;     // fersk container-div for SceneView (se initScene)
+let currentSceneUrl = '';        // bim_scene_url for valgt jobb (3D-vegmodell)
+let currentCenterlineUrl = '';   // senterlinje-FeatureLayer for valgt jobb
+let currentSectionsUrl = '';     // profilpunkt-FeatureLayer for valgt jobb
 let csMaximized = false;
 let layerVis = { centerline: true, stations: true, bim: true };
 let currentToken = null;
@@ -1147,80 +1159,243 @@ function setViewMode(mode) {
   document.getElementById('map-container').classList.toggle('is-3d', mode === '3d');
   document.getElementById('vm-2d').classList.toggle('active', mode === '2d');
   document.getElementById('vm-3d').classList.toggle('active', mode === '3d');
-  const wasReady = scene3dReady;
-  if (mode === '3d') initScene().catch(e => { scene3dReady = false; console.error('3D-init feilet:', e); });
-  // Synk omtrentlig utsnitt mellom 2D og 3D når ingen stasjon styrer kameraet.
-  if (mode === '3d' && scene3dReady && currentIdx < 0 && view && view3d && view.center) {
-    const c = [view.center.longitude, view.center.latitude], z = view.zoom;
-    // Vent på SceneView-readiness (goTo på ikke-klar view er no-op på første veksling).
-    view3d.when(() => view3d.goTo({ center: c, zoom: z }, { duration: 0 })).catch(() => {});
-  } else if (mode === '2d' && currentIdx < 0 && view && view3d && view3d.center) {
-    view.goTo({ center: [view3d.center.longitude, view3d.center.latitude] },
-              { duration: 0 }).catch(() => {});
+  // Vis/skjul 3D-containeren. VIKTIG: bruk visibility (beholder størrelse), IKKE
+  // display:none — en display:none-container nullstiller canvas-størrelsen og gjør
+  // at SceneView blir svart/tom ved neste 3D-veksling (samme bug som ved init).
+  if (scene3dHost) {
+    scene3dHost.style.visibility = (mode === '3d') ? 'visible' : 'hidden';
+    scene3dHost.style.pointerEvents = (mode === '3d') ? '' : 'none';
   }
-  if (mode === '3d' && scene3dReady && currentIdx >= 0) {
-    fly3dToStation(currentIdx);
-    mark3dStation(stations[currentIdx]);
+  if (mode === '3d') {
+    // Bygg scenen ved første veksling (no-op senere), så synk visning:
+    // er en stasjon valgt → fly dit; ellers land på samme sted som 2D-kartet.
+    initScene().then(() => {
+      if (currentIdx >= 0) { mark3dStation(stations[currentIdx]); fly3dToStation(currentIdx); }
+      else syncCameraTo3d();
+    }).catch(e => console.error('3D-init feilet:', e));
+  } else if (currentIdx < 0) {
+    // 3D→2D uten valgt stasjon: sentrer 2D der 3D-kameraet så.
+    syncCameraTo2d();
   }
-  // Fallback-melding (mangler 3D-modell) skal kun vises når 3D er fremme.
-  // wasReady: på første veksling eier loadScene3dLayers (via initScene) meldingen;
-  // her re-asserterer vi den kun ved senere veksling når scenen allerede var klar.
-  const msg = document.getElementById('scene-msg');
-  if (mode === '2d') msg.classList.remove('visible');
-  else if (wasReady && !sceneLayer3d && currentJobId) msg.classList.add('visible');
 }
 
-async function initScene() {
-  if (scene3dReady) return;
-  scene3dReady = true;  // sett tidlig så vi ikke dobbelt-initialiserer ved raske klikk
+// Synk 3D-kameraet til 2D-kartets senter (omtrentlig «samme sted», sett ovenfra-skrått).
+function syncCameraTo3d() {
+  if (!view3d || !view || !view.center) return;
+  const c = view.center;  // Point i 25833 (view-SR)
+  view3d.goTo({
+    target: { type: 'point', x: c.x, y: c.y, spatialReference: { wkid: 25833 } },
+    scale: view.scale, tilt: 55,
+  }, { duration: 500, easing: 'ease-in-out' }).catch(() => {});
+}
 
-  const Map = window._Map, SceneView = window._SceneView;
-  const TileLayer = window._TileLayer, ElevationLayer = window._ElevationLayer, Ground = window._Ground;
+// Synk 2D-kartet til 3D-scenens senter.
+function syncCameraTo2d() {
+  if (!view3d || !view || !view3d.center) return;
+  view.goTo({ target: view3d.center, scale: view3d.scale },
+            { duration: 500, easing: 'ease-in-out' }).catch(() => {});
+}
 
-  const ground = new Ground({ layers: [new ElevationLayer({ url: SCENE_TERRAIN_URL })] });
-  const basemap = new window._Basemap({
-    baseLayers: [new TileLayer({ url: SCENE_BASEMAP_URL })],
-    title: 'Bilder',
+// Vent til et element faktisk har layout-størrelse før SceneView bygges.
+function whenSized(el) {
+  return new Promise(resolve => {
+    const check = () => (el.clientWidth > 0 && el.clientHeight > 0)
+      ? resolve() : requestAnimationFrame(check);
+    requestAnimationFrame(check);
   });
+}
 
+// Bygg 3D-scenen én gang: terreng (ground) + flyfoto (basemap), alt i EPSG:25833.
+// Vegmodellen (jobbens scene-lag) legges på via updateScene3dLayer(). Lazy — første
+// gang brukeren veksler til 3D.
+async function initScene() {
+  if (scene3dReady || view3d) return;
+  scene3dReady = true;  // guard mot dobbel-init ved raske klikk
+
+  // VIKTIG: ArcGIS SceneView (SDK 5.0) låser WebGL-canvasen på default 300×150 hvis
+  // container-elementet noen gang har vært skjult med display:none før mount. Den
+  // statiske #map-3d-diven (display:none siden sidelast, via CSS) utløser nettopp dette
+  // — selv om vi gjenskaper elementet, arver den `#map-3d { display:none }`-regelen.
+  // Løsning: mount i en HELT fersk div uten #map-3d-id/CSS, lagt rett på #map-container
+  // (alltid synlig), og styr 2D/3D-synlighet via .style.display i setViewMode.
+  scene3dHost = document.createElement('div');
+  scene3dHost.style.cssText = 'position:absolute; inset:0;';
+  document.getElementById('map-container').appendChild(scene3dHost);
+  const cont = scene3dHost;
+  await whenSized(cont);
+
+  const Map = window._Map, SceneView = window._SceneView, Ground = window._Ground;
+  const Basemap = window._Basemap, TileLayer = window._TileLayer, ElevationLayer = window._ElevationLayer;
+
+  const ground  = new Ground({ layers: [new ElevationLayer({ url: SCENE_TERRAIN_URL })] });
+  const basemap = new Basemap({ baseLayers: [new TileLayer({ url: SCENE_BASEMAP_URL })], title: 'Flyfoto' });
   map3d = new Map({ basemap, ground });
 
   view3d = new SceneView({
-    container: document.getElementById('map-3d'),
+    container: cont,
     map: map3d,
-    viewingMode: 'local',            // lokal scene (ikke global globe)
-    spatialReference: { wkid: 25833 }, // ALLE lag er EPSG:25833 — tving scenen til samme
-                                       // CRS, ellers beregnes elevasjons-tiles i feil rutenett (404).
-    center: { longitude: 10.75, latitude: 59.9 }, // WGS84-punkt → projiseres til scene-CRS
-    zoom: 5,
+    viewingMode: 'local',               // lokal scene (ikke global globe)
+    spatialReference: { wkid: 25833 },  // alle lag er 25833 — tving scenen til samme CRS
+    // Start-kamera grovt over modellområdet (overstyres av frame-til-utstrekning under).
+    camera: { position: { x: 80600, y: 6549000, z: 1500, spatialReference: { wkid: 25833 } },
+              tilt: 60, heading: 0 },
     qualityProfile: 'high',
   });
 
   window._view3d = view3d;
   window._map3d = map3d;
 
-  // Rydd standard-widgetene ETTER at viewet er klart (egne zoom-knapper finnes
-  // oppe til høyre). Å sette ui.components i konstruktøren trigget en placement-
-  // feil i SDK 5.0; å fjerne dem post-ready er trygt (samme mønster som 2D-viewet).
-  view3d.when(() => {
-    try { view3d.ui.remove(['zoom', 'navigation-toggle', 'compass']); } catch (_) {}
-  }).catch(() => {});
+  await view3d.when();
+  // Rydd standard-widgetene (appen har egne zoom-knapper oppe til høyre).
+  try { view3d.ui.remove(['zoom', 'navigation-toggle', 'compass']); } catch (_) {}
 
-  // 3D-jobblag lastes i Task 3 hvis et prosjekt allerede er valgt.
-  if (typeof loadScene3dLayers === 'function' && currentJobId) {
-    loadScene3dLayers().catch(e => console.warn('3D-lag:', e));
+  // Eget lag for markør på valgt stasjon (z brukes absolutt — stasjonene har kote).
+  selected3dLayer = new window._GraphicsLayer({
+    listMode: 'hide', elevationInfo: { mode: 'absolute-height' },
+  });
+  map3d.add(selected3dLayer);
+
+  // Klikk i 3D → velg nærmeste stasjon (åpner tverrprofil via selectStation).
+  view3d.on('click', (event) => {
+    const p = event.mapPoint;
+    if (!p || !stations.length) return;
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < stations.length; i++) {
+      const dx = stations[i].x - p.x, dy = stations[i].y - p.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best >= 0 && bestD <= 100 * 100) selectStation(best);  // innen ~100 m
+  });
+
+  // Legg på vegmodellen + overlay (senterlinje, profilpunkt m/callouts) fra valgt jobb.
+  await updateScene3dLayer();
+  await updateOverlay3dLayers();
+}
+
+// Senterlinje + profilpunkt i 3D — speiler 2D-symbologien, med callout-labels på
+// hvert profilpunkt. Kalles fra initScene og ved jobbytte når 3D er bygget.
+async function updateOverlay3dLayers() {
+  if (!map3d) return;
+  const FeatureLayer = window._FeatureLayer;
+  for (const l of [cl3d, st3d]) { if (l) map3d.remove(l); }
+  cl3d = null; st3d = null;
+
+  // Senterlinje (drapert på terreng, stiplet svart — som i 2D).
+  if (currentCenterlineUrl) {
+    cl3d = new FeatureLayer({
+      url: currentCenterlineUrl + '/0',
+      elevationInfo: { mode: 'on-the-ground' },
+      renderer: { type: 'simple', symbol: { type: 'line-3d', symbolLayers: [
+        { type: 'line', size: 1.5, material: { color: [0, 0, 0] },
+          pattern: { type: 'style', style: 'dash' } },
+      ] } },
+    });
+    map3d.add(cl3d);
   }
 
-  view3d.on('click', async (event) => {
-    if (!st3d) return;
-    const resp = await view3d.hitTest(event, { include: [st3d] });
-    if (resp.results.length > 0) {
-      const g = resp.results[0].graphic;
-      const oid = g.attributes && g.attributes.OBJECTID;
-      const idx = stations.findIndex(s => s.oid === oid);
-      if (idx >= 0) selectStation(idx);
+  // Profilpunkt ved vegmodellens kote (z_moh): hvit sirkel m/grønn kant + callout-label.
+  if (currentSectionsUrl) {
+    st3d = new FeatureLayer({
+      url: currentSectionsUrl + '/0',
+      outFields: ['*'],
+      elevationInfo: { mode: 'absolute-height',
+                       featureExpressionInfo: { expression: '$feature.z_moh' }, unit: 'meters' },
+      renderer: { type: 'simple', symbol: { type: 'point-3d', symbolLayers: [
+        { type: 'icon', resource: { primitive: 'circle' }, size: 8,
+          material: { color: [255, 255, 255] }, outline: { color: DARK_GREEN, size: 1.5 } },
+      ] } },
+      labelsVisible: true,
+      labelingInfo: [{
+        labelExpressionInfo: { expression: '"PR " + Text($feature.stasjon_m, "#")' },
+        symbol: {
+          type: 'label-3d',
+          symbolLayers: [{ type: 'text', material: { color: DARK_GREEN }, size: 10,
+                           halo: { color: [255, 255, 255, 0.9], size: 1.2 } }],
+          // Løft labelen over punktet med ledelinje (callout).
+          verticalOffset: { screenLength: 40, maxWorldLength: 300, minWorldLength: 20 },
+          callout: { type: 'line', size: 1, color: [90, 90, 90], border: { color: [255, 255, 255] } },
+        },
+      }],
+    });
+    map3d.add(st3d);
+  }
+}
+
+// Sett/flytt markøren (en loddrett stolpe) på valgt stasjon i 3D.
+function mark3dStation(s) {
+  if (!selected3dLayer || !window._Graphic || !s) return;
+  selected3dLayer.removeAll();
+  selected3dLayer.add(new window._Graphic({
+    geometry: { type: 'point', x: s.x, y: s.y, z: (s.z || 0), spatialReference: { wkid: 25833 } },
+    symbol: {
+      type: 'point-3d',
+      symbolLayers: [{
+        type: 'object', resource: { primitive: 'cylinder' }, anchor: 'bottom',
+        width: 2, depth: 2, height: 30, material: { color: [224, 34, 142] },
+      }],
+    },
+  }));
+}
+
+// Enhets-tangent langs senterlinja ved stasjon idx (samme logikk som 2D-tverrsnittslinja).
+function clTangent(idx) {
+  let dx, dy;
+  if (idx > 0 && idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx - 1].x;
+    dy = stations[idx + 1].y - stations[idx - 1].y;
+  } else if (idx < stations.length - 1) {
+    dx = stations[idx + 1].x - stations[idx].x;
+    dy = stations[idx + 1].y - stations[idx].y;
+  } else {
+    dx = stations[idx].x - stations[idx - 1].x;
+    dy = stations[idx].y - stations[idx - 1].y;
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  return { tx: dx / len, ty: dy / len };
+}
+
+// Fly 3D-kameraet til valgt stasjon: stå ~120 m bak langs senterlinja, ~70 m opp,
+// og se langs vegen med skrå vinkel.
+function fly3dToStation(idx) {
+  if (!view3d || !stations[idx]) return;
+  view3d.when(() => {
+    const s = stations[idx];
+    const { tx, ty } = clTangent(idx);
+    const BACK = 120, UP = 70;  // meter
+    return view3d.goTo({
+      position: { x: s.x - tx * BACK, y: s.y - ty * BACK, z: (s.z || 0) + UP,
+                  spatialReference: { wkid: 25833 } },
+      heading: (Math.atan2(tx, ty) * 180 / Math.PI + 360) % 360,
+      tilt: 65,
+    }, { duration: 700, easing: 'ease-in-out' });
+  }).catch(() => {});
+}
+
+// Bytt/legg til 3D-vegmodellen (jobbens scene-lag) og ramme inn utstrekningen.
+// Kalles fra initScene og når en ny jobb lastes mens 3D allerede er bygget.
+async function updateScene3dLayer() {
+  if (!map3d) return;
+  if (sceneLayer3d) { map3d.remove(sceneLayer3d); sceneLayer3d = null; }
+  if (!currentSceneUrl) return;
+  sceneLayer3d = new window._SceneLayer({ url: currentSceneUrl, title: 'Vegmodell (3D)' });
+  map3d.add(sceneLayer3d);
+  try {
+    await sceneLayer3d.when();
+    // R700-kategorifarger som i 2D — kun hvis scene-laget faktisk har kategori-feltet
+    // (ellers beholder vi den publiserte symbologien i stedet for å gjøre alt grått).
+    const catFields = (sceneLayer3d.fields || []).map(f => f.name)
+      .filter(n => /^kategori(_\d+)?$/i.test(n));
+    if (catFields.length) {
+      sceneLayer3d.renderer = makeSceneRenderer(catFields);
+    } else {
+      console.log('[3D] scene-lag mangler kategori-felt — beholder publisert symbologi');
     }
-  });
+    if (view3d && sceneLayer3d.fullExtent) {
+      await view3d.goTo({ target: sceneLayer3d.fullExtent.expand(1.4), tilt: 55 },
+                        { duration: 800, easing: 'ease-in-out' });
+    }
+  } catch (e) { console.warn('[3D] vegmodell-scenelag:', e); }
 }
 
 // ── BASEMAP ────────────────────────────────────────────────────────────
@@ -1885,7 +2060,10 @@ async function loadJobs() {
       // Fall tilbake til bim_url for eldre jobber som kun publiserte ett lag.
       opt.dataset.bimUrl = j.bim_plan_url || j.bim_url || '';
       opt.dataset.bimSceneUrl = j.bim_scene_url || '';
-      opt.dataset.bim3dUrl = j.bim_url || '';
+      // 3D-vegmodell: bruk det rene 25833-multipatch-feature-laget (bim_3d_url).
+      // For eldre jobber uten dette feltet: bim_url er multipatch-FL-et KUN når det
+      // ikke finnes et scene-lag (ellers peker bim_url på SceneServer-et).
+      opt.dataset.bim3dUrl = j.bim_3d_url || (j.bim_scene_url ? '' : j.bim_url) || '';
       opt.textContent = ds + ' — ' + j.n_stations + ' st.' + (hasAgol ? '' : ' ⚠') + '  (' + j.job_id.slice(0, 8) + '…)';
       if (!hasAgol) opt.style.color = 'rgba(255,255,255,.4)';
       sel.appendChild(opt);
@@ -1903,8 +2081,14 @@ document.getElementById('job-select').addEventListener('change', async e => {
 
 async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneUrl = '', bim3dUrl = '') {
   currentJobId = jobId;
-  window._jobUrls = { centerlineUrl, sectionsUrl, bimUrl, bim3dUrl };
-  window._jobSceneUrl = bimSceneUrl;
+  currentSceneUrl = bimSceneUrl;
+  currentCenterlineUrl = centerlineUrl || '';
+  currentSectionsUrl = sectionsUrl || '';
+  // Oppdater 3D-lagene hvis scenen allerede er bygget (ellers gjør initScene det).
+  if (scene3dReady) {
+    updateScene3dLayer().catch(e => console.warn('3D-lag:', e));
+    updateOverlay3dLayers().catch(e => console.warn('3D-overlay:', e));
+  }
   stations = [];
   horCurves = [];
   currentIdx = -1;
@@ -1914,7 +2098,6 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   if (stLayer && window._map) window._map.remove(stLayer);
   for (const l of bimLayers) { if (window._map) window._map.remove(l); }
   clLayer = null; stLayer = null; bimLayers = [];
-  clearScene3dJobLayers();
 
   document.getElementById('grp-bim').style.display = 'none';
   document.getElementById('legend-bim').style.display = 'none';
@@ -1944,29 +2127,44 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
           symbol: {
             type: 'CIMLineSymbol',
             symbolLayers: [
-              // Outer glow
+              // Stiplet svart senterlinje
               {
                 type: 'CIMSolidStroke', enable: true,
-                width: 10, capStyle: 'Round', joinStyle: 'Round',
-                color: [...DARK_GREEN, 30],
-              },
-              // Mid glow
-              {
-                type: 'CIMSolidStroke', enable: true,
-                width: 5, capStyle: 'Round', joinStyle: 'Round',
-                color: [...DARK_GREEN, 70],
-              },
-              // Core dashed line
-              {
-                type: 'CIMSolidStroke', enable: true,
-                width: 2, capStyle: 'Butt', joinStyle: 'Round',
-                color: [...DARK_GREEN, 255],
+                width: 1.2, capStyle: 'Butt', joinStyle: 'Miter',
+                color: [0, 0, 0, 255],
                 effects: [{
                   type: 'CIMGeometricEffectDashes',
-                  dashTemplate: [8, 4],
+                  dashTemplate: [4, 3, 10, 3],
                   lineDashEnding: 'NoConstraint',
                   offsetAlongLine: 0,
                 }],
+              },
+              // Tverrstreker: tynt rektangel høyt i Y-retning (vinkelrett på linja
+              // når angleToLine:true justerer X-aksen langs linja)
+              {
+                type: 'CIMVectorMarker', enable: true,
+                size: 9,
+                markerPlacement: {
+                  type: 'CIMMarkerPlacementAlongLineSameSize',
+                  endings: 'NoConstraint',
+                  placementTemplate: [18],
+                  angleToLine: true,
+                  offset: 0,
+                },
+                frame: { xmin: -0.75, ymin: -4.5, xmax: 0.75, ymax: 4.5 },
+                markerGraphics: [{
+                  type: 'CIMMarkerGraphic',
+                  geometry: {
+                    rings: [[[-0.75, -4.5], [0.75, -4.5], [0.75, 4.5], [-0.75, 4.5], [-0.75, -4.5]]]
+                  },
+                  symbol: {
+                    type: 'CIMPolygonSymbol',
+                    symbolLayers: [{
+                      type: 'CIMSolidFill', enable: true,
+                      color: [0, 0, 0, 255],
+                    }]
+                  }
+                }]
               },
             ],
           },
@@ -2079,9 +2277,6 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
     // Load BIM layer in background — non-blocking
     if (bimUrl) loadBimLayers(bimUrl).catch(e => console.warn('BIM-lag:', e));
 
-    // Last 3D-scenelag hvis scenen allerede er initialisert (ellers gjør initScene det).
-    if (scene3dReady) loadScene3dLayers().catch(e => console.warn('3D-lag:', e));
-
   } catch (err) {
     console.error('loadJob:', err);
   } finally {
@@ -2156,15 +2351,40 @@ function makeBimRenderer(catFields = ['kategori']) {
     defaultLabel: 'Uklassifisert',
     defaultSymbol: fill(160, 160, 160, 80, 100, 100, 100),
     uniqueValueInfos: [
-      { value: 'vegbane',     label: 'Kjørefelt / vegbane',    symbol: fill(100, 100, 108, 220,  60,  60,  70) },
-      { value: 'skulder',     label: 'Skulder',                symbol: fill(255, 140,   0, 190, 200, 100,   0) },
+      { value: 'vegbane',     label: 'Kjørefelt / vegbane',    symbol: fill(187, 188, 188, 220, 140, 141, 141) },
+      { value: 'skulder',     label: 'Skulder',                symbol: fill(222, 166,   1, 190, 178, 133,   1) },
       { value: 'vegkant',     label: 'Vegkant / kantstein',    symbol: fill(140, 100,  50, 190, 100,  70,  30) },
-      { value: 'terreng',     label: 'Grøft / skjæring / fylling', symbol: fill(245, 212, 0, 180, 180, 150, 0) },
+      { value: 'terreng',     label: 'Grøft / skjæring / fylling', symbol: fill(255, 224, 128, 180, 204, 179, 102) },
       { value: 'underbygning', label: 'Forsterkning / underbygning', symbol: fill(200, 170, 120, 180, 150, 120, 70) },
       { value: 'gang_sykkel', label: 'Gang-/sykkelveg',        symbol: fill(220,  40, 120, 200, 160,   0,  80) },
       { value: 'rekkverk',    label: 'Rekkverk',
         symbol: { type: 'simple-line', color: [0, 160, 50, 220], width: 2, style: 'short-dash' } },
     ],
+  };
+}
+
+// 3D-variant for SceneLayer: gjenbruker 2D-rendererens valueExpression + kategorifarger,
+// men med mesh-3d-fyllsymboler (colorMixMode 'replace' → flate R700-farger på objektene).
+function makeSceneRenderer(catFields = ['kategori']) {
+  const base = makeBimRenderer(catFields);
+  const mesh = (rgb) => ({
+    type: 'mesh-3d',
+    symbolLayers: [{
+      type: 'fill',
+      material: { color: rgb, colorMixMode: 'replace' },
+      // Kanter på 3D-objektene for tydeligere lesbarhet (CAD-aktig).
+      edges: { type: 'solid', color: [40, 40, 40, 0.8], size: 0.7 },
+    }],
+  });
+  return {
+    type: 'unique-value',
+    valueExpression: base.valueExpression,
+    defaultLabel: base.defaultLabel,
+    defaultSymbol: mesh((base.defaultSymbol.color || [160, 160, 160]).slice(0, 3)),
+    uniqueValueInfos: base.uniqueValueInfos.map(u => ({
+      value: u.value, label: u.label,
+      symbol: mesh((u.symbol.color || [160, 160, 160]).slice(0, 3)),
+    })),
   };
 }
 
@@ -2215,134 +2435,6 @@ async function loadBimLayers(bimUrl) {
   document.getElementById('legend-bim').style.display = '';
   document.getElementById('cnt-bim').textContent = total.toLocaleString('nb-NO');
   document.getElementById('cnt-bim').style.display = '';
-}
-
-// ── 3D-SCENE: JOBBLAG ──────────────────────────────────────────────────
-function clearScene3dJobLayers() {
-  if (!map3d) return;
-  for (const l of [sceneLayer3d, cl3d, st3d, selected3dLayer]) {
-    if (l) map3d.remove(l);
-  }
-  sceneLayer3d = null; cl3d = null; st3d = null; selected3dLayer = null;
-}
-
-async function loadScene3dLayers() {
-  if (!scene3dReady || !map3d) return;
-  clearScene3dJobLayers();
-
-  const urls = window._jobUrls || {};
-  const sceneUrl = window._jobSceneUrl || '';
-  const FeatureLayer = window._FeatureLayer;
-  const SceneLayer   = window._SceneLayer;
-  const GraphicsLayer = window._GraphicsLayer;
-
-  const msg = document.getElementById('scene-msg');
-  msg.classList.remove('visible');
-
-  // 1) Vegmodell: SceneLayer fra bim_scene_url, ellers FeatureLayer-fallback fra bim_url.
-  if (sceneUrl) {
-    sceneLayer3d = new SceneLayer({ url: sceneUrl, title: 'Vegmodell (3D)' });
-    map3d.add(sceneLayer3d);
-  } else if (urls.bim3dUrl) {
-    sceneLayer3d = new FeatureLayer({
-      url: urls.bim3dUrl + '/0',
-      title: 'Vegmodell (3D)',
-      elevationInfo: { mode: 'absolute-height' },
-    });
-    map3d.add(sceneLayer3d);
-  } else {
-    msg.classList.add('visible');  // ingen 3D-modell tilgjengelig
-  }
-
-  // 2) Senterlinje (drapert).
-  if (urls.centerlineUrl) {
-    cl3d = new FeatureLayer({
-      url: urls.centerlineUrl + '/0',
-      elevationInfo: { mode: 'on-the-ground' },
-      renderer: {
-        type: 'simple',
-        symbol: {
-          type: 'line-3d',
-          symbolLayers: [{ type: 'line', size: 3, material: { color: [27, 94, 32] } }],
-        },
-      },
-    });
-    map3d.add(cl3d);
-  }
-
-  // 3) Stasjonspunkter (drapert).
-  if (urls.sectionsUrl) {
-    st3d = new FeatureLayer({
-      url: urls.sectionsUrl + '/0',
-      outFields: ['*'],
-      elevationInfo: { mode: 'on-the-ground' },
-      renderer: {
-        type: 'simple',
-        symbol: {
-          type: 'point-3d',
-          symbolLayers: [{
-            type: 'object', resource: { primitive: 'sphere' },
-            width: 4, height: 4, depth: 4, material: { color: [255, 255, 255, 0.9] },
-          }],
-        },
-      },
-    });
-    map3d.add(st3d);
-  }
-
-  // 4) Eget graphics-lag for valgt-markør (legges øverst).
-  selected3dLayer = new GraphicsLayer({ listMode: 'hide', elevationInfo: { mode: 'on-the-ground' } });
-  map3d.add(selected3dLayer);
-}
-
-// Beregn enhets-tangent langs senterlinja ved stasjon idx (samme logikk som 2D-tverrsnittslinja).
-function clTangent(idx) {
-  let dx, dy;
-  if (idx > 0 && idx < stations.length - 1) {
-    dx = stations[idx + 1].x - stations[idx - 1].x;
-    dy = stations[idx + 1].y - stations[idx - 1].y;
-  } else if (idx < stations.length - 1) {
-    dx = stations[idx + 1].x - stations[idx].x;
-    dy = stations[idx + 1].y - stations[idx].y;
-  } else {
-    dx = stations[idx].x - stations[idx - 1].x;
-    dy = stations[idx].y - stations[idx - 1].y;
-  }
-  const len = Math.hypot(dx, dy) || 1;
-  return { tx: dx / len, ty: dy / len };
-}
-
-function mark3dStation(s) {
-  if (!selected3dLayer || !window._Graphic) return;
-  selected3dLayer.removeAll();
-  selected3dLayer.add(new window._Graphic({
-    geometry: { type: 'point', x: s.x, y: s.y, spatialReference: { wkid: 25833 } },
-    symbol: {
-      type: 'point-3d',
-      symbolLayers: [{
-        type: 'object', resource: { primitive: 'sphere' },
-        width: 8, height: 8, depth: 8, material: { color: [224, 34, 142] },
-      }],
-    },
-  }));
-}
-
-// Fly kameraet til en stasjon: stå ~120 m bak/over langs senterlinja, tilt ned mot profilen.
-function fly3dToStation(idx) {
-  if (!view3d || !stations[idx]) return;
-  // Vent til SceneView er klar (goTo på en ikke-klar view avvises) — løses umiddelbart
-  // hvis allerede klar, så dette dekker både første veksling og senere kall.
-  view3d.when(() => {
-    const s = stations[idx];
-    const { tx, ty } = clTangent(idx);
-    const BACK = 120, UP = 70;  // meter
-    return view3d.goTo({
-      position: { x: s.x - tx * BACK, y: s.y - ty * BACK, z: (s.z || 0) + UP,
-                  spatialReference: { wkid: 25833 } },
-      heading: (Math.atan2(tx, ty) * 180 / Math.PI + 360) % 360,
-      tilt: 65,
-    }, { duration: 700, easing: 'ease-in-out' });
-  }).catch(() => {});
 }
 
 // ── STATION SELECTION ──────────────────────────────────────────────────
@@ -2485,7 +2577,7 @@ async function selectStation(idx) {
     }).catch(() => {});
   }
 
-  // 3D-synk: marker punktet alltid; fly kameraet kun når 3D er aktivt.
+  // 3D: marker valgt stasjon alltid; fly kameraet dit når 3D er aktivt.
   if (scene3dReady) {
     mark3dStation(s);
     if (viewMode === '3d') fly3dToStation(idx);
@@ -2826,7 +2918,7 @@ function drawLp() {
     { key: 'profh',     label: 'Profil h.',   hm: 3.8 },
     { key: 'terrengh',  label: 'Terreng h.',  hm: 3.8 },
   ];
-  const rowH   = ROWS.map(r => Math.round(r.hm * baseRowH));
+  const rowH   = ROWS.map(r => Math.round((lpRowCollapsed[r.key] ? 0.7 : r.hm) * baseRowH));
   const rowTop = [0];
   for (let i = 0; i < rowH.length; i++) rowTop.push(rowTop[i] + rowH[i]);
   const schemaH = rowTop[rowTop.length - 1];
@@ -3005,7 +3097,7 @@ function drawLp() {
 
     if (ri > 0) $(`<line x1="0" y1="${y0}" x2="${innerW}" y2="${y0}" stroke="${ink}0.65)" stroke-width="0.8"/>`);
 
-    if (r.key === 'profnr') {
+    if (!lpRowCollapsed[r.key]) { if (r.key === 'profnr') {
       const fs = Math.max(10, rh * 0.55);
       // Adaptivt etikett-intervall: tegn tall bare så tett som det er plass til,
       // ellers flyter de i hverandre på lange strekk. Takt-strekene beholdes hver 50 m.
@@ -3243,7 +3335,7 @@ function drawLp() {
           $(`<text x="${cx.toFixed(1)}" y="${(mid + 2).toFixed(1)}" text-anchor="middle" font-size="${valFs.toFixed(1)}" fill="${color}" font-family="var(--font-mono)" transform="rotate(-90,${cx.toFixed(1)},${mid.toFixed(1)})">${v.toFixed(2)}</text>`);
         }
       }
-    }
+    } } // end !lpRowCollapsed
   }
   $(`</g>`);
 
@@ -3282,7 +3374,11 @@ function drawLp() {
       });
       lc += `</div>`;
     }
-    gh += `<div style="position:absolute;left:0;right:0;top:${y0.toFixed(0)}px;height:${rh}px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:2px 5px 2px 2px;font-size:${labelFs}px;color:var(--ink);${ri>0?'border-top:1px solid var(--ink);':''}box-sizing:border-box;font-family:var(--font-sans)">${lc}</div>`;
+    const chev = lpRowCollapsed[r.key] ? '›' : '∨';
+    gh += `<div style="position:absolute;left:0;right:0;top:${y0.toFixed(0)}px;height:${rh}px;display:flex;align-items:center;font-size:${labelFs}px;color:var(--ink);${ri>0?'border-top:1px solid var(--ink);':''}box-sizing:border-box;font-family:var(--font-sans)">` +
+      `<button onclick="toggleLpRow('${r.key}')" title="Vis/skjul" style="flex-shrink:0;width:14px;height:100%;background:none;border:none;cursor:pointer;color:var(--ink-3);font-size:10px;padding:0;display:flex;align-items:center;justify-content:center">${chev}</button>` +
+      `<div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:2px 5px 2px 0;overflow:hidden">${lc}</div>` +
+      `</div>`;
   }
 
   // ── Inject DOM ────────────────────────────────────────────────────────
@@ -3446,8 +3542,8 @@ function mapZoom(delta) {
   if (v) v.zoom += delta;
 }
 function mapHome() {
-  if (viewMode === '3d' && view3d && st3d && st3d.fullExtent) {
-    view3d.goTo({ target: st3d.fullExtent.expand(1.5) }, { duration: 500 }).catch(() => {});
+  if (viewMode === '3d' && view3d && sceneLayer3d && sceneLayer3d.fullExtent) {
+    view3d.goTo({ target: sceneLayer3d.fullExtent.expand(1.4), tilt: 55 }, { duration: 500 }).catch(() => {});
   } else if (stLayer && stLayer.fullExtent) {
     view.goTo({ target: stLayer.fullExtent.expand(1.5) }, { duration: 500 }).catch(() => {});
   }
@@ -3510,7 +3606,7 @@ Object.assign(window, {
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
   toggleBasemapPicker, setBasemap, setViewMode,
   lpZoomIn, lpZoomOut, lpZoomReset,
-  toggleLegend,
+  toggleLegend, toggleLpRow,
 });
 </script>
 </body>

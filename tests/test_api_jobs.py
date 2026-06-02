@@ -166,7 +166,15 @@ def test_run_job_with_publish_bim_success(tmp_path):
 
     cl_stdout = json.dumps({"status": "ok", "url": "https://agol/cl/FeatureServer"})
     tp_stdout = json.dumps({"status": "ok", "url": "https://agol/tp/FeatureServer"})
-    bim_stdout = json.dumps({"status": "ok", "url": "https://agol/bim/FeatureServer"})
+    # Når scene-laget publiseres, peker "url" på SceneServer-et, mens det rene
+    # multipatch-feature-laget (25833) ligger separat i bim_3d_url. Begge må fanges.
+    bim_stdout = json.dumps({
+        "status": "ok",
+        "url": "https://agol/bim/SceneServer",
+        "bim_3d_url": "https://agol/bim/FeatureServer",
+        "bim_scene_url": "https://agol/bim/SceneServer",
+        "bim_plan_url": "https://agol/bimplan/FeatureServer",
+    })
 
     mock_proc_cl = MagicMock(stdout=cl_stdout, returncode=0)
     mock_proc_tp = MagicMock(stdout=tp_stdout, returncode=0)
@@ -191,7 +199,9 @@ def test_run_job_with_publish_bim_success(tmp_path):
 
     state = get_job(job_id)
     assert state.status == "done"
-    assert state.bim_url == "https://agol/bim/FeatureServer"
+    assert state.bim_url == "https://agol/bim/SceneServer"
+    assert state.bim_3d_url == "https://agol/bim/FeatureServer"
+    assert state.bim_scene_url == "https://agol/bim/SceneServer"
     assert state.centerline_url == "https://agol/cl/FeatureServer"
     assert state.sections_url == "https://agol/tp/FeatureServer"
 

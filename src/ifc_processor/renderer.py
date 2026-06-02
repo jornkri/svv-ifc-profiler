@@ -891,7 +891,7 @@ def render_longitudinal_profile_svg(
     fig_h = 10.0
 
     fig = plt.figure(figsize=(fig_w, fig_h), dpi=96)
-    gs = fig.add_gridspec(2, 1, height_ratios=[3, 2], hspace=0.02)
+    gs = fig.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.02)
     ax_prof = fig.add_subplot(gs[0])
     ax_rub = fig.add_subplot(gs[1], sharex=ax_prof)
 
