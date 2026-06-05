@@ -1690,6 +1690,7 @@ function toggleTheme() {
   darkMode = !darkMode;
   document.documentElement.dataset.theme = darkMode ? 'dark' : '';
   setBasemap(darkMode ? 'mork' : lightBasemapId);
+  if (lpOpen) drawLp();
 }
 
 // ── AUTH ───────────────────────────────────────────────────────────────
@@ -1974,7 +1975,8 @@ function renderMeasureOverlay() {
       'fill-opacity': A.loose ? 0 : 1, 'stroke-dasharray': A.loose ? '3 2' : 'none'});
     const t = mkEl('text', {x: A.svgX + 5, y: A.svgY - 5,
       'font-size': 9, fill: '#e27500',
-      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700'});
+      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700',
+      stroke: '#fff', 'stroke-width': 2, 'paint-order': 'stroke fill'});
     t.textContent = '1';
   }
   if (B) {
@@ -1984,7 +1986,8 @@ function renderMeasureOverlay() {
       'fill-opacity': B.loose ? 0 : 1, 'stroke-dasharray': B.loose ? '3 2' : 'none'});
     const t = mkEl('text', {x: B.svgX + 5, y: B.svgY - 5,
       'font-size': 9, fill: '#e27500',
-      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700'});
+      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700',
+      stroke: '#fff', 'stroke-width': 2, 'paint-order': 'stroke fill'});
     t.textContent = '2';
   }
   if (A && B) {
