@@ -1,5 +1,6 @@
 # tests/test_terrain_dem_endpoint.py
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +22,7 @@ def _make_job_with_dem(job_id: str):
     return out
 
 
-def test_terrain_dem_json_and_bin_served(tmp_path):
+def test_terrain_dem_json_and_bin_served():
     out = _make_job_with_dem("testjob-dem")
     try:
         r = client.get("/api/jobs/testjob-dem/terrain-dem")
@@ -34,12 +35,10 @@ def test_terrain_dem_json_and_bin_served(tmp_path):
         vals = np.frombuffer(rb.content, dtype="<f4")
         assert np.array_equal(vals, np.array([1, 2, 3, 4], dtype="<f4"))
     finally:
-        for f in out.iterdir():
-            f.unlink()
-        out.rmdir()
-        out.parent.rmdir()
+        shutil.rmtree(out.parent)
 
 
 def test_terrain_dem_404_when_missing():
     r = client.get("/api/jobs/nonexistent-job/terrain-dem")
     assert r.status_code == 404
+    assert client.get("/api/jobs/nonexistent-job/terrain-dem.bin").status_code == 404

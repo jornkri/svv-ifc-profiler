@@ -372,11 +372,11 @@ def get_svg(job_id: str, filename: str) -> FileResponse:
 def get_terrain_dem_header(job_id: str) -> FileResponse:
     """Serve ferdig-grunn-DEM-headeren (terrain_dem.json) for en jobb."""
     output_dir = (UPLOAD_DIR / job_id / "output").resolve()
-    path = (output_dir / "terrain_dem.json").resolve()
     try:
-        path.relative_to(output_dir)
+        output_dir.relative_to(UPLOAD_DIR.resolve())
     except ValueError:
         raise HTTPException(403, "Ikke tillatt")
+    path = output_dir / "terrain_dem.json"
     if not path.exists():
         raise HTTPException(404, "Ingen DEM for jobben")
     return FileResponse(str(path), media_type="application/json")
@@ -386,11 +386,11 @@ def get_terrain_dem_header(job_id: str) -> FileResponse:
 def get_terrain_dem_bin(job_id: str) -> FileResponse:
     """Serve ferdig-grunn-DEM-rasteret (terrain_dem.bin, float32 LE) for en jobb."""
     output_dir = (UPLOAD_DIR / job_id / "output").resolve()
-    path = (output_dir / "terrain_dem.bin").resolve()
     try:
-        path.relative_to(output_dir)
+        output_dir.relative_to(UPLOAD_DIR.resolve())
     except ValueError:
         raise HTTPException(403, "Ikke tillatt")
+    path = output_dir / "terrain_dem.bin"
     if not path.exists():
         raise HTTPException(404, "Ingen DEM for jobben")
     return FileResponse(str(path), media_type="application/octet-stream")

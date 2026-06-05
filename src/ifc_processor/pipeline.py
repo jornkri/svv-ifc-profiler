@@ -282,7 +282,8 @@ def run_pipeline(
         include_lengdeprofil: Generer lengdeprofil-SVG.
 
     Returns:
-        Dict med nøklene "svgs", "centerline", "metadata", "stations_json", "station_labels_json".
+        Dict med nøklene "svgs", "centerline", "metadata", "stations_json",
+        "station_labels_json", "lengdeprofil" og "terrain_dem".
 
     Raises:
         ValueError: Hvis ingen senterlinje kan bestemmes.
