@@ -16,6 +16,7 @@ from .ifc_reader import TINLayer, read_ifc_tins
 from .longitudinal_profile import generate_longitudinal_profile
 from .normal_section import compute_normal_section
 from .renderer import render_cross_section_svg, render_longitudinal_profile_svg, render_normal_section_svg
+from .finished_ground import build_finished_ground_dem
 from .terrain_sampler import fetch_terrain_profile, terrain_to_segments
 
 logger = logging.getLogger(__name__)
@@ -502,6 +503,15 @@ def run_pipeline(
         except Exception as exc:
             logger.warning("Lengdeprofil feilet: %s", exc)
 
+    # Ferdig-grunn-DEM (cut/fill) for 3D-scenens elevasjon — best-effort.
+    terrain_dem_path: str | None = None
+    try:
+        _dem = build_finished_ground_dem(tins, centerline, output_dir)
+        if _dem is not None:
+            terrain_dem_path = str(_dem)
+    except Exception as exc:
+        logger.warning("Ferdig-grunn-DEM feilet (hoppes over): %s", exc)
+
     logger.info("Pipeline ferdig. %d SVGer → %s", len(svg_paths), output_dir)
     return {
         "svgs": svg_paths,
@@ -510,4 +520,5 @@ def run_pipeline(
         "stations_json": str(stations_json_path),
         "station_labels_json": str(output_dir / "station_labels.json"),
         "lengdeprofil": lp_svg_path,
+        "terrain_dem": terrain_dem_path,
     }
