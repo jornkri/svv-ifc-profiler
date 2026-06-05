@@ -368,6 +368,34 @@ def get_svg(job_id: str, filename: str) -> FileResponse:
     return FileResponse(str(svg_path), media_type="image/svg+xml")
 
 
+@app.get("/api/jobs/{job_id}/terrain-dem")
+def get_terrain_dem_header(job_id: str) -> FileResponse:
+    """Serve ferdig-grunn-DEM-headeren (terrain_dem.json) for en jobb."""
+    output_dir = (UPLOAD_DIR / job_id / "output").resolve()
+    path = (output_dir / "terrain_dem.json").resolve()
+    try:
+        path.relative_to(output_dir)
+    except ValueError:
+        raise HTTPException(403, "Ikke tillatt")
+    if not path.exists():
+        raise HTTPException(404, "Ingen DEM for jobben")
+    return FileResponse(str(path), media_type="application/json")
+
+
+@app.get("/api/jobs/{job_id}/terrain-dem.bin")
+def get_terrain_dem_bin(job_id: str) -> FileResponse:
+    """Serve ferdig-grunn-DEM-rasteret (terrain_dem.bin, float32 LE) for en jobb."""
+    output_dir = (UPLOAD_DIR / job_id / "output").resolve()
+    path = (output_dir / "terrain_dem.bin").resolve()
+    try:
+        path.relative_to(output_dir)
+    except ValueError:
+        raise HTTPException(403, "Ikke tillatt")
+    if not path.exists():
+        raise HTTPException(404, "Ingen DEM for jobben")
+    return FileResponse(str(path), media_type="application/octet-stream")
+
+
 @app.get("/api/jobs/{job_id}/station-labels")
 def get_station_labels(job_id: str) -> list[dict]:
     """Returner IfcReferent-stasjoneringsmerker for jobben (tom liste hvis ikke IFC-CL)."""
