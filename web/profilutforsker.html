@@ -586,16 +586,13 @@ html[data-theme="dark"] #cs-svg-host > svg {
 .snap-preview.hidden { opacity: 0; }
 .snap-preview-card {
   width: 204px;
-  background: rgba(255,255,255,0.96);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   padding: 9px 10px 8px;
-  box-shadow: 0 4px 14px rgba(8,20,36,.10), 0 1px 3px rgba(8,20,36,.06);
+  box-shadow: var(--shadow);
   transform: translateY(-50%);
 }
-html[data-theme="dark"] .snap-preview-card { background: rgba(18,28,37,0.95); }
 .snap-preview-hd {
   display: flex; align-items: baseline; justify-content: space-between;
   margin-bottom: 6px; padding-bottom: 6px;
@@ -622,7 +619,7 @@ html[data-theme="dark"] .snap-preview-svg-el { background: var(--paper-2); }
 .snap-preview-ft kbd {
   font-family: var(--font-mono); font-size: 9.5px;
   padding: 1px 5px; border: 1px solid var(--line);
-  border-radius: 3px; background: var(--card); color: var(--ink-2); line-height: 1.2;
+  border-radius: var(--r-sm); background: var(--card); color: var(--ink-2); line-height: 1.2;
 }
 
 /* ── DRAWER BOTTOM (lengdeprofil) ── */
@@ -983,7 +980,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         <svg class="snap-preview-svg-el" viewBox="0 0 204 52" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <pattern id="spgrid" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 10 0 H 0 V 10" fill="none" stroke="rgba(11,58,99,0.07)" stroke-width="0.5"/>
+              <path d="M 10 0 H 0 V 10" fill="none" stroke="rgba(68,79,85,0.08)" stroke-width="0.5"/>
             </pattern>
           </defs>
           <rect width="204" height="52" fill="url(#spgrid)"/>
