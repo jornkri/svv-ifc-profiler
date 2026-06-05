@@ -1158,6 +1158,10 @@ async function makeCorridorElevationLayer(jobId) {
 
   const CorridorElevationLayer = BaseElevationLayer.createSubclass({
     load: function () {
+      // Intern GeocacheTerreng-instans: fetchTile kompositterer korridor-DEM-en
+      // oppå ekte terrengtiles (Ground rendrer IKKE noDataValue-gjennomfall selv).
+      this._base = new window._ElevationLayer({ url: SCENE_TERRAIN_URL });
+      this.addResolvingPromise(this._base.load());
       this.tileInfo = TileInfo.fromJSON(GEOCACHE_TILEINFO);
       this.spatialReference = { wkid: 25833 };
       this.fullExtent = {
@@ -1166,26 +1170,33 @@ async function makeCorridorElevationLayer(jobId) {
       };
     },
     fetchTile: function (level, row, col, options) {
-      const lod = GEOCACHE_TILEINFO.lods.find(l => l.level === level)
-                  || GEOCACHE_TILEINFO.lods[GEOCACHE_TILEINFO.lods.length - 1];
-      const res = lod.resolution;
-      const size = GEOCACHE_TILEINFO.size[0];          // 256
-      const w = size + 1, h = size + 1;                 // 257x257 posts
-      const ox = GEOCACHE_TILEINFO.origin.x;
-      const oy = GEOCACHE_TILEINFO.origin.y;
-      const tileMinX = ox + col * size * res;
-      const tileMaxY = oy - row * size * res;
-      const values = new Float32Array(w * h);
-      const NO = nodata;   // samme sentinel som DEM-headeren
-      for (let j = 0; j < h; j++) {
-        const wy = tileMaxY - j * res;
-        for (let i = 0; i < w; i++) {
-          const wx = tileMinX + i * res;
-          const z = sample(wx, wy);
-          values[j * w + i] = Number.isNaN(z) ? NO : z;
+      // Hent ekte terrengtile (samme tile-skjema → samme level/row/col) og
+      // overskriv kun postene der korridor-DEM-en har data.
+      return this._base.fetchTile(level, row, col, options).then((data) => {
+        const lod = GEOCACHE_TILEINFO.lods.find((l) => l.level === level);
+        if (!lod) return data;
+        const res = lod.resolution;
+        const size = GEOCACHE_TILEINFO.size[0];          // 256
+        const ox = GEOCACHE_TILEINFO.origin.x;
+        const oy = GEOCACHE_TILEINFO.origin.y;
+        const tileMinX = ox + col * size * res;
+        const tileMaxY = oy - row * size * res;
+        // Hopp raskt over tiles helt utenfor DEM-utstrekningen.
+        const demMaxX = xmin + ncols * cell_m;
+        if (tileMinX + size * res < xmin || tileMinX > demMaxX ||
+            tileMaxY - size * res > ymax || tileMaxY < ymin) return data;
+        const w = data.width, h = data.height;            // bruk basens faktiske post-antall
+        const stepX = (size * res) / (w - 1);
+        const stepY = (size * res) / (h - 1);
+        for (let j = 0; j < h; j++) {
+          const wy = tileMaxY - j * stepY;
+          for (let i = 0; i < w; i++) {
+            const z = sample(tileMinX + i * stepX, wy);
+            if (!Number.isNaN(z)) data.values[j * w + i] = z;
+          }
         }
-      }
-      return { values, width: w, height: h, maxZError: 0, noDataValue: NO };
+        return data;
+      });
     },
   });
 
