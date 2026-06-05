@@ -3820,18 +3820,20 @@ function updateViewPadding() {
   view.padding = { top: 0, left: 0, right, bottom };
 }
 
-// Lift the map legend above the lengdeprofil panel so it stays visible when the
-// panel is open/expanded. (The horizontal offset for the side drawer is CSS.)
+// Lift the map legend and map-info above the lengdeprofil panel so they stay
+// visible when the panel is open/expanded. (Horizontal offset is CSS.)
 function updateLegendPos() {
   const legend = document.getElementById('map-legend');
-  if (!legend) return;
+  const info   = document.getElementById('map-info');
+  if (!legend && !info) return;
   let bottom = 14;
   const lp = document.getElementById('lp');
   if (lpOpen && lp) {
     // height is stable during the open/close transform animation
     bottom = lp.getBoundingClientRect().height + 12;
   }
-  legend.style.bottom = bottom + 'px';
+  if (legend) legend.style.bottom = bottom + 'px';
+  if (info)   info.style.bottom   = bottom + 'px';
 }
 
 // Minimer/utvid tegnforklaringen. Beholder header (tittel + knapp) synlig;
