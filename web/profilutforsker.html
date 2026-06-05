@@ -1210,6 +1210,8 @@ async function makeCorridorElevationLayer(jobId) {
 }
 
 const BASEMAPS = [
+  { id: 'trafikk', label: 'Trafikk',  type: 'tile', swatch: '#dfe7ee',
+    url: 'https://services.geodataonline.no/arcgis/rest/services/Trafikkportalen/GeocacheTrafikkJPG/MapServer' },
   { id: 'kanvas', label: 'Kanvas',    type: 'vtl',  swatch: '#e8e4d8',
     url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer' },
   { id: 'graa',   label: 'Gråtone',  type: 'vtl',  swatch: '#c8c8c8',
@@ -1219,6 +1221,23 @@ const BASEMAPS = [
   { id: 'mork',   label: 'Mørk',     type: 'vtl',  swatch: '#1a2630',
     url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvasMork/VectorTileServer' },
 ];
+
+// Kartverket topo (WMTS, EPSG:25833) overtar automatisk som bakgrunn når man
+// zoomer forbi denne skalaen — Trafikkportalen-cachen stopper på 1:1250 og
+// mangler detalj; Kartverket har tiles ned til ~1:300. Gjelder kun 'trafikk'.
+const KV_TOPO_SWITCH_SCALE = 5000;
+const KV_TOPO_WMTS = {
+  url: 'https://cache.kartverket.no/v1/service',
+  layerId: 'topo', tileMatrixSetId: 'utm33n', styleId: 'default',
+};
+
+// Zoom-nivåer for kartet: Geocache-skjemaet (1:81 920 000 halvert per nivå)
+// utvidet to nivåer forbi Trafikkportalens dypeste (1:1250, nivå 16), slik at
+// Kartverket-topoen kan utnyttes ved dyp zoom (nivå 18 ≈ 1:312).
+const MAP_LODS = Array.from({ length: 19 }, (_, level) => {
+  const scale = 81920000 / 2 ** level;
+  return { level, scale, resolution: scale * 0.0254 / 96 };
+});
 
 // ── STATE ──────────────────────────────────────────────────────────────
 let view = null;
@@ -1263,8 +1282,10 @@ let layerVis = { centerline: true, stations: true, bim: true };
 let currentToken = null;
 let orgUrl = 'https://www.arcgis.com';
 let darkMode = false;
-let activeBasemapId = 'kanvas';
-let lightBasemapId  = 'kanvas';
+let activeBasemapId = 'trafikk';
+let lightBasemapId  = 'trafikk';
+let kvTopoLayer = null;       // Kartverket topo (WMTS) i aktiv basemap, ellers null
+let trafikkBaseLayer = null;  // Trafikkportalen-laget i aktiv basemap, ellers null
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
 let currentCoordMap = null;
@@ -1536,13 +1557,45 @@ async function updateScene3dLayer() {
 }
 
 // ── BASEMAP ────────────────────────────────────────────────────────────
+// Bygger Basemap for et BASEMAPS-oppslag. Trafikk-bakgrunnen får Kartverket
+// topo (WMTS) med som skjult detaljlag — updateAutoTopo() veksler synlighet
+// etter kartskalaen, så byttet skjer uten å re-instansiere basemapen.
+function makeBasemap(cfg) {
+  trafikkBaseLayer = null;
+  kvTopoLayer = null;
+  const base = cfg.type === 'tile'
+    ? new window._TileLayer({ url: cfg.url })
+    : new window._VectorTileLayer({ url: cfg.url });
+  const baseLayers = [base];
+  if (cfg.id === 'trafikk') {
+    trafikkBaseLayer = base;
+    kvTopoLayer = new window._WMTSLayer({
+      url: KV_TOPO_WMTS.url,
+      activeLayer: {
+        id: KV_TOPO_WMTS.layerId,
+        tileMatrixSetId: KV_TOPO_WMTS.tileMatrixSetId,
+        styleId: KV_TOPO_WMTS.styleId,
+      },
+      visible: false,
+    });
+    baseLayers.push(kvTopoLayer);
+    updateAutoTopo();
+  }
+  return new window._Basemap({ baseLayers, title: cfg.label });
+}
+
+// Veksler Trafikk ↔ Kartverket topo etter skala (no-op for andre bakgrunnskart).
+function updateAutoTopo() {
+  if (!kvTopoLayer || !view) return;
+  const detail = view.scale < KV_TOPO_SWITCH_SCALE;
+  kvTopoLayer.visible = detail;
+  trafikkBaseLayer.visible = !detail;
+}
+
 function setBasemap(id) {
   const cfg = BASEMAPS.find(b => b.id === id);
   if (!cfg || !window._map) return;
-  const layer = cfg.type === 'tile'
-    ? new window._TileLayer({ url: cfg.url })
-    : new window._VectorTileLayer({ url: cfg.url });
-  window._map.basemap = new window._Basemap({ baseLayers: [layer], title: cfg.label });
+  window._map.basemap = makeBasemap(cfg);
   activeBasemapId = id;
   if (id !== 'mork') lightBasemapId = id;
   document.querySelectorAll('.basemap-option').forEach(el => {
@@ -2001,7 +2054,7 @@ function makePillUrl(text) {
 
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
-  const [Map, MapView, SceneView, VectorTileLayer, TileLayer, FeatureLayer,
+  const [Map, MapView, SceneView, VectorTileLayer, TileLayer, WMTSLayer, FeatureLayer,
          SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
@@ -2009,6 +2062,7 @@ try {
       '@arcgis/core/views/SceneView.js',
       '@arcgis/core/layers/VectorTileLayer.js',
       '@arcgis/core/layers/TileLayer.js',
+      '@arcgis/core/layers/WMTSLayer.js',
       '@arcgis/core/layers/FeatureLayer.js',
       '@arcgis/core/layers/SceneLayer.js',
       '@arcgis/core/layers/ElevationLayer.js',
@@ -2025,6 +2079,7 @@ try {
   window._FeatureLayer = FeatureLayer;
   window._VectorTileLayer = VectorTileLayer;
   window._TileLayer = TileLayer;
+  window._WMTSLayer = WMTSLayer;
   window._Basemap = Basemap;
   window._SceneView = SceneView;
   window._SceneLayer = SceneLayer;
@@ -2035,24 +2090,25 @@ try {
   window._Map = Map;
   window._GraphicsLayer = GraphicsLayer;
 
-  const kanvasCfg = BASEMAPS.find(b => b.id === 'kanvas');
-  const basemap = new Basemap({
-    baseLayers: [new VectorTileLayer({ url: kanvasCfg.url })],
-    title: kanvasCfg.label,
-  });
-
-  const map = new Map({ basemap });
+  const map = new Map({ basemap: makeBasemap(BASEMAPS.find(b => b.id === activeBasemapId)) });
 
   view = new MapView({
     container: document.getElementById('map-2d'),
     map,
     center: [10.75, 59.9],
     zoom: 5,
+    // Eksplisitte LOD-er: ellers arver viewet Trafikkportalens tile-skjema og
+    // stopper på 1:1250 — vi vil kunne zoome dypere på Kartverket-topoen.
+    constraints: { lods: MAP_LODS },
   });
   // Skjul standard zoom-widget (egne zoom-knapper finnes oppe til høyre).
   view.ui.remove('zoom');
 
+  // Auto-bytte Trafikk ↔ Kartverket topo når skalaen krysser terskelen.
+  view.watch('scale', updateAutoTopo);
+
   view.when(async () => {
+    updateAutoTopo();
     buildBasemapPicker();
     await initAuth();
     loadJobs();
