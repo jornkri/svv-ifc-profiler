@@ -247,7 +247,7 @@ body {
 .lc-toggle svg { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
 .layer-card.collapsed .lc-body { display: none; }
 .layer-card.collapsed .lc-toggle svg { transform: rotate(180deg); }
-.lc-body { overflow-y: auto; border-top: 1px solid var(--line-2); }
+.lc-body { flex: 1 1 0; min-height: 0; overflow-y: auto; border-top: 1px solid var(--line-2); }
 .lc-sub { margin: 0; padding: 8px 12px 2px; font-size: 11px; color: var(--ink-3); }
 
 .sb-group { padding: 8px 0; border-bottom: 1px solid var(--line-2); }
@@ -807,6 +807,8 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 <!-- STAGE -->
 <div class="stage">
 
+  <!-- MAP AREA -->
+  <div class="map-area" id="map-area">
     <aside class="layer-card" id="layer-card">
       <div class="lc-head" onclick="toggleLayerCard()">
         <h2>Lag <span class="pill" id="sb-pill" style="display:none">Live</span></h2>
@@ -844,9 +846,6 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         </div>
       </div>
     </aside>
-
-  <!-- MAP AREA -->
-  <div class="map-area" id="map-area">
     <div id="map-container">
       <div id="map-2d"></div>
       <div id="map-3d"></div>
