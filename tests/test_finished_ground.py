@@ -24,3 +24,25 @@ def test_rasterize_keeps_topmost_z_on_overlap():
     high = _flat_triangle(z=9.0, x0=0.0, y0=0.0, size=4.0)
     grid, _ = rasterize_tins([low, high], xmin=0.0, ymin=0.0, xmax=4.0, ymax=4.0, cell_m=1.0)
     assert grid[3, 0] == 9.0  # høyeste vinner uansett rekkefølge
+
+
+import json
+from src.ifc_processor.finished_ground import write_dem
+
+
+def test_write_dem_roundtrips_binary_and_header(tmp_path):
+    grid = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    header = {"xmin": 10.0, "ymin": 20.0, "cell_m": 0.5,
+              "ncols": 2, "nrows": 2, "nodata": NODATA}
+    bin_path, json_path = write_dem(grid, header, tmp_path)
+
+    assert bin_path.name == "terrain_dem.bin"
+    assert json_path.name == "terrain_dem.json"
+
+    raw = np.fromfile(bin_path, dtype="<f4")
+    assert np.array_equal(raw, grid.ravel(order="C"))
+
+    meta = json.loads(json_path.read_text(encoding="utf-8"))
+    assert meta["wkid"] == 25833
+    assert meta["ncols"] == 2 and meta["nrows"] == 2
+    assert meta["cell_m"] == 0.5

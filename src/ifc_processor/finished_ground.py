@@ -7,7 +7,9 @@ Profilutforsker-3D, så vegmodellen hviler riktig (cut/fill).
 """
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 import numpy as np
 
@@ -105,3 +107,17 @@ def _splat_triangle(
 
     sub = grid[r_lo:r_hi, c_lo:c_hi]
     np.maximum(sub, np.where(inside, z, NODATA), out=sub)
+
+
+def write_dem(grid: np.ndarray, header: dict, output_dir) -> tuple[Path, Path]:
+    """Skriv grid til terrain_dem.bin (little-endian float32, row-major C-order,
+    rad 0 = nordligst) og header til terrain_dem.json (med wkid=25833)."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    bin_path = output_dir / "terrain_dem.bin"
+    json_path = output_dir / "terrain_dem.json"
+
+    grid.astype("<f4").tofile(bin_path)
+    meta = {"wkid": 25833, **header}
+    json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return bin_path, json_path
