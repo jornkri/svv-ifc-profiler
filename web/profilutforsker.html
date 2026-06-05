@@ -1916,7 +1916,7 @@ function renderHoverOverlay(snap, coordMap) {
   lines.forEach((txt, i) => {
     const t = mkEl('text', {x: tipX + 6, y: tipY + 13 + i * 13,
       'font-size': 10, fill: 'white',
-      'font-family': 'Inter Tight, system-ui, sans-serif',
+      'font-family': 'Mulish, system-ui, sans-serif',
       'font-weight': i === 0 ? '600' : '400'});
     t.textContent = txt;
   });
@@ -1969,27 +1969,27 @@ function renderMeasureOverlay() {
 
   if (A) {
     mkEl('circle', {cx: A.svgX, cy: A.svgY, r: 4,
-      fill: A.loose ? '#e8c94a' : '#c25a1f',
+      fill: A.loose ? '#e8c94a' : '#e27500',
       stroke: 'white', 'stroke-width': 1.2,
       'fill-opacity': A.loose ? 0 : 1, 'stroke-dasharray': A.loose ? '3 2' : 'none'});
     const t = mkEl('text', {x: A.svgX + 5, y: A.svgY - 5,
-      'font-size': 9, fill: '#c25a1f',
-      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+      'font-size': 9, fill: '#e27500',
+      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700'});
     t.textContent = '1';
   }
   if (B) {
     mkEl('circle', {cx: B.svgX, cy: B.svgY, r: 4,
-      fill: B.loose ? '#e8c94a' : '#c25a1f',
+      fill: B.loose ? '#e8c94a' : '#e27500',
       stroke: 'white', 'stroke-width': 1.2,
       'fill-opacity': B.loose ? 0 : 1, 'stroke-dasharray': B.loose ? '3 2' : 'none'});
     const t = mkEl('text', {x: B.svgX + 5, y: B.svgY - 5,
-      'font-size': 9, fill: '#c25a1f',
-      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+      'font-size': 9, fill: '#e27500',
+      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700'});
     t.textContent = '2';
   }
   if (A && B) {
     mkEl('line', {x1: A.svgX, y1: A.svgY, x2: B.svgX, y2: B.svgY,
-      stroke: '#c25a1f', 'stroke-width': 1, 'stroke-dasharray': '6 3'});
+      stroke: '#e27500', 'stroke-width': 1, 'stroke-dasharray': '6 3'});
     const mx = (A.svgX + B.svgX) / 2, my = (A.svgY + B.svgY) / 2;
     const dx = Math.abs(B.x_m - A.x_m);
     const dz = B.z_m - A.z_m;
@@ -1997,9 +1997,9 @@ function renderMeasureOverlay() {
     const d3 = Math.hypot(dx, dz);
     const lbl = dx.toFixed(2) + ' m';
     const lW = lbl.length * 6 + 14;
-    mkEl('rect', {x: mx - lW / 2, y: my - 10, width: lW, height: 14, rx: 3, fill: '#c25a1f'});
+    mkEl('rect', {x: mx - lW / 2, y: my - 10, width: lW, height: 14, rx: 3, fill: '#e27500'});
     const t = mkEl('text', {x: mx, y: my - 0.5, 'font-size': 9, fill: 'white', 'text-anchor': 'middle',
-      'font-family': 'Inter Tight, system-ui, sans-serif', 'font-weight': '700'});
+      'font-family': 'Mulish, system-ui, sans-serif', 'font-weight': '700'});
     t.textContent = lbl;
     if (!A.loose && !B.loose) {
       document.getElementById('mv-dx').textContent = dx.toFixed(2) + ' m';
@@ -2094,7 +2094,7 @@ function makePillUrl(text) {
   const pw = Math.round(text.length * 7.6 + 22);
   const ph = 26;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}" viewBox="0 0 ${pw} ${ph}">` +
-    `<rect width="${pw}" height="${ph}" rx="13" fill="#1B5E20"/>` +
+    `<rect width="${pw}" height="${ph}" rx="13" fill="#444f55"/>` +
     `<text x="${pw / 2}" y="17" font-family="system-ui,ui-sans-serif,sans-serif" font-size="11" font-weight="700" fill="white" text-anchor="middle">${text}</text>` +
     `</svg>`;
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -3202,7 +3202,7 @@ function drawLp() {
 
   // Colors — R700 lengdeprofil er rent svart-hvitt: linjetype og -tykkelse bærer
   // betydningen, ikke farge. Kun den interaktive markøren (CC) beholder kulør.
-  const ink = isDark ? 'rgba(232,237,242,' : 'rgba(14,26,38,';
+  const ink = isDark ? 'rgba(236,236,236,' : 'rgba(68,79,85,';
   const CR  = `${ink}1)`;     // prosjektert profil — kraftig heltrukken
   const CT  = `${ink}0.9)`;   // eksisterende terreng — tynnere, med terrengsymbol
   const CC  = '#e0228e';      // interaktiv markør (stasjon under peker)
