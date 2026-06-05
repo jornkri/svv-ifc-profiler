@@ -46,3 +46,41 @@ def test_write_dem_roundtrips_binary_and_header(tmp_path):
     assert meta["wkid"] == 25833
     assert meta["ncols"] == 2 and meta["nrows"] == 2
     assert meta["cell_m"] == 0.5
+
+
+from dataclasses import dataclass
+from src.ifc_processor.finished_ground import build_finished_ground_dem
+
+
+@dataclass
+class _FakeTIN:
+    road_class: str
+    triangles: np.ndarray
+
+
+@dataclass
+class _FakeCL:
+    points: np.ndarray
+    source_epsg: int = 25833
+
+
+def test_build_excludes_terrain_class_and_writes_dem(tmp_path):
+    # Veg-trekant rundt (100,200) i 25833, z=50.
+    road = _FakeTIN("kjørefelt", np.array([[[98, 198, 50.0], [104, 198, 50.0], [98, 204, 50.0]]]))
+    # Terreng-trekant skal IKKE påvirke griddet (høyere z, men ekskluderes).
+    terr = _FakeTIN("terreng", np.array([[[98, 198, 999.0], [104, 198, 999.0], [98, 204, 999.0]]]))
+    cl = _FakeCL(points=np.array([[100.0, 200.0, 50.0], [101.0, 201.0, 50.0]]))
+
+    bin_path = build_finished_ground_dem([road, terr], cl, tmp_path, cell_m=1.0, margin_m=5.0)
+    assert bin_path is not None and bin_path.exists()
+
+    raw = np.fromfile(bin_path, dtype="<f4")
+    present = raw[raw != NODATA]
+    assert present.size > 0
+    assert np.all(present == 50.0)  # kun veg-z, aldri terreng-z=999
+
+
+def test_build_returns_none_when_no_road_tins(tmp_path):
+    terr = _FakeTIN("terreng", np.array([[[0, 0, 1.0], [1, 0, 1.0], [0, 1, 1.0]]]))
+    cl = _FakeCL(points=np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]]))
+    assert build_finished_ground_dem([terr], cl, tmp_path, cell_m=1.0) is None

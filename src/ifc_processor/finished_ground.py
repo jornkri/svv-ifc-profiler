@@ -121,3 +121,66 @@ def write_dem(grid: np.ndarray, header: dict, output_dir) -> tuple[Path, Path]:
     meta = {"wkid": 25833, **header}
     json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return bin_path, json_path
+
+
+# road_class-verdier som IKKE er del av ferdig grunn (eksisterende terreng).
+_EXCLUDE_CLASSES = {"terreng"}
+
+DEFAULT_CELL_M = 0.5
+DEFAULT_MARGIN_M = 30.0  # romslig nok til å dekke skråninger ut til dagline
+
+
+def _to_25833_xy(tris: np.ndarray, source_epsg: int) -> np.ndarray:
+    """Transformer (N,3,3)-trekanters x,y fra source_epsg til 25833 (z uendret)."""
+    if source_epsg == 25833:
+        return tris
+    from pyproj import Transformer
+    tf = Transformer.from_crs(source_epsg, 25833, always_xy=True)
+    out = tris.copy().astype(float)
+    flat = out.reshape(-1, 3)
+    x, y = tf.transform(flat[:, 0], flat[:, 1])
+    flat[:, 0] = x
+    flat[:, 1] = y
+    return out.reshape(tris.shape)
+
+
+def build_finished_ground_dem(
+    tins,
+    centerline,
+    output_dir,
+    *,
+    cell_m: float = DEFAULT_CELL_M,
+    margin_m: float = DEFAULT_MARGIN_M,
+) -> Path | None:
+    """Bygg ferdig-grunn-DEM fra veg-TIN-ene og skriv terrain_dem.{bin,json}.
+
+    Returnerer Path til .bin, eller None hvis ingen veg-geometri finnes.
+    """
+    src_epsg = getattr(centerline, "source_epsg", 25833)
+    road_tris = [
+        _to_25833_xy(t.triangles, src_epsg)
+        for t in tins
+        if t.road_class not in _EXCLUDE_CLASSES
+        and t.triangles is not None and len(t.triangles) > 0
+    ]
+    if not road_tris:
+        logger.info("Ingen veg-TIN-er — ferdig-grunn-DEM hoppes over")
+        return None
+
+    all_xy = np.concatenate([t.reshape(-1, 3) for t in road_tris])
+    xmin = float(all_xy[:, 0].min()) - margin_m
+    xmax = float(all_xy[:, 0].max()) + margin_m
+    ymin = float(all_xy[:, 1].min()) - margin_m
+    ymax = float(all_xy[:, 1].max()) + margin_m
+
+    grid, header = rasterize_tins(
+        road_tris, xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax, cell_m=cell_m
+    )
+    if not np.any(grid != NODATA):
+        logger.info("Ferdig-grunn-DEM ble tom (ingen dekkede celler)")
+        return None
+
+    bin_path, _ = write_dem(grid, header, output_dir)
+    logger.info("Ferdig-grunn-DEM skrevet: %s (%dx%d, %.2f m)",
+                bin_path, header["ncols"], header["nrows"], cell_m)
+    return bin_path
