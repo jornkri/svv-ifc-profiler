@@ -55,7 +55,6 @@
   --r:    2px;
   --r-lg: 4px;
   --topbar-h: 44px;
-  --sidebar-w: 280px;
   --layer-card-w: 300px;
   --drawer-right-w: 460px;
   --drawer-bottom-h: 480px;
@@ -209,60 +208,77 @@ body {
   background: var(--map-bg);
 }
 
-/* ── SIDEBAR ── */
-.sidebar {
-  width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+/* ── FLYTENDE LAG-KORT ── */
+.layer-card {
+  position: absolute; top: 14px; left: 14px; z-index: 6;
+  width: var(--layer-card-w);
+  max-height: calc(100% - 28px);
   background: var(--card);
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
   display: flex; flex-direction: column;
-  z-index: 5;
-  transition: width .25s, flex-basis .25s;
+  overflow: hidden;
 }
-.sidebar.collapsed { width: 0; flex: 0 0 0; overflow: hidden; border-right: 0; }
-
-.sb-head {
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--line-2);
+.lc-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer; user-select: none;
   flex-shrink: 0;
 }
-.sb-head h2 {
-  margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.005em;
-  display: flex; align-items: center; justify-content: space-between;
-  white-space: nowrap;
+.lc-head h2 {
+  margin: 0; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
 }
-.sb-head .pill {
+.lc-head .pill {
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em;
-  padding: 2px 6px; border-radius: 3px;
-  background: var(--accent-soft); color: var(--accent);
+  padding: 2px 6px; border-radius: var(--r-sm);
+  background: var(--ok-bg); color: var(--ok);
   text-transform: uppercase; flex-shrink: 0;
 }
-.sb-head p { margin: 4px 0 0; font-size: 11px; color: var(--ink-3); }
+.lc-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0;
+  border: none; background: transparent; border-radius: var(--r-sm); cursor: pointer;
+  color: var(--ink-3); flex-shrink: 0;
+  transition: background .15s, color .15s;
+}
+.lc-head:hover .lc-toggle { background: var(--paper-2); color: var(--ink); }
+.lc-toggle svg { transition: transform .22s cubic-bezier(.2,.7,.2,1); }
+.layer-card.collapsed .lc-body { display: none; }
+.layer-card.collapsed .lc-toggle svg { transform: rotate(180deg); }
+.lc-body { overflow-y: auto; border-top: 1px solid var(--line-2); }
+.lc-sub { margin: 0; padding: 8px 12px 2px; font-size: 11px; color: var(--ink-3); }
 
-.sb-group { padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+.sb-group { padding: 8px 0; border-bottom: 1px solid var(--line-2); }
 .sb-group:last-child { border-bottom: 0; }
 .sb-grp-title {
-  padding: 0 16px 5px;
+  padding: 0 12px 5px;
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.09em;
   color: var(--ink-4); text-transform: uppercase;
 }
 .layer-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 16px; cursor: default;
+  padding: 6px 12px; cursor: default;
   transition: background .1s;
 }
-.layer-row:hover { background: var(--paper); }
-.layer-row.active { background: var(--svv-navy-50); }
-html[data-theme="dark"] .layer-row.active { background: rgba(255,255,255,.04); }
+.layer-row:hover { background: var(--paper-2); }
+.layer-row.active { background: transparent; }
 .layer-toggle {
-  width: 16px; height: 16px; border-radius: 3px;
-  border: 1.5px solid var(--ink-4);
-  display: grid; place-items: center;
-  flex: 0 0 16px; background: transparent; cursor: pointer;
-  font-size: 10px; color: transparent;
-  transition: background .12s, border-color .12s, color .12s;
+  width: 28px; height: 16px; border-radius: 8px;
+  border: 0; flex: 0 0 28px;
+  background: var(--ink-4); cursor: pointer;
+  position: relative; font-size: 0; color: transparent;
+  transition: background .15s;
 }
-.layer-toggle.on { background: var(--svv-navy-900); border-color: var(--svv-navy-900); color: #fff; }
+.layer-toggle::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff;
+  transition: left .15s;
+}
+.layer-toggle.on { background: var(--accent); }
+.layer-toggle.on::after { left: 14px; }
 .layer-swatch {
   flex: 0 0 auto;
   border: 1px solid rgba(0,0,0,.1);
@@ -271,7 +287,7 @@ html[data-theme="dark"] .layer-row.active { background: rgba(255,255,255,.04); }
 .layer-row.muted .layer-name { color: var(--ink-4); }
 .layer-count {
   font-family: var(--font-mono); font-size: 10px; color: var(--ink-4);
-  background: var(--paper-2); padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+  background: var(--paper-2); padding: 1px 5px; border-radius: var(--r-sm); flex-shrink: 0;
 }
 
 /* ── MAP OVERLAYS ── */
@@ -791,37 +807,43 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 <!-- STAGE -->
 <div class="stage">
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sb-head">
-      <h2>Kartlag <span class="pill" id="sb-pill" style="display:none">Live</span></h2>
-      <p id="sb-sub">Velg et prosjekt for å se lag</p>
-    </div>
-    <div class="sb-group">
-      <div class="sb-grp-title">Prosjekterte</div>
-      <div class="layer-row active" id="row-centerline" onclick="toggleLayer('centerline')">
-        <button class="layer-toggle on" id="tog-centerline">✓</button>
-        <div class="layer-swatch" style="width:18px;height:3px;border-radius:0;background:#000;border:0;margin:5px 0"></div>
-        <span class="layer-name">Senterlinje</span>
-        <span class="layer-count" id="cnt-centerline" style="display:none">—</span>
+    <aside class="layer-card" id="layer-card">
+      <div class="lc-head" onclick="toggleLayerCard()">
+        <h2>Lag <span class="pill" id="sb-pill" style="display:none">Live</span></h2>
+        <button class="lc-toggle" id="lc-toggle" title="Minimer lagpanel" aria-label="Minimer lagpanel" aria-expanded="true">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <path d="M2 4l3.5 3.5L9 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
-      <div class="layer-row active" id="row-stations" onclick="toggleLayer('stations')">
-        <button class="layer-toggle on" id="tog-stations">✓</button>
-        <div class="layer-swatch" style="width:9px;height:9px;border-radius:50%;border:1.5px solid var(--svv-navy-900);background:transparent;flex:0 0 9px;margin:0 4.5px"></div>
-        <span class="layer-name">Tverrprofilpunkter</span>
-        <span class="layer-count" id="cnt-stations" style="display:none">—</span>
+      <div class="lc-body" id="lc-body">
+        <p class="lc-sub" id="sb-sub">Velg et prosjekt for å se lag</p>
+        <div class="sb-group">
+          <div class="sb-grp-title">Prosjekterte</div>
+          <div class="layer-row active" id="row-centerline" onclick="toggleLayer('centerline')">
+            <button class="layer-toggle on" id="tog-centerline">✓</button>
+            <div class="layer-swatch" style="width:18px;height:3px;border-radius:0;background:#000;border:0;margin:5px 0"></div>
+            <span class="layer-name">Senterlinje</span>
+            <span class="layer-count" id="cnt-centerline" style="display:none">—</span>
+          </div>
+          <div class="layer-row active" id="row-stations" onclick="toggleLayer('stations')">
+            <button class="layer-toggle on" id="tog-stations">✓</button>
+            <div class="layer-swatch" style="width:9px;height:9px;border-radius:50%;border:1.5px solid var(--svv-navy-900);background:transparent;flex:0 0 9px;margin:0 4.5px"></div>
+            <span class="layer-name">Tverrprofilpunkter</span>
+            <span class="layer-count" id="cnt-stations" style="display:none">—</span>
+          </div>
+        </div>
+        <div class="sb-group" id="grp-bim" style="display:none">
+          <div class="sb-grp-title">BIM-modell</div>
+          <div class="layer-row active" id="row-bim" onclick="toggleLayer('bim')">
+            <button class="layer-toggle on" id="tog-bim">✓</button>
+            <div class="layer-swatch" style="width:14px;height:10px;border-radius:2px;background:#646468;border:0.5px solid #3c3c46;flex:0 0 14px;margin:0 2px"></div>
+            <span class="layer-name">Vegmodell (2D)</span>
+            <span class="layer-count" id="cnt-bim" style="display:none">—</span>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="sb-group" id="grp-bim" style="display:none">
-      <div class="sb-grp-title">BIM-modell</div>
-      <div class="layer-row active" id="row-bim" onclick="toggleLayer('bim')">
-        <button class="layer-toggle on" id="tog-bim">✓</button>
-        <div class="layer-swatch" style="width:14px;height:10px;border-radius:2px;background:#646468;border:0.5px solid #3c3c46;flex:0 0 14px;margin:0 2px"></div>
-        <span class="layer-name">Vegmodell (2D)</span>
-        <span class="layer-count" id="cnt-bim" style="display:none">—</span>
-      </div>
-    </div>
-  </aside>
+    </aside>
 
   <!-- MAP AREA -->
   <div class="map-area" id="map-area">
@@ -883,7 +905,7 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
         </button>
       </div>
       <div class="map-tool-group">
-        <button class="map-tool" onclick="toggleSidebar()" title="Vis/skjul lag">
+        <button class="map-tool" onclick="toggleLayerCard()" title="Vis/skjul lag">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/>
             <path d="M5 1v12" stroke="currentColor" stroke-width="1.2"/>
@@ -3759,8 +3781,11 @@ function toggleLayer(name) {
   }
 }
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('collapsed');
+function toggleLayerCard() {
+  const card = document.getElementById('layer-card');
+  const collapsed = card.classList.toggle('collapsed');
+  document.getElementById('lc-toggle').setAttribute('aria-expanded', String(!collapsed));
+  try { localStorage.setItem('pf.layerCardCollapsed', collapsed ? '1' : '0'); } catch { /* private mode o.l. */ }
 }
 
 // ── MAP CONTROLS ───────────────────────────────────────────────────────
@@ -3826,10 +3851,18 @@ function toggleLegend() {
 
 window.addEventListener('resize', () => { if (lpOpen && stations.length) drawLp(); updateLegendPos(); });
 
+// Gjenopprett lag-kortets kollaps-tilstand fra forrige økt
+try {
+  if (localStorage.getItem('pf.layerCardCollapsed') === '1') {
+    document.getElementById('layer-card').classList.add('collapsed');
+    document.getElementById('lc-toggle').setAttribute('aria-expanded', 'false');
+  }
+} catch { /* private mode o.l. */ }
+
 // Expose functions used by inline onclick handlers (required in ES module context)
 Object.assign(window, {
   toggleTheme, toggleLp, toggleLpScale, openCs, closeCs, toggleCsMax,
-  toggleLayer, toggleSidebar, mapZoom, mapHome,
+  toggleLayer, toggleLayerCard, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
   toggleBasemapPicker, setBasemap, setViewMode,
   lpZoomIn, lpZoomOut, lpZoomReset,
