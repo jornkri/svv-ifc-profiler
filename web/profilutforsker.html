@@ -119,7 +119,7 @@ body {
 }
 .brand { display:flex; align-items:center; gap:10px; flex-shrink: 0; }
 .brand-mark {
-  width: 26px; height: 26px; border-radius: 4px;
+  width: 26px; height: 26px; border-radius: var(--r-sm);
   background: #fff; color: var(--svv-navy-900);
   display: grid; place-items: center; font-weight: 800; font-size: 12px;
   letter-spacing: -0.02em;
@@ -131,7 +131,7 @@ body {
 
 .project-pick {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 10px; border-radius: 6px;
+  padding: 5px 10px; border-radius: var(--r);
   background: rgba(255,255,255,.06);
   font-size: 12.5px; cursor: pointer;
   min-width: 0; flex: 0 1 320px;
@@ -146,7 +146,7 @@ body {
 .project-pick select option { background: var(--svv-navy-900); color: #fff; }
 .project-chip {
   font-family: var(--font-mono); font-size: 10px;
-  background: rgba(255,255,255,.10); padding: 2px 6px; border-radius: 3px;
+  background: rgba(255,255,255,.10); padding: 2px 6px; border-radius: var(--r-sm);
   color: rgba(255,255,255,.75); flex-shrink: 0; white-space: nowrap;
   display: none;
 }
@@ -156,7 +156,7 @@ body {
   flex: 1; max-width: 280px;
   display: flex; align-items: center; gap: 8px;
   background: rgba(255,255,255,.08);
-  border-radius: 6px; padding: 6px 10px;
+  border-radius: var(--r); padding: 6px 10px;
   font-size: 12px; color: rgba(255,255,255,.5);
 }
 .top-search input {
@@ -168,7 +168,7 @@ body {
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .top-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 30px; padding: 0 11px; border-radius: 6px;
+  height: 30px; padding: 0 11px; border-radius: var(--r);
   background: rgba(255,255,255,.06); color: #fff;
   border: 0; font: inherit; font-size: 12px; cursor: pointer;
   transition: background .15s; white-space: nowrap;
@@ -296,15 +296,18 @@ html[data-theme="dark"] .layer-row.active { background: rgba(255,255,255,.04); }
 /* Segmentert 2D/3D-veksler i topbaren */
 .viewmode-seg {
   display: inline-flex; align-items: center;
-  background: rgba(255,255,255,.06); border-radius: 6px; padding: 2px;
+  background: rgba(255,255,255,.12); border-radius: 999px; padding: 2px;
 }
 .viewmode-seg button {
-  height: 26px; padding: 0 12px; border: 0; border-radius: 4px;
+  height: 26px; padding: 0 14px; border: 0; border-radius: 999px;
   background: transparent; color: rgba(255,255,255,.7);
   font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: background .15s, color .15s;
 }
 .viewmode-seg button.active { background: var(--accent); color: #fff; }
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 
 .map-info {
   position: absolute; top: 14px; left: 14px; z-index: 6;
