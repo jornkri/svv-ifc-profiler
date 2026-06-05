@@ -1141,6 +1141,12 @@ async function makeCorridorElevationLayer(jobId) {
   const { xmin, ymin, cell_m, ncols, nrows, nodata } = header;
   const ymax = ymin + nrows * cell_m;
 
+  // DEM-en er rastrert fra TOPPEN av vegmodellens TIN-er, så terrenget ville
+  // ligget i nøyaktig samme plan som vegoverflaten -> z-fighting (terreng
+  // glitcher gjennom modellen). Senk ferdig-grunnen litt så scene-laget
+  // alltid vinner dybdetesten.
+  const Z_OFFSET_M = 0.5;
+
   // Bilineær sampling av DEM-en ved (wx, wy). NaN utenfor / ved nodata.
   function sample(wx, wy) {
     const fc = (wx - xmin) / cell_m - 0.5;
@@ -1153,7 +1159,7 @@ async function makeCorridorElevationLayer(jobId) {
     if (v00 === nodata || v10 === nodata || v01 === nodata || v11 === nodata) return NaN;
     const top = v00 * (1 - tx) + v10 * tx;
     const bot = v01 * (1 - tx) + v11 * tx;
-    return top * (1 - ty) + bot * ty;
+    return top * (1 - ty) + bot * ty - Z_OFFSET_M;
   }
 
   const CorridorElevationLayer = BaseElevationLayer.createSubclass({
