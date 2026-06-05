@@ -1133,7 +1133,8 @@ async function makeCorridorElevationLayer(jobId) {
     const br = await fetch(API + '/api/jobs/' + jobId + '/terrain-dem.bin');
     if (!br.ok) return null;
     buf = new Float32Array(await br.arrayBuffer());
-  } catch (_) {
+  } catch (e) {
+    console.warn('[elevasjon] DEM-henting feilet for jobb', jobId, ':', e);
     return null;                        // backend nede / nettverksfeil → hopp over
   }
 
@@ -1175,7 +1176,7 @@ async function makeCorridorElevationLayer(jobId) {
       const tileMinX = ox + col * size * res;
       const tileMaxY = oy - row * size * res;
       const values = new Float32Array(w * h);
-      const NO = -9999;
+      const NO = nodata;   // samme sentinel som DEM-headeren
       for (let j = 0; j < h; j++) {
         const wy = tileMaxY - j * res;
         for (let i = 0; i < w; i++) {
@@ -1481,14 +1482,18 @@ function fly3dToStation(idx) {
 async function updateScene3dLayer() {
   if (!map3d) return;
   if (sceneLayer3d) { map3d.remove(sceneLayer3d); sceneLayer3d = null; }
+  // Fjern forrige jobbs korridor-elevasjon uansett (også når ny jobb mangler scene-URL).
+  if (corridorElev) { map3d.ground.layers.remove(corridorElev); corridorElev = null; }
   if (!currentSceneUrl) return;
   sceneLayer3d = new window._SceneLayer({ url: currentSceneUrl, title: 'Vegmodell (3D)' });
   map3d.add(sceneLayer3d);
   // Korridor-elevasjon (ferdig grunn) oppå GeocacheTerreng for valgt jobb.
   try {
-    if (corridorElev && map3d) { map3d.ground.layers.remove(corridorElev); corridorElev = null; }
-    const cel = await makeCorridorElevationLayer(currentJobId);
-    if (cel && map3d) {
+    const jobIdSnapshot = currentJobId;
+    const cel = await makeCorridorElevationLayer(jobIdSnapshot);
+    // Bruker kan ha byttet jobb mens DEM-en lastet — forkast i så fall resultatet.
+    if (cel && map3d && currentJobId === jobIdSnapshot) {
+      if (corridorElev) { map3d.ground.layers.remove(corridorElev); }
       corridorElev = cel;
       map3d.ground.layers.add(cel);   // sist i lista → vinner der den har data
     }
