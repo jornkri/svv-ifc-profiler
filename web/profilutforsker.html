@@ -1089,6 +1089,108 @@ const SCENE_TERRAIN_URL  = 'https://services.geodataonline.no/arcgis/rest/servic
 // 3D-vegmodellen kommer fra jobbens eget publiserte scene-lag (bim_scene_url, en
 // SceneServer/i3s i EPSG:25833). Terreng + flyfoto legges på i kode (konstantene over).
 
+// Tile-skjema fra Config_tile_scheme_Geocache_ETRS89_UTM33.xml — MÅ matche
+// GeocacheTerreng/GeocacheBilder så korridor-elevasjonen kompositterer pikselnøyaktig.
+const GEOCACHE_TILEINFO = {
+  size: [256, 256],
+  dpi: 96,
+  origin: { x: -2500000, y: 9045984, spatialReference: { wkid: 25833 } },
+  spatialReference: { wkid: 25833 },
+  lods: [
+    { level: 0,  resolution: 21674.710016086701, scale: 81920000 },
+    { level: 1,  resolution: 10837.355008043351, scale: 40960000 },
+    { level: 2,  resolution: 5418.6775040216753, scale: 20480000 },
+    { level: 3,  resolution: 2709.3387520108377, scale: 10240000 },
+    { level: 4,  resolution: 1354.6693760054188, scale: 5120000 },
+    { level: 5,  resolution: 677.33468800270941, scale: 2560000 },
+    { level: 6,  resolution: 338.66734400135471, scale: 1280000 },
+    { level: 7,  resolution: 169.33367200067735, scale: 640000 },
+    { level: 8,  resolution: 84.666836000338677, scale: 320000 },
+    { level: 9,  resolution: 42.333418000169338, scale: 160000 },
+    { level: 10, resolution: 21.166709000084669, scale: 80000 },
+    { level: 11, resolution: 10.583354500042335, scale: 40000 },
+    { level: 12, resolution: 5.2916772500211673, scale: 20000 },
+    { level: 13, resolution: 2.6458386250105836, scale: 10000 },
+    { level: 14, resolution: 1.3229193125052918, scale: 5000 },
+    { level: 15, resolution: 0.66145965625264591, scale: 2500 },
+    { level: 16, resolution: 0.33072982812632296, scale: 1250 },
+    { level: 17, resolution: 0.16536491406316148, scale: 625 },
+  ],
+};
+
+// Holder på korridor-elevasjonslaget så vi kan bytte det per jobb.
+let corridorElev = null;
+
+// Lag et CorridorElevationLayer fra en jobbs DEM. Returnerer null hvis ingen DEM.
+async function makeCorridorElevationLayer(jobId) {
+  const BaseElevationLayer = window._BaseElevationLayer;
+  const TileInfo = window._TileInfo;
+  let header, buf;
+  try {
+    const hr = await fetch(API + '/api/jobs/' + jobId + '/terrain-dem');
+    if (!hr.ok) return null;            // ingen DEM for jobben
+    header = await hr.json();
+    const br = await fetch(API + '/api/jobs/' + jobId + '/terrain-dem.bin');
+    if (!br.ok) return null;
+    buf = new Float32Array(await br.arrayBuffer());
+  } catch (_) {
+    return null;                        // backend nede / nettverksfeil → hopp over
+  }
+
+  const { xmin, ymin, cell_m, ncols, nrows, nodata } = header;
+  const ymax = ymin + nrows * cell_m;
+
+  // Bilineær sampling av DEM-en ved (wx, wy). NaN utenfor / ved nodata.
+  function sample(wx, wy) {
+    const fc = (wx - xmin) / cell_m - 0.5;
+    const fr = (ymax - wy) / cell_m - 0.5;     // rad 0 = nordligst
+    const c0 = Math.floor(fc), r0 = Math.floor(fr);
+    if (c0 < 0 || r0 < 0 || c0 + 1 >= ncols || r0 + 1 >= nrows) return NaN;
+    const tx = fc - c0, ty = fr - r0;
+    const v00 = buf[r0 * ncols + c0],         v10 = buf[r0 * ncols + c0 + 1];
+    const v01 = buf[(r0 + 1) * ncols + c0],   v11 = buf[(r0 + 1) * ncols + c0 + 1];
+    if (v00 === nodata || v10 === nodata || v01 === nodata || v11 === nodata) return NaN;
+    const top = v00 * (1 - tx) + v10 * tx;
+    const bot = v01 * (1 - tx) + v11 * tx;
+    return top * (1 - ty) + bot * ty;
+  }
+
+  const CorridorElevationLayer = BaseElevationLayer.createSubclass({
+    load: function () {
+      this.tileInfo = TileInfo.fromJSON(GEOCACHE_TILEINFO);
+      this.spatialReference = { wkid: 25833 };
+      this.fullExtent = {
+        xmin, ymin, xmax: xmin + ncols * cell_m, ymax,
+        spatialReference: { wkid: 25833 },
+      };
+    },
+    fetchTile: function (level, row, col, options) {
+      const lod = GEOCACHE_TILEINFO.lods.find(l => l.level === level)
+                  || GEOCACHE_TILEINFO.lods[GEOCACHE_TILEINFO.lods.length - 1];
+      const res = lod.resolution;
+      const size = GEOCACHE_TILEINFO.size[0];          // 256
+      const w = size + 1, h = size + 1;                 // 257x257 posts
+      const ox = GEOCACHE_TILEINFO.origin.x;
+      const oy = GEOCACHE_TILEINFO.origin.y;
+      const tileMinX = ox + col * size * res;
+      const tileMaxY = oy - row * size * res;
+      const values = new Float32Array(w * h);
+      const NO = -9999;
+      for (let j = 0; j < h; j++) {
+        const wy = tileMaxY - j * res;
+        for (let i = 0; i < w; i++) {
+          const wx = tileMinX + i * res;
+          const z = sample(wx, wy);
+          values[j * w + i] = Number.isNaN(z) ? NO : z;
+        }
+      }
+      return { values, width: w, height: h, maxZError: 0, noDataValue: NO };
+    },
+  });
+
+  return new CorridorElevationLayer({ title: 'Ferdig grunn (korridor)' });
+}
+
 const BASEMAPS = [
   { id: 'kanvas', label: 'Kanvas',    type: 'vtl',  swatch: '#e8e4d8',
     url: 'https://vector.services.geodataonline.no/arcgis/rest/services/GeocacheVector/GeocacheKanvas/VectorTileServer' },
@@ -1227,6 +1329,8 @@ async function initScene() {
   const Map = window._Map, SceneView = window._SceneView, Ground = window._Ground;
   const Basemap = window._Basemap, TileLayer = window._TileLayer, ElevationLayer = window._ElevationLayer;
 
+  // GeocacheTerreng nederst (naturlig terreng), korridor-elevasjon legges på
+  // toppen senere i updateScene3dLayer (NoData faller gjennom til GeocacheTerreng).
   const ground  = new Ground({ layers: [new ElevationLayer({ url: SCENE_TERRAIN_URL })] });
   const basemap = new Basemap({ baseLayers: [new TileLayer({ url: SCENE_BASEMAP_URL })], title: 'Flyfoto' });
   map3d = new Map({ basemap, ground });
@@ -1380,6 +1484,17 @@ async function updateScene3dLayer() {
   if (!currentSceneUrl) return;
   sceneLayer3d = new window._SceneLayer({ url: currentSceneUrl, title: 'Vegmodell (3D)' });
   map3d.add(sceneLayer3d);
+  // Korridor-elevasjon (ferdig grunn) oppå GeocacheTerreng for valgt jobb.
+  try {
+    if (corridorElev && map3d) { map3d.ground.layers.remove(corridorElev); corridorElev = null; }
+    const cel = await makeCorridorElevationLayer(currentJobId);
+    if (cel && map3d) {
+      corridorElev = cel;
+      map3d.ground.layers.add(cel);   // sist i lista → vinner der den har data
+    }
+  } catch (e) {
+    console.warn('Korridor-elevasjon hoppes over:', e);
+  }
   try {
     await sceneLayer3d.when();
     // R700-kategorifarger som i 2D — kun hvis scene-laget faktisk har kategori-feltet
@@ -1865,7 +1980,7 @@ function makePillUrl(text) {
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
   const [Map, MapView, SceneView, VectorTileLayer, TileLayer, FeatureLayer,
-         SceneLayer, ElevationLayer, Ground, Basemap, esriId, GraphicsLayer, Graphic] =
+         SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
       '@arcgis/core/views/MapView.js',
@@ -1875,6 +1990,8 @@ try {
       '@arcgis/core/layers/FeatureLayer.js',
       '@arcgis/core/layers/SceneLayer.js',
       '@arcgis/core/layers/ElevationLayer.js',
+      '@arcgis/core/layers/BaseElevationLayer.js',
+      '@arcgis/core/layers/support/TileInfo.js',
       '@arcgis/core/Ground.js',
       '@arcgis/core/Basemap.js',
       '@arcgis/core/identity/IdentityManager.js',
@@ -1890,6 +2007,8 @@ try {
   window._SceneView = SceneView;
   window._SceneLayer = SceneLayer;
   window._ElevationLayer = ElevationLayer;
+  window._BaseElevationLayer = BaseElevationLayer;
+  window._TileInfo = TileInfo;
   window._Ground = Ground;
   window._Map = Map;
   window._GraphicsLayer = GraphicsLayer;
