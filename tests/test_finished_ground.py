@@ -1,6 +1,15 @@
 # tests/test_finished_ground.py
+import json
+from dataclasses import dataclass
+
 import numpy as np
-from src.ifc_processor.finished_ground import rasterize_tins, NODATA
+
+from src.ifc_processor.finished_ground import (
+    NODATA,
+    build_finished_ground_dem,
+    rasterize_tins,
+    write_dem,
+)
 
 
 def _flat_triangle(z, x0, y0, size):
@@ -26,10 +35,6 @@ def test_rasterize_keeps_topmost_z_on_overlap():
     assert grid[3, 0] == 9.0  # høyeste vinner uansett rekkefølge
 
 
-import json
-from src.ifc_processor.finished_ground import write_dem
-
-
 def test_write_dem_roundtrips_binary_and_header(tmp_path):
     grid = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
     header = {"xmin": 10.0, "ymin": 20.0, "cell_m": 0.5,
@@ -46,10 +51,6 @@ def test_write_dem_roundtrips_binary_and_header(tmp_path):
     assert meta["wkid"] == 25833
     assert meta["ncols"] == 2 and meta["nrows"] == 2
     assert meta["cell_m"] == 0.5
-
-
-from dataclasses import dataclass
-from src.ifc_processor.finished_ground import build_finished_ground_dem
 
 
 @dataclass

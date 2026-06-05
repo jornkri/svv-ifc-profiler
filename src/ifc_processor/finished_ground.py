@@ -133,7 +133,7 @@ DEFAULT_MARGIN_M = 30.0  # romslig nok til å dekke skråninger ut til dagline
 def _to_25833_xy(tris: np.ndarray, source_epsg: int) -> np.ndarray:
     """Transformer (N,3,3)-trekanters x,y fra source_epsg til 25833 (z uendret)."""
     if source_epsg == 25833:
-        return tris
+        return tris.copy()
     from pyproj import Transformer
     tf = Transformer.from_crs(source_epsg, 25833, always_xy=True)
     out = tris.copy().astype(float)
@@ -167,6 +167,8 @@ def build_finished_ground_dem(
         logger.info("Ingen veg-TIN-er — ferdig-grunn-DEM hoppes over")
         return None
 
+    # Utstrekning beregnes fra TIN-geometrien (+ margin), ikke senterlinjen —
+    # gir tettest mulig grid rundt selve vegflaten. Senterlinjen brukes kun for source_epsg.
     all_xy = np.concatenate([t.reshape(-1, 3) for t in road_tris])
     xmin = float(all_xy[:, 0].min()) - margin_m
     xmax = float(all_xy[:, 0].max()) + margin_m
