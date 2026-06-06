@@ -1132,10 +1132,10 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 'use strict';
 
 const API = 'http://localhost:8000';
-const SCENE_BASEMAP_URL = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheBilder/MapServer';
 const SCENE_TERRAIN_URL  = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheTerreng/ImageServer';
 // 3D-vegmodellen kommer fra jobbens eget publiserte scene-lag (bim_scene_url, en
-// SceneServer/i3s i EPSG:25833). Terreng + flyfoto legges på i kode (konstantene over).
+// SceneServer/i3s i EPSG:25833). Terreng legges på i kode (konstanten over);
+// bakgrunnskartet følger felles BASEMAPS-valg (se makeBasemap/setBasemap).
 
 // Tile-skjema fra Config_tile_scheme_Geocache_ETRS89_UTM33.xml — MÅ matche
 // GeocacheTerreng/GeocacheBilder så korridor-elevasjonen kompositterer pikselnøyaktig.
@@ -1321,6 +1321,7 @@ let viewMode = '2d';        // '2d' | '3d'
 let view3d = null;          // SceneView
 let map3d = null;           // Map for 3D
 let scene3dReady = false;   // lazy-init flagg
+let scene3dFirstOpen = true; // første 3D-veksling → Bilder settes som felles bakgrunn
 let scene3dHost = null;     // fersk container-div for SceneView (se initScene)
 let currentSceneUrl = '';        // bim_scene_url for valgt jobb (3D-vegmodell)
 let currentCenterlineUrl = '';   // senterlinje-FeatureLayer for valgt jobb
@@ -1356,6 +1357,14 @@ function setViewMode(mode) {
     scene3dHost.style.pointerEvents = (mode === '3d') ? '' : 'none';
   }
   if (mode === '3d') {
+    // Første 3D-åpning: sett Bilder (flyfoto) som felles bakgrunnskart, så
+    // scenen ser ut som før til brukeren aktivt velger noe annet. I mørk
+    // modus beholdes Mørk — kun lys-valget huskes som Bilder.
+    if (scene3dFirstOpen) {
+      scene3dFirstOpen = false;
+      if (darkMode) lightBasemapId = 'bilder';
+      else setBasemap('bilder');
+    }
     // Bygg scenen ved første veksling (no-op senere), så synk visning:
     // er en stasjon valgt → fly dit; ellers land på samme sted som 2D-kartet.
     initScene().then(() => {
@@ -1394,7 +1403,7 @@ function whenSized(el) {
   });
 }
 
-// Bygg 3D-scenen én gang: terreng (ground) + flyfoto (basemap), alt i EPSG:25833.
+// Bygg 3D-scenen én gang: terreng (ground) + felles bakgrunnskart, alt i EPSG:25833.
 // Vegmodellen (jobbens scene-lag) legges på via updateScene3dLayer(). Lazy — første
 // gang brukeren veksler til 3D.
 async function initScene() {
@@ -1414,12 +1423,12 @@ async function initScene() {
   await whenSized(cont);
 
   const Map = window._Map, SceneView = window._SceneView, Ground = window._Ground;
-  const Basemap = window._Basemap, TileLayer = window._TileLayer, ElevationLayer = window._ElevationLayer;
+  const ElevationLayer = window._ElevationLayer;
 
   // GeocacheTerreng nederst (naturlig terreng), korridor-elevasjon legges på
   // toppen senere i updateScene3dLayer (NoData faller gjennom til GeocacheTerreng).
   const ground  = new Ground({ layers: [new ElevationLayer({ url: SCENE_TERRAIN_URL })] });
-  const basemap = new Basemap({ baseLayers: [new TileLayer({ url: SCENE_BASEMAP_URL })], title: 'Flyfoto' });
+  const basemap = makeBasemap(BASEMAPS.find(b => b.id === activeBasemapId), true);
   map3d = new Map({ basemap, ground });
 
   view3d = new SceneView({
@@ -1608,14 +1617,19 @@ async function updateScene3dLayer() {
 // Bygger Basemap for et BASEMAPS-oppslag. Trafikk-bakgrunnen får Kartverket
 // topo (WMTS) med som skjult detaljlag — updateAutoTopo() veksler synlighet
 // etter kartskalaen, så byttet skjer uten å re-instansiere basemapen.
-function makeBasemap(cfg) {
-  trafikkBaseLayer = null;
-  kvTopoLayer = null;
+// for3d: bygger instans for 3D-scenen — uten Kartverket-topo (auto-topo er
+// bundet til 2D-view.scale; i 3D varierer skala med tilt og ville flimre)
+// og uten å røre 2D-globalene trafikkBaseLayer/kvTopoLayer.
+function makeBasemap(cfg, for3d = false) {
+  if (!for3d) {
+    trafikkBaseLayer = null;
+    kvTopoLayer = null;
+  }
   const base = cfg.type === 'tile'
     ? new window._TileLayer({ url: cfg.url })
     : new window._VectorTileLayer({ url: cfg.url });
   const baseLayers = [base];
-  if (cfg.id === 'trafikk') {
+  if (cfg.id === 'trafikk' && !for3d) {
     trafikkBaseLayer = base;
     kvTopoLayer = new window._WMTSLayer({
       url: KV_TOPO_WMTS.url,
@@ -1644,6 +1658,9 @@ function setBasemap(id) {
   const cfg = BASEMAPS.find(b => b.id === id);
   if (!cfg || !window._map) return;
   window._map.basemap = makeBasemap(cfg);
+  // Felles valg for 2D og 3D — egen Basemap-instans per kart (samme instans
+  // kan ikke leve i to kart samtidig).
+  if (map3d) map3d.basemap = makeBasemap(cfg, true);
   activeBasemapId = id;
   if (id !== 'mork') lightBasemapId = id;
   document.querySelectorAll('.basemap-option').forEach(el => {
