@@ -1298,6 +1298,7 @@ let st3d = null;            // profilpunkt i 3D (m/callout-labels)
 let selected3dLayer = null; // GraphicsLayer for markør på valgt stasjon i 3D
 let hoverLayer = null;
 let selectedLayer = null;
+let geomLabelLayer = null;
 let stations = [];
 let currentIdx = -1;
 let currentJobId = null;
@@ -1327,7 +1328,7 @@ let currentSceneUrl = '';        // bim_scene_url for valgt jobb (3D-vegmodell)
 let currentCenterlineUrl = '';   // senterlinje-FeatureLayer for valgt jobb
 let currentSectionsUrl = '';     // profilpunkt-FeatureLayer for valgt jobb
 let csMaximized = false;
-let layerVis = { centerline: true, stations: true, bim: true };
+let layerVis = { centerline: true, stations: true, bim: true, geom: false };
 let currentToken = null;
 let orgUrl = 'https://www.arcgis.com';
 let darkMode = false;
@@ -2145,6 +2146,35 @@ function geomLabelPlacement(stations, sta) {
   };
 }
 
+const GEOM_MIN_SEG_M = 3; // hopp over svært korte segmenter for å unngå overlapp
+
+// Fyller geomLabelLayer med ett TextSymbol per horisontalsegment.
+function buildGeomLabels() {
+  if (!geomLabelLayer || !window._Graphic) return;
+  geomLabelLayer.removeAll();
+  if (!stations || stations.length < 2) return;
+  for (const hc of horCurves) {
+    if ((hc.sta_end - hc.sta_start) < GEOM_MIN_SEG_M) continue;
+    const text = geomLabelText(hc);
+    if (!text) continue;
+    const place = geomLabelPlacement(stations, (hc.sta_start + hc.sta_end) / 2);
+    if (!place) continue;
+    geomLabelLayer.add(new window._Graphic({
+      geometry: { type: 'point', x: place.x, y: place.y, spatialReference: { wkid: 25833 } },
+      symbol: {
+        type: 'text',
+        text,
+        angle: place.angle,
+        color: [20, 20, 20],
+        haloColor: [255, 255, 255, 230],
+        haloSize: 1.6,
+        font: { size: 11, family: 'ui-monospace, SFMono-Regular, monospace', weight: 'bold' },
+        yoffset: 5,
+      },
+    }));
+  }
+}
+
 function makePillUrl(text) {
   const pw = Math.round(text.length * 7.6 + 22);
   const ph = 26;
@@ -2219,8 +2249,10 @@ try {
 
   hoverLayer = new GraphicsLayer({ listMode: 'hide' });
   selectedLayer = new GraphicsLayer({ listMode: 'hide' });
+  geomLabelLayer = new GraphicsLayer({ listMode: 'hide', visible: false, minScale: 5000 });
   map.add(hoverLayer);
   map.add(selectedLayer);
+  map.add(geomLabelLayer);
   window._Graphic = Graphic;
 
   window._map = map;
@@ -2398,6 +2430,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   if (stLayer && window._map) window._map.remove(stLayer);
   for (const l of bimLayers) { if (window._map) window._map.remove(l); }
   clLayer = null; stLayer = null; bimLayers = [];
+  if (geomLabelLayer) geomLabelLayer.removeAll();
 
   document.getElementById('grp-bim').style.display = 'none';
   document.getElementById('legend-bim').style.display = 'none';
@@ -2503,6 +2536,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   // Keep graphics layers above feature layers
   map.reorder(selectedLayer, map.layers.length - 1);
   map.reorder(hoverLayer, map.layers.length - 1);
+  if (geomLabelLayer) map.reorder(geomLabelLayer, map.layers.length - 1);
   if (selectedLayer) selectedLayer.removeAll();
 
   try {
@@ -2540,6 +2574,8 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
       console.warn('horizontal-alignment fetch:', err);
       horCurves = [];
     }
+
+    buildGeomLabels();
 
     // Update UI
     const shortId = jobId.slice(0, 8) + '…';
