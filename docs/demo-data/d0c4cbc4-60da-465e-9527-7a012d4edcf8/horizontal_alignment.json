@@ -1,0 +1,43 @@
+[
+  {
+    "kind": "curve",
+    "sta_start": 0.0,
+    "sta_end": 12.768,
+    "radius": 50.0,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 12.768,
+    "sta_end": 57.541
+  },
+  {
+    "kind": "curve",
+    "sta_start": 57.541,
+    "sta_end": 86.566,
+    "radius": 25.0,
+    "dir": 1
+  },
+  {
+    "kind": "line",
+    "sta_start": 86.566,
+    "sta_end": 92.476
+  },
+  {
+    "kind": "curve",
+    "sta_start": 92.476,
+    "sta_end": 111.115,
+    "radius": 25.0,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 111.115,
+    "sta_end": 128.768
+  },
+  {
+    "kind": "line",
+    "sta_start": 128.768,
+    "sta_end": 128.768
+  }
+]

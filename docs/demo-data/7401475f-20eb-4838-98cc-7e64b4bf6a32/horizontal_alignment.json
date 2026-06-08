@@ -1,0 +1,453 @@
+[
+  {
+    "kind": "line",
+    "sta_start": 0.0,
+    "sta_end": 107.216
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 107.216,
+    "sta_end": 144.203,
+    "A": 115.392,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 144.203,
+    "sta_end": 216.709,
+    "radius": 360.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 216.709,
+    "sta_end": 307.538,
+    "A": 180.827,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 307.538,
+    "sta_end": 357.538,
+    "A": 151.658,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 357.538,
+    "sta_end": 376.711,
+    "radius": 460.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 376.711,
+    "sta_end": 461.033,
+    "A": 196.948,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 461.033,
+    "sta_end": 521.105,
+    "A": 138.647,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 521.105,
+    "sta_end": 539.661,
+    "radius": 320.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 539.661,
+    "sta_end": 598.314,
+    "A": 137.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 598.314,
+    "sta_end": 660.814,
+    "A": 125.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 660.814,
+    "sta_end": 710.121,
+    "radius": 250.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 710.121,
+    "sta_end": 772.621,
+    "A": 125.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 772.621,
+    "sta_end": 828.871,
+    "A": 150.0,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 828.871,
+    "sta_end": 831.825,
+    "radius": 400.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 831.825,
+    "sta_end": 879.075,
+    "A": 343.693,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 879.075,
+    "sta_end": 960.924,
+    "radius": 2500.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 960.924,
+    "sta_end": 1017.174,
+    "A": 118.585,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 1017.174,
+    "sta_end": 1099.24,
+    "radius": 250.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1099.24,
+    "sta_end": 1161.74,
+    "A": 125.0,
+    "dir": 1
+  },
+  {
+    "kind": "line",
+    "sta_start": 1161.74,
+    "sta_end": 1304.232
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1304.232,
+    "sta_end": 1360.482,
+    "A": 146.202,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 1360.482,
+    "sta_end": 1490.491,
+    "radius": 380.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1490.491,
+    "sta_end": 1579.588,
+    "A": 184.002,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 1579.588,
+    "sta_end": 1715.51
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1715.51,
+    "sta_end": 1763.677,
+    "A": 170.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 1763.677,
+    "sta_end": 1830.768,
+    "radius": 600.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1830.768,
+    "sta_end": 1878.934,
+    "A": 170.0,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 1878.934,
+    "sta_end": 1954.99
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 1954.99,
+    "sta_end": 2015.061,
+    "A": 145.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2015.061,
+    "sta_end": 2059.682,
+    "radius": 350.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2059.682,
+    "sta_end": 2119.754,
+    "A": 145.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2119.754,
+    "sta_end": 2178.531,
+    "A": 115.0,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2178.531,
+    "sta_end": 2269.478,
+    "radius": 225.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2269.478,
+    "sta_end": 2322.965,
+    "A": 365.677,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2322.965,
+    "sta_end": 2527.114,
+    "radius": 2500.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2527.114,
+    "sta_end": 2580.574,
+    "A": 126.641,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2580.574,
+    "sta_end": 2612.973,
+    "radius": 300.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2612.973,
+    "sta_end": 2673.723,
+    "A": 135.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2673.723,
+    "sta_end": 2734.473,
+    "A": 135.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2734.473,
+    "sta_end": 2739.923,
+    "radius": 300.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2739.923,
+    "sta_end": 2800.673,
+    "A": 135.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2800.673,
+    "sta_end": 2861.423,
+    "A": 135.0,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 2861.423,
+    "sta_end": 2891.456,
+    "radius": 300.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2891.456,
+    "sta_end": 2952.206,
+    "A": 135.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 2952.206,
+    "sta_end": 3012.706,
+    "A": 110.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 3012.706,
+    "sta_end": 3077.641,
+    "radius": 200.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3077.641,
+    "sta_end": 3138.141,
+    "A": 110.0,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 3138.141,
+    "sta_end": 3277.996
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3277.996,
+    "sta_end": 3305.221,
+    "A": 165.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 3305.221,
+    "sta_end": 3517.971,
+    "radius": 1000.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3517.971,
+    "sta_end": 3569.946,
+    "A": 95.371,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 3569.946,
+    "sta_end": 3578.914,
+    "radius": 175.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3578.914,
+    "sta_end": 3641.914,
+    "A": 105.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3641.914,
+    "sta_end": 3704.914,
+    "A": 105.0,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 3704.914,
+    "sta_end": 3827.498,
+    "radius": 175.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 3827.498,
+    "sta_end": 3890.498,
+    "A": 105.0,
+    "dir": 1
+  },
+  {
+    "kind": "line",
+    "sta_start": 3890.498,
+    "sta_end": 4033.276
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 4033.276,
+    "sta_end": 4095.776,
+    "A": 125.0,
+    "dir": 1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 4095.776,
+    "sta_end": 4218.735,
+    "radius": 250.0,
+    "dir": 1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 4218.735,
+    "sta_end": 4281.235,
+    "A": 125.0,
+    "dir": 1
+  },
+  {
+    "kind": "line",
+    "sta_start": 4281.235,
+    "sta_end": 4359.347
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 4359.347,
+    "sta_end": 4415.597,
+    "A": 150.0,
+    "dir": -1
+  },
+  {
+    "kind": "curve",
+    "sta_start": 4415.597,
+    "sta_end": 4461.646,
+    "radius": 400.0,
+    "dir": -1
+  },
+  {
+    "kind": "spiral",
+    "sta_start": 4461.646,
+    "sta_end": 4517.896,
+    "A": 150.0,
+    "dir": -1
+  },
+  {
+    "kind": "line",
+    "sta_start": 4517.896,
+    "sta_end": 4802.714
+  },
+  {
+    "kind": "line",
+    "sta_start": 4802.714,
+    "sta_end": 4802.714
+  }
+]
