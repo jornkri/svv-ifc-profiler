@@ -3408,6 +3408,22 @@ function drawLp() {
   });
   $(`<path d="${rd}" fill="none" stroke="${CR}" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>`);
 
+  // Lengdefall-påskrift (R700): +X,X % / –X,X % midt på hvert konstant-fall-strekk.
+  vertGrades
+    .filter(t => t.sta_end > stMin && t.sta_start < stMax)
+    .forEach(t => {
+      const mid = (Math.max(t.sta_start, stMin) + Math.min(t.sta_end, stMax)) / 2;
+      const s = _lpNearest(mid);
+      const cx = xOf(s.stasjon_m), cy = yOf(s.z);
+      if (cy <= GPT + 14) return;
+      const g = t.gradient_pct;
+      const sign = g < 0 ? '–' : '+';
+      const txt = `${sign}${Math.abs(g).toFixed(1).replace('.', ',')} %`;
+      const w = txt.length * 5.2 + 6;
+      $(`<rect x="${(cx - w / 2).toFixed(1)}" y="${(cy - 16).toFixed(1)}" width="${w.toFixed(1)}" height="12" rx="2" fill="${isDark ? 'rgba(30,32,34,0.78)' : 'rgba(255,255,255,0.82)'}"/>`);
+      $(`<text x="${cx.toFixed(1)}" y="${(cy - 7).toFixed(1)}" text-anchor="middle" font-size="8.5" font-weight="600" fill="${CR}" font-family="var(--font-mono)">${txt}</text>`);
+    });
+
   // Profile height labels at 100m (above line)
   for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
     const s = _lpNearest(st);
