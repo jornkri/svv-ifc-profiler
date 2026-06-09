@@ -1319,6 +1319,7 @@ function toggleLpRow(key) {
   if (lpOpen) drawLp();
 }
 let horCurves = [];  // [{kind, sta_start, sta_end, radius?, A?, dir?}, ...]
+let vertGrades = [];  // [{sta_start, sta_end, gradient_pct}, ...]  (R700 lengdefall-påskrift)
 let widenings = [];  // [{sta_start, sta_end, val_m}, ...]  (breddeutvidelse pr seksjon)
 let lpZoom = 1;
 let _lpDrag = { active: false, sx: 0, sy: 0, sl: 0, st: 0, moved: 0 };
@@ -2578,6 +2579,16 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
     } catch (err) {
       console.warn('horizontal-alignment fetch:', err);
       horCurves = [];
+    }
+
+    // Last vertikal geometri (konstant-fall-strekk) for R700 lengdefall-påskrift
+    try {
+      const vgRes = await fetch(API + '/api/jobs/' + jobId + '/vertical-alignment',
+                                { credentials: 'include' });
+      vertGrades = vgRes.ok ? await vgRes.json() : [];
+    } catch (err) {
+      console.warn('vertical-alignment fetch:', err);
+      vertGrades = [];
     }
 
     buildGeomLabels();
