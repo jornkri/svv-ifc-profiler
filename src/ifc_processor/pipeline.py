@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .alignment_parser import HorizontalSegment, StationLabel
+from .alignment_parser import HorizontalSegment, StationLabel, VerticalSegment
 from .centerline import Centerline, _stations_from_points, load_centerline, load_vertical_profile
 from .cross_section import cut_cross_section, recenter_on_pavement, sample_stations, stitch_cross_section_gaps
 from .ifc_reader import TINLayer, read_ifc_tins
@@ -28,6 +28,7 @@ class AlignmentMetadata:
     horizontal_segments: list[HorizontalSegment] = field(default_factory=list)
     station_labels: list[StationLabel] = field(default_factory=list)
     source_epsg: int = 25833
+    vertical_segments: list[VerticalSegment] = field(default_factory=list)
 
 
 def _horizontal_segments_from_landxml(path: Path) -> list[HorizontalSegment]:
@@ -83,6 +84,7 @@ def _load_alignment_metadata(cl_path: Path | None) -> AlignmentMetadata | None:
             horizontal_segments=horiz,
             station_labels=[],
             source_epsg=25833,
+            vertical_segments=[],
         )
     if suffix == ".ifc":
         from .alignment_parser import load_alignment_from_ifc
@@ -92,6 +94,7 @@ def _load_alignment_metadata(cl_path: Path | None) -> AlignmentMetadata | None:
             horizontal_segments=data.horizontal_segments,
             station_labels=data.station_labels,
             source_epsg=data.source_epsg,
+            vertical_segments=data.vertical_segments,
         )
     return None
 
@@ -465,6 +468,14 @@ def run_pipeline(
                     row["dir"] = 1 if seg.is_ccw else -1
             horiz_rows.append(row)
     (output_dir / "horizontal_alignment.json").write_text(json.dumps(horiz_rows, indent=2))
+
+    # Skriv vertical_alignment.json — konstant-fall-strekk for R700-stigningspåskrift
+    from .vertical_tangents import constant_grade_tangents
+    vert_rows = constant_grade_tangents(
+        vertical_segments=align_meta.vertical_segments if align_meta else [],
+        pvi=align_meta.vertical_pvi if align_meta else [],
+    )
+    (output_dir / "vertical_alignment.json").write_text(json.dumps(vert_rows, indent=2))
 
     cl_path = output_dir / "centerline.geojson"
     _save_centerline_geojson(centerline, cl_path)
