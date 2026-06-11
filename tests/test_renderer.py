@@ -319,6 +319,16 @@ def test_title_block_contains_maalestokk():
     assert "Målestokk 1:200" in content
 
 
+def test_svg_contains_tegnforklaring():
+    cs = _full_cross_section()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "Tegnforklaring" in content
+    assert "Prosjektert vegoverflate" in content
+
+
 def test_svg_contains_data_cs_gids():
     """SVG-en skal inneholde gid-tagger for kjørefelt og terreng."""
     cs = CrossSection(

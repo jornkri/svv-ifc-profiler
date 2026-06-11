@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FixedLocator, FuncFormatter, MultipleLocator
+from matplotlib.lines import Line2D
 
 from .cross_section import CrossSection, _chain_segments  # noqa: F401 — _chain_segments re-eksporteres for tester og normalprofil
 from .longitudinal_profile import LongitudinalProfile
@@ -531,6 +532,27 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     # IFC-komponentetiketter fra Name-attributt
     if cross_section.named_segments:
         _draw_named_labels(ax, cross_section.named_segments, max(view_v))
+
+    # Tegnforklaring (R700: forklar symbolene som er brukt på arket — og bare dem)
+    legend_handles = []
+    if pavement_segs:
+        legend_handles.append(
+            Line2D([], [], color="black", lw=2.0, label="Prosjektert vegoverflate"))
+    if any(c in cross_section.segments for c in _SLOPE_CLASSES):
+        legend_handles.append(
+            Line2D([], [], color="black", lw=1.0, label="Skjæring/fylling/grøft"))
+    if "terreng" in cross_section.segments:
+        legend_handles.append(
+            Line2D([], [], color="black", lw=0.8, label="Eksisterende terreng"))
+    if cross_section.named_segments:
+        legend_handles.append(
+            Line2D([], [], color="#555555", lw=0.5, label="Laggrenser (IFC)"))
+    if legend_handles:
+        ax.legend(
+            handles=legend_handles, loc="upper right", fontsize=5.5,
+            title="Tegnforklaring", title_fontsize=6, framealpha=0.9,
+            edgecolor="#888888", borderpad=0.6, handlelength=2.2,
+        )
 
     # Profile number above plot (R700)
     ax.set_title(
