@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import date
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import FixedLocator, FuncFormatter, MultipleLocator
 
 from .cross_section import CrossSection, _chain_segments  # noqa: F401 — _chain_segments re-eksporteres for tester og normalprofil
 from .longitudinal_profile import LongitudinalProfile
@@ -449,7 +450,13 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     # R700: ruteark 1m × 1m — etiketter hvert 5m horisontalt, gridlinjer hvert 1m
     ax.xaxis.set_major_locator(MultipleLocator(5.0))
     ax.xaxis.set_minor_locator(MultipleLocator(1.0))
-    ax.yaxis.set_major_locator(MultipleLocator(1.0))
+    # Y-ticks på HELE KOTER (absolutt høyde): gridlinjer lander på hele meter
+    # i kote, og referanselinja (heltallskote) treffer en gridlinje.
+    elev = cross_section.elevation
+    kote_lo = math.ceil(y_lo + elev)
+    kote_hi = math.floor(y_hi + elev)
+    ax.yaxis.set_major_locator(FixedLocator([k - elev for k in range(kote_lo, kote_hi + 1)]))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{v + elev:.0f}"))
     ax.set_axisbelow(True)
     ax.grid(which="major", color="#aaaaaa", linewidth=0.5, linestyle="-")
     ax.grid(which="minor", color="#dddddd", linewidth=0.25, linestyle="-")
@@ -459,9 +466,9 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     ref_line_v = ref_elev_abs - cross_section.elevation
     ax.axhline(y=ref_line_v, color="black", linewidth=0.8, linestyle="-")
     ax.text(
-        x_lo + (x_hi - x_lo) * 0.02, ref_line_v,
+        x_lo + (x_hi - x_lo) * 0.01, ref_line_v + 0.10,
         f"{ref_elev_abs}",
-        va="center", ha="right", fontsize=7, fontfamily="monospace",
+        va="bottom", ha="left", fontsize=7, fontfamily="monospace",
     )
 
     # R700: vertikalt senterlinjemerke ved u=0
@@ -533,13 +540,13 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
 
     # Axis labels
     ax.set_xlabel("Avstand fra senterlinje (m)", fontsize=7)
-    ax.set_ylabel(f"Høyde (m)", fontsize=7)
+    ax.set_ylabel("Kote (m)", fontsize=7)
     ax.tick_params(labelsize=6)
 
-    # Title block lower-right (R700 U-drawing)
+    # Tittelfelt nederst til høyre (R700) — uten debug-info
     fig.text(
         0.98, 0.02,
-        f"SVV · R700 · 1:200 · Stasjon {cross_section.station:.2f} m · xlim=[{ax.get_xlim()[0]:.0f},{ax.get_xlim()[1]:.0f}]",
+        f"Tverrprofil · Profil {cross_section.station:.2f} · Målestokk 1:200 · {date.today().isoformat()}",
         ha="right", va="bottom", fontsize=5, color="#555555",
     )
 

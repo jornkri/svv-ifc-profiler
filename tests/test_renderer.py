@@ -289,6 +289,36 @@ def test_render_normal_section_svg_nan_safe():
         assert out.stat().st_size > 0
 
 
+def test_y_axis_shows_kote():
+    """Y-aksen skal vise absolutt kote, ikke relativ høyde. Med elevation=100.0
+    skal tick-etiketten '100' finnes (senterlinjehøyden er en hel kote)."""
+    cs = _simple_cross_section(elevation=100.0)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "<!-- 100 -->" in content
+    assert "Kote (m)" in content
+
+
+def test_no_debug_text_in_title_block():
+    cs = _simple_cross_section()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "xlim" not in content
+
+
+def test_title_block_contains_maalestokk():
+    cs = _simple_cross_section()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "Målestokk 1:200" in content
+
+
 def test_svg_contains_data_cs_gids():
     """SVG-en skal inneholde gid-tagger for kjørefelt og terreng."""
     cs = CrossSection(
