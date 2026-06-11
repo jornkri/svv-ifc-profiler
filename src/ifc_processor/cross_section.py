@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -115,6 +116,86 @@ def _project_to_2d(
         u = np.array([0.0, 1.0, 0.0])
     delta = p - plane_point
     return float(delta @ u), float(delta[2])
+
+
+def _chain_segments(
+    segs: list[tuple[tuple[float, float], tuple[float, float]]],
+    tol: float = 0.02,
+) -> list[list[tuple[float, float]]]:
+    """Kjed sammen segmenter hvis endepunkter ligger innenfor `tol` meter.
+
+    Bruker romlig hash (cellestørrelse = tol) slik at endepunkter som ikke er
+    eksakt like likevel matches: målte gap mellom IFC-elementer er typisk
+    9–340 mm, langt over den gamle 1 mm-avrundingsnøkkelen. Kjedene beholder
+    de faktiske segment-endepunktene — hopp <= tol er usynlige i 1:200.
+    """
+    if not segs:
+        return []
+
+    inv = 1.0 / tol
+    cell_nodes: dict[tuple[int, int], list[int]] = defaultdict(list)
+    node_pts: list[tuple[float, float]] = []
+
+    def node_for(p: tuple[float, float]) -> int:
+        """Finn nærmeste eksisterende node innenfor tol, ellers opprett ny."""
+        cx, cy = int(math.floor(p[0] * inv)), int(math.floor(p[1] * inv))
+        best: int | None = None
+        best_d = tol
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for ni in cell_nodes.get((cx + dx, cy + dy), ()):
+                    q = node_pts[ni]
+                    d = math.hypot(p[0] - q[0], p[1] - q[1])
+                    if d <= best_d:
+                        best, best_d = ni, d
+        if best is not None:
+            return best
+        ni = len(node_pts)
+        node_pts.append(p)
+        cell_nodes[(cx, cy)].append(ni)
+        return ni
+
+    # node -> [(nabo-node, segment-indeks)]
+    adj: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    seg_nodes: list[tuple[int, int]] = []
+    for idx, (p1, p2) in enumerate(segs):
+        n1, n2 = node_for(p1), node_for(p2)
+        seg_nodes.append((n1, n2))
+        adj[n1].append((n2, idx))
+        adj[n2].append((n1, idx))
+
+    used: set[int] = set()
+    chains: list[list[tuple[float, float]]] = []
+
+    # Start fra grad-1-noder (kjedeender) for lengst mulig kjeder; ellers alle.
+    starts = [n for n in adj if len(adj[n]) == 1] or list(adj)
+
+    for start in starts:
+        while any(si not in used for _other, si in adj[start]):
+            chain_pts: list[tuple[float, float]] = []
+            node = start
+            while True:
+                cand = [(other, si) for other, si in adj[node] if si not in used]
+                if not cand:
+                    break
+                other, si = cand[0]
+                used.add(si)
+                p1, p2 = segs[si]
+                n1, _n2 = seg_nodes[si]
+                a, b = (p1, p2) if n1 == node else (p2, p1)
+                if not chain_pts:
+                    chain_pts.append(a)
+                chain_pts.append(b)
+                node = other
+            if len(chain_pts) >= 2:
+                chains.append(chain_pts)
+
+    # Segmenter som aldri ble nådd (f.eks. lukkede sykluser uten grad-1-node)
+    for idx, (p1, p2) in enumerate(segs):
+        if idx not in used:
+            chains.append([p1, p2])
+
+    return chains
 
 
 def cut_cross_section(tins: list[TINLayer], station: Station) -> CrossSection:

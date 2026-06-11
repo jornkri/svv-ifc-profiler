@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -12,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import MultipleLocator
 
-from .cross_section import CrossSection
+from .cross_section import CrossSection, _chain_segments  # noqa: F401 — _chain_segments re-eksporteres for tester og normalprofil
 from .longitudinal_profile import LongitudinalProfile
 from .normal_section import compute_normal_section
 
@@ -105,8 +104,6 @@ def _draw_terrain_chain(ax, chain: list[tuple[float, float]], gid: str | None = 
                 color="black", linewidth=0.6, zorder=2,
             )
 
-_TOL = 1e-3  # toleranse for sammenkjeding av endepunkter (meter) — 1 mm håndterer IFC-presisjon
-
 # Classes that represent solid pavement volumes — stacked layers produce multiple TIN edges
 # at nearly identical v values. We render only the upper envelope instead of all edges.
 _PAVEMENT_CLASSES = frozenset({"planum", "kjørefelt", "skulder", "kantstein", "gang_sykkel"})
@@ -134,65 +131,6 @@ def _snap_ref_elevation(station_z: float, min_v: float) -> int:
     """Returner referanselinjekoteen snappet til heltallsmeter under laveste punkt (R700)."""
     return math.floor(station_z + min_v)
 
-
-def _chain_segments(
-    segs: list[tuple[tuple[float, float], tuple[float, float]]],
-) -> list[list[tuple[float, float]]]:
-    """Kjed isolerte linjestykker fra triangelsnitt til sammenhengende polylinjer."""
-    if not segs:
-        return []
-
-    def key(p: tuple[float, float]) -> tuple:
-        return (round(p[0] / _TOL) * _TOL, round(p[1] / _TOL) * _TOL)
-
-    adj: dict[tuple, list[tuple[tuple, int, tuple]]] = defaultdict(list)
-    for i, (p1, p2) in enumerate(segs):
-        k1, k2 = key(p1), key(p2)
-        adj[k1].append((k2, i, p2))
-        adj[k2].append((k1, i, p1))
-
-    used: set[int] = set()
-    chains: list[list[tuple[float, float]]] = []
-
-    # Start fra endepunkter (grad 1) for å bygge kjeder fra ytterpunktene innover
-    start_candidates = [
-        pt for pt, neighbors in adj.items()
-        if len(neighbors) == 1 and neighbors[0][1] not in used
-    ]
-    if not start_candidates:
-        start_candidates = list(adj.keys())
-
-    for start in start_candidates:
-        available = [(nb, idx, actual) for nb, idx, actual in adj[start] if idx not in used]
-        if not available:
-            continue
-
-        first_nb, first_idx, _ = available[0]
-        first_seg = segs[first_idx]
-        chain: list[tuple[float, float]] = (
-            [first_seg[0], first_seg[1]] if key(first_seg[0]) == start
-            else [first_seg[1], first_seg[0]]
-        )
-        used.add(first_idx)
-        current = first_nb
-
-        while True:
-            nxt = [(nb, idx, a) for nb, idx, a in adj[current] if idx not in used]
-            if not nxt:
-                break
-            nb, idx, _ = nxt[0]
-            seg = segs[idx]
-            chain.append(seg[1] if key(seg[0]) == current else seg[0])
-            used.add(idx)
-            current = nb
-
-        chains.append(chain)
-
-    for i, (p1, p2) in enumerate(segs):
-        if i not in used:
-            chains.append([p1, p2])
-
-    return chains
 
 def _upper_envelope_chain(
     segs: list[tuple[tuple[float, float], tuple[float, float]]],

@@ -115,3 +115,43 @@ def test_project_to_2d_graded_road():
     # u should still be ~3.0 regardless of grade
     assert u == pytest.approx(3.0, abs=0.01)
     assert v == pytest.approx(0.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# _chain_segments — toleransebasert kjeding
+# ---------------------------------------------------------------------------
+
+from src.ifc_processor.cross_section import _chain_segments
+
+
+def test_chain_segments_joins_within_tolerance():
+    """15 mm gap mellom segmenter skal kjedes (reelle IFC-gap er 9–340 mm)."""
+    segs = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((1.015, 0.0), (2.0, 0.5)),
+    ]
+    chains = _chain_segments(segs)
+    assert len(chains) == 1
+    assert len(chains[0]) >= 3
+
+
+def test_chain_segments_keeps_large_gap_separate():
+    """100 mm gap er over default-toleransen (20 mm) — to kjeder."""
+    segs = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((1.1, 0.0), (2.0, 0.5)),
+    ]
+    chains = _chain_segments(segs)
+    assert len(chains) == 2
+
+
+def test_chain_segments_exact_touch_still_works():
+    """Eksakt like endepunkter (gammel oppførsel) skal fortsatt kjedes."""
+    segs = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((1.0, 0.0), (2.0, 0.5)),
+        ((2.0, 0.5), (3.0, 0.5)),
+    ]
+    chains = _chain_segments(segs)
+    assert len(chains) == 1
+    assert len(chains[0]) == 4
