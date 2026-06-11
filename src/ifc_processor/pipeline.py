@@ -350,7 +350,7 @@ def run_pipeline(
 
         try:
             cs = cut_cross_section(tins, s)
-            cs = stitch_cross_section_gaps(cs, tol=0.5)
+            cs = stitch_cross_section_gaps(cs)
             cs = recenter_on_pavement(cs)
 
             # Terrain fra IFC (rask, fra BIM — ingen HTTP-kall)
