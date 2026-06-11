@@ -155,3 +155,64 @@ def test_chain_segments_exact_touch_still_works():
     chains = _chain_segments(segs)
     assert len(chains) == 1
     assert len(chains[0]) == 4
+
+
+# ---------------------------------------------------------------------------
+# stitch_cross_section_gaps — kjede-endepunkter + gjensidig nærmeste bro
+# ---------------------------------------------------------------------------
+
+from src.ifc_processor.cross_section import CrossSection, stitch_cross_section_gaps
+
+
+def _cs(segments: dict) -> CrossSection:
+    return CrossSection(station=0.0, elevation=100.0, segments=segments)
+
+
+def test_stitch_bridges_same_class_gap():
+    """200 mm gap innen samme klasse (skulder) skal broes — gammel kode nektet samme klasse."""
+    cs = _cs({"skulder": [((0.0, 0.0), (1.0, 0.0)), ((1.2, 0.0), (2.2, 0.0))]})
+    out = stitch_cross_section_gaps(cs)
+    assert len(out.segments["skulder"]) == 3
+    assert len(_chain_segments(out.segments["skulder"])) == 1
+
+
+def test_stitch_bridge_lands_in_lower_priority_class():
+    """Bro mellom skulder (prio 4) og groft (prio 3) skal ligge i groft."""
+    cs = _cs({
+        "skulder": [((0.0, 0.0), (1.0, 0.0))],
+        "groft": [((1.1, -0.05), (2.0, -0.5))],
+    })
+    out = stitch_cross_section_gaps(cs)
+    assert len(out.segments["skulder"]) == 1
+    assert len(out.segments["groft"]) == 2
+
+
+def test_stitch_never_bridges_terreng():
+    """Terreng skal aldri broes — naturlige terrengbrudd forblir åpne."""
+    cs = _cs({
+        "terreng": [((0.0, 0.0), (1.0, 0.0))],
+        "fylling": [((1.1, 0.0), (2.0, -0.5))],
+    })
+    out = stitch_cross_section_gaps(cs)
+    total = sum(len(s) for s in out.segments.values())
+    assert total == 2  # ingen bro lagt til
+
+
+def test_stitch_ignores_gap_above_tolerance():
+    """600 mm gap er over tol=0.40 — ingen bro."""
+    cs = _cs({"skulder": [((0.0, 0.0), (1.0, 0.0)), ((1.6, 0.0), (2.6, 0.0))]})
+    out = stitch_cross_section_gaps(cs)
+    assert len(out.segments["skulder"]) == 2
+
+
+def test_stitch_max_one_bridge_per_endpoint():
+    """Tre kjedeender nær hverandre skal gi nøyaktig én bro (gjensidig nærmeste),
+    ikke en stjerne av broer."""
+    cs = _cs({"fylling": [
+        ((0.0, 0.0), (1.0, 0.0)),       # ende A = (1.0, 0)
+        ((1.10, 0.0), (2.0, 0.0)),      # ende B = (1.10, 0); d(A,B)=0.100
+        ((1.18, 0.05), (1.5, 0.8)),     # ende C = (1.18, 0.05); d(B,C)=0.094, d(A,C)=0.187
+    ]})
+    out = stitch_cross_section_gaps(cs)
+    total = sum(len(s) for s in out.segments.values())
+    assert total == 4  # 3 originale + nøyaktig 1 bro (B<->C, gjensidig nærmeste)

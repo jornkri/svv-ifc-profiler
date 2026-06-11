@@ -233,56 +233,74 @@ def cut_cross_section(tins: list[TINLayer], station: Station) -> CrossSection:
     )
 
 
+# Bro-segmenter legges i klassen med lavest prioritet, slik at broer ikke
+# forstyrrer øvre-envelope-renderingen av vegdekkeklassene.
+_PRIO = {
+    "planum": 5, "kjørefelt": 5, "skulder": 4, "kantstein": 4, "gang_sykkel": 4,
+    "groft": 3, "skjaering": 3, "fylling": 3, "terreng": 2, "unknown": 1,
+}
+
+
 def stitch_cross_section_gaps(
     cs: CrossSection,
-    tol: float = 0.02,
+    tol: float = 0.40,
 ) -> CrossSection:
-    """Tett modelleringsgap mellom tilstøtende IFC-elementer.
+    """Tett modelleringsgap mellom tilstøtende IFC-elementer med bro-segmenter.
 
-    IFC-vegmodeller lagrer planum, fylling, skulder etc. som separate TIN-objekter.
-    Disse møtes geometrisk, men kan ha sub-centimeter gap ved kantene. Etter snitting
-    gir dette isolerte segmenter fra hvert element. Denne funksjonen legger til
-    korte bro-segmenter mellom endepunkter fra ulike lag som er innenfor `tol` meter
-    fra hverandre, slik at tverrprofilet blir visuelt sammenhengende.
+    IFC-vegmodeller lagrer planum, fylling, skulder etc. som separate
+    TIN-objekter. Disse møtes geometrisk, men har gap på 9–340 mm ved kantene.
+    Strategi: kjed segmentene per klasse og se kun på KJEDE-endepunkter (ikke
+    alle rå segment-endepunkter). Bro legges kun mellom gjensidig nærmeste
+    endepunkt-par fra ulike kjeder, og hvert endepunkt brukes maks én gang.
+    Det hindrer stjerne-artefakter strukturelt, slik at toleransen kan være
+    høy nok (0,40 m) til å dekke reelle gap — også innen samme klasse.
 
-    tol=0.02 m: bro bare for ekte modelleringsgap (< 2 cm). Større avstand betyr
-    separate fysiske elementer — kobling der ville skapt stjerne-artefakter i rendering.
+    Terreng broes aldri: naturlige terrengbrudd skal forbli åpne.
     """
-    # Bygg liste av alle (u, v, road_class) for endepunkter i alle kjeder
-    # Kjeden-endepunkter finner vi ved å bruke samme chaining-logikk.
-    # Enklere: bruk råsegmentenes endepunkter direkte.
-    endpoints: list[tuple[float, float, str]] = []
+    # (u, v, klasse, kjede-id) for begge ender av hver kjede
+    endpoints: list[tuple[float, float, str, int]] = []
+    chain_id = 0
     for cls, segs in cs.segments.items():
-        for (u1, v1), (u2, v2) in segs:
-            endpoints.append((u1, v1, cls))
-            endpoints.append((u2, v2, cls))
+        if cls == "terreng":
+            continue
+        for chain in _chain_segments(segs):
+            if len(chain) < 2:
+                continue
+            endpoints.append((chain[0][0], chain[0][1], cls, chain_id))
+            endpoints.append((chain[-1][0], chain[-1][1], cls, chain_id))
+            chain_id += 1
+
+    def nearest(i: int) -> int | None:
+        """Nærmeste endepunkt fra en ANNEN kjede, innenfor tol."""
+        u1, v1, _c1, ch1 = endpoints[i]
+        best: int | None = None
+        best_d = tol
+        for j, (u2, v2, _c2, ch2) in enumerate(endpoints):
+            if ch2 == ch1:
+                continue
+            d = math.hypot(u2 - u1, v2 - v1)
+            if 1e-9 < d <= best_d:
+                best, best_d = j, d
+        return best
 
     new_segs: dict[str, list[tuple[tuple[float, float], tuple[float, float]]]] = {
         k: list(v) for k, v in cs.segments.items()
     }
-    seen: set[tuple] = set()
-
+    bridged: set[int] = set()
     for i in range(len(endpoints)):
-        u1, v1, cls1 = endpoints[i]
-        for j in range(i + 1, len(endpoints)):
-            u2, v2, cls2 = endpoints[j]
-            if cls1 == cls2:
-                continue
-            dist = math.hypot(u2 - u1, v2 - v1)
-            if 0 < dist <= tol:
-                key = (round(u1, 4), round(v1, 4), round(u2, 4), round(v2, 4))
-                rkey = (round(u2, 4), round(v2, 4), round(u1, 4), round(v1, 4))
-                if key not in seen and rkey not in seen:
-                    seen.add(key)
-                    # Bro-segmentet legges alltid i det LAVERE-prioritets laget.
-                    # Vegdekkeklassene (planum, kjørefelt, skulder) bruker øvre-envelope
-                    # rendering — broer inn i dem forstyrrer envelopen og gir feil profil.
-                    _PRIO = {
-                        "planum": 5, "kjørefelt": 5, "skulder": 4, "groft": 3,
-                        "skjaering": 3, "fylling": 3, "terreng": 2, "unknown": 1,
-                    }
-                    bridge_cls = cls1 if _PRIO.get(cls1, 0) <= _PRIO.get(cls2, 0) else cls2
-                    new_segs.setdefault(bridge_cls, []).append(((u1, v1), (u2, v2)))
+        if i in bridged:
+            continue
+        j = nearest(i)
+        if j is None or j in bridged:
+            continue
+        if nearest(j) != i:
+            continue  # ikke gjensidig nærmeste — dropp
+        u1, v1, c1, _ = endpoints[i]
+        u2, v2, c2, _ = endpoints[j]
+        bridged.add(i)
+        bridged.add(j)
+        bridge_cls = c1 if _PRIO.get(c1, 0) <= _PRIO.get(c2, 0) else c2
+        new_segs.setdefault(bridge_cls, []).append(((u1, v1), (u2, v2)))
 
     return CrossSection(
         station=cs.station,
