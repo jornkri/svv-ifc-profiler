@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 import pytest
 from src.ifc_processor.cross_section import CrossSection
-from src.ifc_processor.renderer import _chain_segments, _upper_envelope_chain, render_cross_section_svg
+from src.ifc_processor.renderer import _chain_segments, _upper_envelope_chains, render_cross_section_svg
 
 
 def _simple_cross_section(station=50.0, elevation=100.0) -> CrossSection:
@@ -19,30 +19,35 @@ def _simple_cross_section(station=50.0, elevation=100.0) -> CrossSection:
 
 
 def test_upper_envelope_collapses_stacked_layers():
-    """Multiple near-identical layers (pavement structure) should reduce to one top surface."""
-    # Simulate slitelag top, slitelag bottom, bærelag top, bærelag bottom
-    segs = [
-        ((-5.0, 0.00), (5.0, -0.20)),   # slitelag top (with crossfall)
-        ((-5.0, -0.04), (5.0, -0.24)),  # slitelag bottom
-        ((-5.0, -0.04), (5.0, -0.24)),  # bærelag top (same as slitelag bottom)
-        ((-5.0, -0.14), (5.0, -0.34)),  # bærelag bottom
-    ]
-    result = _upper_envelope_chain(segs)
-    assert len(result) >= 2
-    # At u=0 the envelope should be at the slitelag top: v = lerp(0.0, -0.20, t=0.5) = -0.10
-    vs_at_center = [v for u, v in result if abs(u) < 0.2]
-    assert all(v > -0.15 for v in vs_at_center), "Envelope should trace the topmost surface"
+    """To lag oppå hverandre skal gi én linje langs ØVERSTE lag."""
+    segs = [((-3.0, 0.0), (3.0, 0.0)), ((-3.0, -0.3), (3.0, -0.3))]
+    chains = _upper_envelope_chains(segs)
+    assert len(chains) == 1
+    assert all(v > -0.15 for _u, v in chains[0])
 
 
 def test_upper_envelope_single_segment():
-    segs = [((-5.0, 0.0), (5.0, 0.0))]
-    result = _upper_envelope_chain(segs)
-    assert len(result) >= 2
-    assert all(abs(v) < 1e-9 for _, v in result)
+    chains = _upper_envelope_chains([((0.0, 0.0), (5.0, 1.0))])
+    assert len(chains) == 1
+    assert len(chains[0]) >= 2
 
 
 def test_upper_envelope_empty():
-    assert _upper_envelope_chain([]) == []
+    assert _upper_envelope_chains([]) == []
+
+
+def test_upper_envelope_splits_at_gap():
+    """Fysisk hull (2–5 m udekket) skal gi to kjeder, ikke en falsk rett linje."""
+    segs = [((0.0, 0.0), (2.0, 0.0)), ((5.0, 0.5), (7.0, 0.5))]
+    chains = _upper_envelope_chains(segs)
+    assert len(chains) == 2
+
+
+def test_upper_envelope_covers_extremes():
+    """Envelopen skal starte/slutte eksakt på klassens u-ytterpunkter."""
+    chains = _upper_envelope_chains([((0.0, 0.0), (5.0, 0.0))])
+    assert chains[0][0][0] == pytest.approx(0.0)
+    assert chains[-1][-1][0] == pytest.approx(5.0)
 
 
 def test_chain_segments_connects_adjacent():

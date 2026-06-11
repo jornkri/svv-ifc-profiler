@@ -132,43 +132,52 @@ def _snap_ref_elevation(station_z: float, min_v: float) -> int:
     return math.floor(station_z + min_v)
 
 
-def _upper_envelope_chain(
+def _upper_envelope_chains(
     segs: list[tuple[tuple[float, float], tuple[float, float]]],
     u_step: float = 0.1,
-) -> list[tuple[float, float]]:
-    """Return the highest v at each u across all segments — the visible road surface.
+) -> list[list[tuple[float, float]]]:
+    """Øvre envelope av segmenter, splittet i separate kjeder ved hull.
 
-    IFC road models store each pavement layer (slitelag, bærelag, …) as a separate
-    solid TIN. Cutting through them produces top + bottom edges for every layer, giving
-    a dense bundle of near-identical lines. This function collapses them to a single
-    chain tracing only the topmost surface (what R700 wants in a tverrprofil).
-    Near-vertical segments (|Δu| < 1 mm) are ignored.
+    Resampler på et regulært u-grid og tar maks v per bin. Bins uten dekning
+    (NaN) markerer fysiske hull (f.eks. midtrabatt) — envelopen splittes der
+    i stedet for å tegne en falsk rett linje over hullet. Linspace inkluderer
+    eksakt u_min/u_max, så kjedene når klassens ytterpunkter.
     """
     if not segs:
         return []
 
-    all_u = [u for (u1, _), (u2, _) in segs for u in (u1, u2)]
-    u_min, u_max = min(all_u), max(all_u)
-    if u_max - u_min < 1e-6:
-        return []
-
+    u_min = min(min(p1[0], p2[0]) for p1, p2 in segs)
+    u_max = max(max(p1[0], p2[0]) for p1, p2 in segs)
     n = max(3, int((u_max - u_min) / u_step) + 2)
     us = np.linspace(u_min, u_max, n)
     max_v = np.full(n, np.nan)
 
     for (u1, v1), (u2, v2) in segs:
+        if u2 < u1:
+            u1, v1, u2, v2 = u2, v2, u1, v1
         du = u2 - u1
         if abs(du) < 1e-3:
-            continue
-        i_lo = int(np.searchsorted(us, min(u1, u2) - 1e-9))
-        i_hi = int(np.searchsorted(us, max(u1, u2) + 1e-9, side="right"))
-        for i in range(i_lo, i_hi):
-            t = float(np.clip((us[i] - u1) / du, 0.0, 1.0))
+            continue  # nær-vertikale segmenter bidrar ikke til overflaten
+        i_lo = int(np.searchsorted(us, u1, side="left"))
+        i_hi = int(np.searchsorted(us, u2, side="right"))
+        for i in range(max(0, i_lo), min(n, i_hi)):
+            t = min(max((us[i] - u1) / du, 0.0), 1.0)
             v = v1 + t * (v2 - v1)
             if np.isnan(max_v[i]) or v > max_v[i]:
                 max_v[i] = v
 
-    return [(float(u), float(v)) for u, v in zip(us, max_v) if not np.isnan(v)]
+    chains: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    for u, v in zip(us, max_v):
+        if np.isnan(v):
+            if len(current) >= 2:
+                chains.append(current)
+            current = []
+        else:
+            current.append((float(u), float(v)))
+    if len(current) >= 2:
+        chains.append(current)
+    return chains
 
 
 _SLOPE_CLASSES = frozenset({"skjaering", "fylling", "groft"})
@@ -247,34 +256,6 @@ def _named_layer_color(label: str) -> str:
     return _OTHER_NAMED_COLOR
 
 
-def _lower_envelope_chain(
-    segs: list[tuple[tuple[float, float], tuple[float, float]]],
-    u_step: float = 0.1,
-) -> list[tuple[float, float]]:
-    """Returner laveste v ved hver u — undergrenselinje for et lag."""
-    if not segs:
-        return []
-    all_u = [u for (u1, _), (u2, _) in segs for u in (u1, u2)]
-    u_min, u_max = min(all_u), max(all_u)
-    if u_max - u_min < 1e-6:
-        return []
-    n = max(3, int((u_max - u_min) / u_step) + 2)
-    us = np.linspace(u_min, u_max, n)
-    min_v = np.full(n, np.nan)
-    for (u1, v1), (u2, v2) in segs:
-        du = u2 - u1
-        if abs(du) < 1e-3:
-            continue
-        i_lo = int(np.searchsorted(us, min(u1, u2) - 1e-9))
-        i_hi = int(np.searchsorted(us, max(u1, u2) + 1e-9, side="right"))
-        for i in range(i_lo, i_hi):
-            t = float(np.clip((us[i] - u1) / du, 0.0, 1.0))
-            v = v1 + t * (v2 - v1)
-            if np.isnan(min_v[i]) or v < min_v[i]:
-                min_v[i] = v
-    return [(float(u), float(v)) for u, v in zip(us, min_v) if not np.isnan(v)]
-
-
 def _is_pavement_label(label: str) -> bool:
     lower = label.lower()
     return any(kw in lower for kw in ("lag", "binder", "slite"))
@@ -295,10 +276,9 @@ def _draw_named_layer_chains(
 
         if _is_pavement_label(label):
             h_segs = _filter_horiz_segs(segs)
-            upper = _upper_envelope_chain(h_segs)
-            if len(upper) >= 2:
-                is_bindlag = "bindlag" in label.lower() or "bindelag" in label.lower()
-                lw = 1.8 if is_bindlag else 0.5
+            is_bindlag = "bindlag" in label.lower() or "bindelag" in label.lower()
+            lw = 1.8 if is_bindlag else 0.5
+            for upper in _upper_envelope_chains(h_segs):
                 lines = ax.plot([p[0] for p in upper], [p[1] for p in upper],
                         color=color, linewidth=lw, linestyle="-", zorder=3)
                 lines[0].set_gid('cs:named')
@@ -503,8 +483,7 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
         pavement_segs.extend(cross_section.segments.get(cls, []))
 
     if pavement_segs:
-        envelope = _upper_envelope_chain(_filter_horiz_segs(pavement_segs))
-        if len(envelope) >= 2:
+        for envelope in _upper_envelope_chains(_filter_horiz_segs(pavement_segs)):
             lines = ax.plot(
                 [p[0] for p in envelope],
                 [p[1] for p in envelope],
