@@ -204,35 +204,28 @@ def _filter_horiz_segs(
     return result
 
 
-def _outer_face_segs(
-    segs: list[tuple[tuple[float, float], tuple[float, float]]],
+def _outer_face_chains(
+    chains: list[list[tuple[float, float]]],
     tol: float = 1.0,
-) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    """Behold bare den ytterste flanken av skjæring/fylling-segmenter.
+) -> list[list[tuple[float, float]]]:
+    """Behold kjeder som når ut til ytterkantene av klassens u-utstrekning.
 
-    IFC modellerer skjæring og fylling som solide TIN-volumer. Et snitt gjennom
-    et slikt volum gir BEGGE flatene (indre og ytre) i tillegg til topp/bunn.
-    I R700-tverrprofil vises bare den ytterste synlige flaten (bergflaten eller
-    fyllingsskråningen). Denne funksjonen beholder bare segmenter der minst ett
-    endepunkt er innenfor `tol` meter fra den ytterste u-koordinaten per side.
+    TIN-solider har indre flater (vegger mellom lag) som gir doble linjer i
+    snittet; ytterflaten er den som når lengst ut. Filtrering på KJEDE-nivå
+    beholder hele skråningsforløpet fra ytterkant og innover, der gammel
+    per-segment-filtrering kappet linjen ved tol-grensen.
     """
-    if not segs:
-        return segs
-    all_u = [u for (u1, _), (u2, _) in segs for u in (u1, u2)]
-    u_min, u_max = min(all_u), max(all_u)
-    u_span = u_max - u_min
-    if u_span < tol:
-        return segs  # smalt element — behold alt
-
-    result = []
-    for (u1, v1), (u2, v2) in segs:
-        seg_u_min = min(u1, u2)
-        seg_u_max = max(u1, u2)
-        at_right = seg_u_max >= u_max - tol
-        at_left  = seg_u_min <= u_min + tol
-        if at_right or at_left:
-            result.append(((u1, v1), (u2, v2)))
-    return result
+    pts = [p for chain in chains for p in chain]
+    if not pts:
+        return chains
+    u_min = min(p[0] for p in pts)
+    u_max = max(p[0] for p in pts)
+    if u_max - u_min < tol:
+        return chains  # for smal utstrekning til å skille indre/ytre
+    return [
+        chain for chain in chains
+        if any(p[0] <= u_min + tol or p[0] >= u_max - tol for p in chain)
+    ]
 
 
 # Farger for navngitte dekkelag — grovere lag lysere (intuitiv dybde)
@@ -290,12 +283,16 @@ def _draw_named_layer_chains(
             # Side-komponenter (grøft, skjæring, fylling): fjern nær-loddrette sideflater
             # (vegger på TIN-solider) via slope-filter, kjedet som profil.
             # max_slope=3.0 beholder grøfteskråninger opp til ~72° mens loddrette vegger filtreres.
-            clean = [
-                (p1, p2) for p1, p2 in _filter_horiz_segs(segs, max_slope=2.0)
-                if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) >= 0.15
-            ]
+            clean = _filter_horiz_segs(segs, max_slope=3.0)
             for chain in _chain_segments(clean):
                 if _is_suspect_arm(chain):
+                    continue
+                # Minstelengde på KJEDE-nivå: per-segment-filter brøt kjedene i biter.
+                length = sum(
+                    math.hypot(chain[i + 1][0] - chain[i][0], chain[i + 1][1] - chain[i][1])
+                    for i in range(len(chain) - 1)
+                )
+                if length < 0.15:
                     continue
                 lines = ax.plot([p[0] for p in chain], [p[1] for p in chain],
                         color=color, linewidth=0.7, linestyle="-", zorder=3)
@@ -499,8 +496,10 @@ def render_cross_section_svg(cross_section: CrossSection, output_path: Path) -> 
     for road_class, segs in cross_section.segments.items():
         if road_class in _PAVEMENT_CLASSES:
             continue  # already drawn as upper envelope above
-        draw_segs = _outer_face_segs(segs) if road_class in _SLOPE_CLASSES else segs
-        for chain in _chain_segments(draw_segs):
+        chains = _chain_segments(segs)
+        if road_class in _SLOPE_CLASSES:
+            chains = _outer_face_chains(chains)
+        for chain in chains:
             if _is_suspect_arm(chain):
                 logger.debug("Filtrerer nær-vertikal arm for klasse '%s'", road_class)
                 continue

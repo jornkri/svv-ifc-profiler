@@ -3,7 +3,9 @@ import tempfile
 from pathlib import Path
 import pytest
 from src.ifc_processor.cross_section import CrossSection
-from src.ifc_processor.renderer import _chain_segments, _upper_envelope_chains, render_cross_section_svg
+from src.ifc_processor.renderer import (
+    _chain_segments, _outer_face_chains, _upper_envelope_chains, render_cross_section_svg,
+)
 
 
 def _simple_cross_section(station=50.0, elevation=100.0) -> CrossSection:
@@ -74,6 +76,32 @@ def test_chain_segments_isolated():
 
 def test_chain_segments_empty():
     assert _chain_segments([]) == []
+
+
+def test_outer_face_chains_drops_interior_chain():
+    """Indre flater (vegger mellom TIN-lag) skal droppes; ytterflaten beholdes."""
+    chains = [
+        [(0.0, 0.0), (4.0, 2.0), (8.0, 4.0)],  # når begge ytterkanter
+        [(3.0, 0.0), (5.0, 1.0)],               # ren indre flate
+    ]
+    assert _outer_face_chains(chains) == [chains[0]]
+
+
+def test_outer_face_chains_keeps_full_chain_reaching_inward():
+    """En kjede som starter ved ytterkant og går innover skal beholdes HEL —
+    gammel per-segment-filtrering kappet den ved tol-grensen."""
+    chains = [
+        [(0.0, 0.0), (8.0, 0.0)],                # definerer u-utstrekningen
+        [(7.5, 0.0), (5.0, 1.0), (3.0, 2.0)],    # ytterflate som går innover
+    ]
+    result = _outer_face_chains(chains)
+    assert chains[1] in result
+
+
+def test_outer_face_chains_keeps_all_when_narrow():
+    """Smal klasse (< tol utstrekning) har ingen meningsfull ytterkant — behold alt."""
+    chains = [[(0.0, 0.0), (0.4, 0.2)], [(0.2, 0.0), (0.6, 0.1)]]
+    assert _outer_face_chains(chains) == chains
 
 
 def test_render_produces_svg_file():
