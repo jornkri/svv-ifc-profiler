@@ -250,8 +250,8 @@ def stitch_cross_section_gaps(
     IFC-vegmodeller lagrer planum, fylling, skulder etc. som separate
     TIN-objekter. Disse møtes geometrisk, men har gap på 9–340 mm ved kantene.
     Strategi: kjed segmentene per klasse og se kun på KJEDE-endepunkter (ikke
-    alle rå segment-endepunkter). Bro legges kun mellom gjensidig nærmeste
-    endepunkt-par fra ulike kjeder, og hvert endepunkt brukes maks én gang.
+    alle rå segment-endepunkter). Broer legges grådig etter stigende avstand
+    mellom endepunkt-par fra ulike kjeder, og hvert endepunkt brukes maks én gang.
     Det hindrer stjerne-artefakter strukturelt, slik at toleransen kan være
     høy nok (0,40 m) til å dekke reelle gap — også innen samme klasse.
 
@@ -270,35 +270,32 @@ def stitch_cross_section_gaps(
             endpoints.append((chain[-1][0], chain[-1][1], cls, chain_id))
             chain_id += 1
 
-    def nearest(i: int) -> int | None:
-        """Nærmeste endepunkt fra en ANNEN kjede, innenfor tol."""
+    # Kandidatpar (avstand, i, j) mellom endepunkter fra ulike kjeder.
+    # Grådig matching etter stigende avstand; hvert endepunkt brukes maks
+    # én gang — det hindrer stjerne-artefakter strukturelt.
+    candidates: list[tuple[float, int, int]] = []
+    for i in range(len(endpoints)):
         u1, v1, _c1, ch1 = endpoints[i]
-        best: int | None = None
-        best_d = tol
-        for j, (u2, v2, _c2, ch2) in enumerate(endpoints):
+        for j in range(i + 1, len(endpoints)):
+            u2, v2, _c2, ch2 = endpoints[j]
             if ch2 == ch1:
                 continue
             d = math.hypot(u2 - u1, v2 - v1)
-            if 1e-9 < d <= best_d:
-                best, best_d = j, d
-        return best
+            if 1e-9 < d <= tol:
+                candidates.append((d, i, j))
+    candidates.sort()
 
     new_segs: dict[str, list[tuple[tuple[float, float], tuple[float, float]]]] = {
         k: list(v) for k, v in cs.segments.items()
     }
-    bridged: set[int] = set()
-    for i in range(len(endpoints)):
-        if i in bridged:
+    used: set[int] = set()
+    for _d, i, j in candidates:
+        if i in used or j in used:
             continue
-        j = nearest(i)
-        if j is None or j in bridged:
-            continue
-        if nearest(j) != i:
-            continue  # ikke gjensidig nærmeste — dropp
+        used.add(i)
+        used.add(j)
         u1, v1, c1, _ = endpoints[i]
         u2, v2, c2, _ = endpoints[j]
-        bridged.add(i)
-        bridged.add(j)
         bridge_cls = c1 if _PRIO.get(c1, 0) <= _PRIO.get(c2, 0) else c2
         new_segs.setdefault(bridge_cls, []).append(((u1, v1), (u2, v2)))
 

@@ -216,3 +216,16 @@ def test_stitch_max_one_bridge_per_endpoint():
     out = stitch_cross_section_gaps(cs)
     total = sum(len(s) for s in out.segments.values())
     assert total == 4  # 3 originale + nøyaktig 1 bro (B<->C, gjensidig nærmeste)
+
+
+def test_stitch_no_endpoint_starvation():
+    """Når A-B broes skal ikke C-D-paret blokkeres selv om C sin globalt
+    nærmeste ende (B) allerede er brukt — grådig matching etter avstand."""
+    cs = _cs({"fylling": [
+        ((0.0, 0.0), (1.0, 0.0)),        # ende A = (1.0, 0)
+        ((1.1, 0.0), (1.3, 0.0)),        # ender B = (1.1, 0) og C = (1.3, 0)
+        ((1.3, 0.35), (2.0, 1.0)),       # ende D = (1.3, 0.35)
+    ]})
+    out = stitch_cross_section_gaps(cs)
+    total = sum(len(s) for s in out.segments.values())
+    assert total == 5  # 3 originale + bro A-B + bro C-D
