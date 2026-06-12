@@ -3094,6 +3094,7 @@ async function loadSvg(stasjon_m) {
   ph.style.display = 'none';
   host.innerHTML = '';
   currentCoordMap = null;
+  hideCsMapMarker(); // stasjonsbytte via piltast gir ingen pointerleave
   zoomCtrl.classList.remove('visible');
   loading.style.display = 'flex';
 

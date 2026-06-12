@@ -10,7 +10,7 @@
 
 **Viktig kontekst for utfører:**
 - Alt skjer i `web/profilutforsker.html` (~3900 linjer, alt inline). Linjenumre under er ca. — søk på de oppgitte kodeutdragene.
-- `stations[idx]` har `.x/.y` (EPSG:25833) og `.z` (kote). `clTangent(idx)` (definert nær «Enhets-tangent langs senterlinja») gir enhets-tangent `{tx, ty}`; normalen er `(-ty, tx)` — samme konvensjon som `drawCrossSectionLine()`.
+- `stations[idx]` har `.x/.y` (EPSG:25833) og `.z` (kote). `clTangent(idx)` (definert nær «Enhets-tangent langs senterlinja») gir enhets-tangent `{tx, ty}`; normalen er `(ty, -tx)` — samme u-akse som backend (`cross_section._project_to_2d`) og `drawCrossSectionLine()`. (Planen sa opprinnelig `(-ty, tx)`; det var speilvendt og ble rettet i debadf9/66354ba.)
 - `MAGENTA = [224, 34, 142]` er definert globalt.
 - Eksisterende `hoverLayer` (2D) og `selected3dLayer` (3D) kan IKKE brukes til markøren — begge tømmes med `removeAll()` av annen kode (kart-hover/`selectStation` hhv. `mark3dStation`).
 - 3D er lazy-init: `csCursor3dLayer` finnes først etter at brukeren har åpnet 3D én gang. Alle 3D-oppdateringer må derfor være guarded.
@@ -54,7 +54,7 @@ function setCsMapAxis(idx) {
   const s = stations[idx];
   if (!s) { csMapAxis = null; return; }
   const { tx, ty } = clTangent(idx);
-  csMapAxis = { x0: s.x, y0: s.y, px: -ty, py: tx };
+  csMapAxis = { x0: s.x, y0: s.y, px: ty, py: -tx };  // u-akse, rettet i debadf9
 }
 
 // Flytt (eller opprett) cursor-markøren. rAF-throttlet: raske pointermove-
