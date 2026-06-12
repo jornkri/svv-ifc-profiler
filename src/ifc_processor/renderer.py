@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import date
 from pathlib import Path
 
@@ -251,6 +252,15 @@ def _named_layer_color(label: str) -> str:
     return _OTHER_NAMED_COLOR
 
 
+_GENERIC_LABEL_RE = re.compile(r"(?i)^\s*triangelnett")
+
+
+def _is_generic_label(label: str) -> bool:
+    """Etiketter som 'Triangelnett - 4' er IFC-navnestøy uten faglig verdi —
+    geometrien tegnes, men callouten droppes."""
+    return bool(_GENERIC_LABEL_RE.match(label))
+
+
 def _is_pavement_label(label: str) -> bool:
     lower = label.lower()
     return any(kw in lower for kw in ("lag", "binder", "slite"))
@@ -271,11 +281,9 @@ def _draw_named_layer_chains(
 
         if _is_pavement_label(label):
             h_segs = _filter_horiz_segs(segs)
-            is_bindlag = "bindlag" in label.lower() or "bindelag" in label.lower()
-            lw = 1.8 if is_bindlag else 0.5
             for upper in _upper_envelope_chains(h_segs):
                 lines = ax.plot([p[0] for p in upper], [p[1] for p in upper],
-                        color=color, linewidth=lw, linestyle="-", zorder=3)
+                        color=color, linewidth=0.5, linestyle="-", zorder=3)
                 lines[0].set_gid('cs:named')
 
             # Øvre konvolutt per lag er allerede tilstrekkelig for å vise alle grensesnitt
@@ -314,6 +322,8 @@ def _draw_named_labels(
     """
     label_positions: list[tuple[str, float, float, float]] = []  # (label, u_mid, v_ref, color)
     for label, segs in sorted(named_segments.items()):
+        if _is_generic_label(label):
+            continue
         pts = [(u, v) for (u1, v1), (u2, v2) in segs for (u, v) in [(u1, v1), (u2, v2)]]
         if not pts:
             continue

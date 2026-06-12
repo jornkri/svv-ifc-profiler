@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 from src.ifc_processor.cross_section import CrossSection
 from src.ifc_processor.renderer import (
-    _chain_segments, _outer_face_chains, _upper_envelope_chains, render_cross_section_svg,
+    _chain_segments, _is_generic_label, _outer_face_chains, _upper_envelope_chains,
+    render_cross_section_svg,
 )
 
 
@@ -347,3 +348,40 @@ def test_svg_contains_data_cs_gids():
         assert 'id="cs:kjørefelt"' in content
         assert 'id="cs:terreng"' in content
         assert 'id="cs:skjaering"' in content
+
+
+def test_is_generic_label():
+    from src.ifc_processor.renderer import _is_generic_label
+    assert _is_generic_label("Triangelnett - 4")
+    assert _is_generic_label("triangelnett")
+    assert not _is_generic_label("Bindlag 1")
+    assert not _is_generic_label("V. Grøft 2")
+
+
+def test_generic_triangelnett_callout_suppressed():
+    """Geometrien tegnes, men callout-etiketten 'Triangelnett - N' skal vekk."""
+    cs = CrossSection(
+        station=50.0, elevation=100.0,
+        segments={"planum": [((-3.0, 0.0), (3.0, 0.0))]},
+        named_segments={"Triangelnett - 4": [((-2.0, -0.5), (2.0, -0.5))]},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "Triangelnett" not in content
+
+
+def test_bindlag_drawn_thin():
+    """Bindlag skal IKKE tegnes tykkere enn vegoverflaten (gammel lw=1.8)."""
+    cs = CrossSection(
+        station=50.0, elevation=100.0,
+        segments={"planum": [((-3.0, 0.0), (3.0, 0.0))]},
+        named_segments={"Bindlag 1": [((-3.0, -0.1), (3.0, -0.1))]},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "test.svg"
+        render_cross_section_svg(cs, out)
+        content = out.read_text(encoding="utf-8")
+    assert "stroke-width: 1.8" not in content
+    assert "stroke-width:1.8" not in content
