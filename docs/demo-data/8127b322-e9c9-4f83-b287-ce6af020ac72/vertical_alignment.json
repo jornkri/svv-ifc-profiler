@@ -1,0 +1,22 @@
+[
+  {
+    "sta_start": -0.068,
+    "sta_end": 43.938,
+    "gradient_pct": -2.7
+  },
+  {
+    "sta_start": 67.764,
+    "sta_end": 99.315,
+    "gradient_pct": 3.3
+  },
+  {
+    "sta_start": 106.974,
+    "sta_end": 127.756,
+    "gradient_pct": 0.2
+  },
+  {
+    "sta_start": 127.756,
+    "sta_end": 127.756,
+    "gradient_pct": 0.2
+  }
+]

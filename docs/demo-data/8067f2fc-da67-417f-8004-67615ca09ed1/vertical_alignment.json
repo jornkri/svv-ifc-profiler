@@ -1,0 +1,127 @@
+[
+  {
+    "sta_start": 0.0,
+    "sta_end": 119.309,
+    "gradient_pct": 0.0
+  },
+  {
+    "sta_start": 175.305,
+    "sta_end": 240.822,
+    "gradient_pct": -2.8
+  },
+  {
+    "sta_start": 316.782,
+    "sta_end": 469.148,
+    "gradient_pct": 1.0
+  },
+  {
+    "sta_start": 582.639,
+    "sta_end": 742.77,
+    "gradient_pct": -1.8
+  },
+  {
+    "sta_start": 808.034,
+    "sta_end": 938.031,
+    "gradient_pct": 0.1
+  },
+  {
+    "sta_start": 1025.829,
+    "sta_end": 1052.714,
+    "gradient_pct": 4.0
+  },
+  {
+    "sta_start": 1158.994,
+    "sta_end": 1263.398,
+    "gradient_pct": -1.3
+  },
+  {
+    "sta_start": 1451.518,
+    "sta_end": 1478.71,
+    "gradient_pct": -3.5
+  },
+  {
+    "sta_start": 1562.677,
+    "sta_end": 1791.068,
+    "gradient_pct": 0.2
+  },
+  {
+    "sta_start": 1902.249,
+    "sta_end": 2007.964,
+    "gradient_pct": 2.6
+  },
+  {
+    "sta_start": 2066.206,
+    "sta_end": 2173.619,
+    "gradient_pct": 0.3
+  },
+  {
+    "sta_start": 2272.385,
+    "sta_end": 2449.31,
+    "gradient_pct": -1.3
+  },
+  {
+    "sta_start": 2632.476,
+    "sta_end": 2848.945,
+    "gradient_pct": 1.3
+  },
+  {
+    "sta_start": 2903.744,
+    "sta_end": 3012.482,
+    "gradient_pct": 1.0
+  },
+  {
+    "sta_start": 3078.172,
+    "sta_end": 3137.663,
+    "gradient_pct": 1.2
+  },
+  {
+    "sta_start": 3285.591,
+    "sta_end": 3415.14,
+    "gradient_pct": -0.9
+  },
+  {
+    "sta_start": 3495.603,
+    "sta_end": 3557.886,
+    "gradient_pct": -4.9
+  },
+  {
+    "sta_start": 3636.985,
+    "sta_end": 3704.008,
+    "gradient_pct": 3.0
+  },
+  {
+    "sta_start": 3829.711,
+    "sta_end": 3889.628,
+    "gradient_pct": -1.2
+  },
+  {
+    "sta_start": 4035.641,
+    "sta_end": 4102.582,
+    "gradient_pct": -0.5
+  },
+  {
+    "sta_start": 4223.002,
+    "sta_end": 4316.367,
+    "gradient_pct": -1.5
+  },
+  {
+    "sta_start": 4379.857,
+    "sta_end": 4407.137,
+    "gradient_pct": 0.3
+  },
+  {
+    "sta_start": 4478.138,
+    "sta_end": 4654.057,
+    "gradient_pct": -0.0
+  },
+  {
+    "sta_start": 4704.208,
+    "sta_end": 4802.458,
+    "gradient_pct": 0.0
+  },
+  {
+    "sta_start": 4802.458,
+    "sta_end": 4802.458,
+    "gradient_pct": 0.0
+  }
+]

@@ -831,6 +831,11 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
             <span class="layer-name">Tverrprofilpunkter</span>
             <span class="layer-count" id="cnt-stations" style="display:none">—</span>
           </div>
+          <div class="layer-row muted" id="row-geom" onclick="toggleLayer('geom')">
+            <button class="layer-toggle" id="tog-geom"></button>
+            <div class="layer-swatch" style="width:18px;height:12px;border-radius:2px;background:var(--paper-2);border:0.5px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:var(--ink);flex:0 0 18px">R/A</div>
+            <span class="layer-name">Kurvaturmerking (R/A)</span>
+          </div>
         </div>
         <div class="sb-group" id="grp-bim" style="display:none">
           <div class="sb-grp-title">BIM-modell</div>
@@ -905,6 +910,14 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/>
             <path d="M5 1v12" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="map-tool-group" id="grp-slice" style="display:none">
+        <button class="map-tool" id="btn-slice" onclick="toggleSlice()" title="Snittverktøy (3D)">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="3" y="3" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M1 9.5L13 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
           </svg>
         </button>
       </div>
@@ -1132,8 +1145,8 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
 'use strict';
 
 // Statisk GitHub Pages-bygg: ingen backend. Per-prosjekt-filer (SVG, DEM,
-// horisontal kurvatur) ligger under ./demo-data/<job_id>/ og AGOL-lagene nås
-// direkte med ArcGIS-token fra klient-side OAuth (se AUTH-seksjonen).
+// horisontal/vertikal kurvatur) ligger under ./demo-data/<job_id>/ og AGOL-lagene
+// nås direkte med ArcGIS-token fra klient-side OAuth (se AUTH-seksjonen).
 const DEMO_BASE = './demo-data';
 const SCENE_TERRAIN_URL  = 'https://services.geodataonline.no/arcgis/rest/services/Geocache_UTM33_EUREF89/GeocacheTerreng/ImageServer';
 // 3D-vegmodellen kommer fra jobbens eget publiserte scene-lag (bim_scene_url, en
@@ -1301,6 +1314,7 @@ let st3d = null;            // profilpunkt i 3D (m/callout-labels)
 let selected3dLayer = null; // GraphicsLayer for markør på valgt stasjon i 3D
 let hoverLayer = null;
 let selectedLayer = null;
+let geomLabelLayer = null;
 let stations = [];
 let currentIdx = -1;
 let currentJobId = null;
@@ -1316,6 +1330,7 @@ function toggleLpRow(key) {
   if (lpOpen) drawLp();
 }
 let horCurves = [];  // [{kind, sta_start, sta_end, radius?, A?, dir?}, ...]
+let vertGrades = [];  // [{sta_start, sta_end, gradient_pct}, ...]  (R700 lengdefall-påskrift)
 let widenings = [];  // [{sta_start, sta_end, val_m}, ...]  (breddeutvidelse pr seksjon)
 let lpZoom = 1;
 let _lpDrag = { active: false, sx: 0, sy: 0, sl: 0, st: 0, moved: 0 };
@@ -1326,11 +1341,13 @@ let map3d = null;           // Map for 3D
 let scene3dReady = false;   // lazy-init flagg
 let scene3dFirstOpen = true; // første 3D-veksling → Bilder settes som felles bakgrunn
 let scene3dHost = null;     // fersk container-div for SceneView (se initScene)
+let slice = null;           // SliceViewModel for 3D-snittverktøy (lazy)
+let sliceActive = false;    // er slice-verktøyet på (planet tegnes/vises)?
 let currentSceneUrl = '';        // bim_scene_url for valgt jobb (3D-vegmodell)
 let currentCenterlineUrl = '';   // senterlinje-FeatureLayer for valgt jobb
 let currentSectionsUrl = '';     // profilpunkt-FeatureLayer for valgt jobb
 let csMaximized = false;
-let layerVis = { centerline: true, stations: true, bim: true };
+let layerVis = { centerline: true, stations: true, bim: true, geom: false };
 let currentToken = null;
 let orgUrl = 'https://www.arcgis.com';
 let darkMode = false;
@@ -1341,6 +1358,14 @@ let trafikkBaseLayer = null;  // Trafikkportalen-laget i aktiv basemap, ellers n
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
 let currentCoordMap = null;
+// Linked cursor: tverrprofil-hover → markør i kart/3D
+let csMapAxis = null;        // {x0, y0, px, py} — snittakse i kartet for valgt stasjon
+let csCursorLayer = null;    // GraphicsLayer (2D) for cursor-markøren
+let csCursor3dLayer = null;  // GraphicsLayer (3D) for cursor-markøren
+let csCursorGfx2d = null;    // gjenbrukbar Graphic i 2D
+let csCursorGfx3d = null;    // gjenbrukbar Graphic i 3D
+let _csCursorRaf = 0;        // rAF-handle (throttling)
+let _csCursorPending = null; // {x_m, z_m} som venter på neste frame
 let measureMode = 'idle'; // 'idle' | 'wait_a' | 'wait_b' | 'result'
 let measurement = null;   // {a: {svgX, svgY, x_m, z_m, loose}, b: ...}
 let hoverIdx = -1;
@@ -1359,6 +1384,10 @@ function setViewMode(mode) {
     scene3dHost.style.visibility = (mode === '3d') ? 'visible' : 'hidden';
     scene3dHost.style.pointerEvents = (mode === '3d') ? '' : 'none';
   }
+  // Snittverktøyet gir bare mening i 3D — vis knappen der, rydd et evt. aktivt snitt i 2D.
+  const grpSlice = document.getElementById('grp-slice');
+  if (grpSlice) grpSlice.style.display = (mode === '3d') ? '' : 'none';
+  if (mode !== '3d') clearSlice();
   if (mode === '3d') {
     // Første 3D-åpning: sett Bilder (flyfoto) som felles bakgrunnskart, så
     // scenen ser ut som før til brukeren aktivt velger noe annet. I mørk
@@ -1378,6 +1407,40 @@ function setViewMode(mode) {
     // 3D→2D uten valgt stasjon: sentrer 2D der 3D-kameraet så.
     syncCameraTo2d();
   }
+}
+
+// ── SLICE (3D-snittverktøy) ────────────────────────────────────────────
+// Slå snittverktøyet av/på. Lazy-oppretter SliceViewModel på view3d ved første
+// kall; planet kutter alt (vegmodell + terreng) og kan vippes fritt (tiltEnabled).
+async function toggleSlice() {
+  if (sliceActive) { clearSlice(); return; }
+  await initScene();              // sørg for at view3d finnes (no-op hvis bygget)
+  if (!view3d || !window._SliceVM) return;
+  if (!slice) {
+    slice = new window._SliceVM({ view: view3d });
+    slice.tiltEnabled = true;            // fritt vippbart plan (vertikale tverrsnitt)
+    slice.excludeGroundSurface = false;  // kutt også terrenget, ikke bare modellen
+  }
+  sliceActive = true;
+  document.getElementById('btn-slice')?.classList.add('active');
+  try {
+    await slice.start();                 // interaktiv plassering av snittplanet
+    // Tving planet loddrett som standard (ESRI orienterer det ellers etter flaten
+    // under markøren ved tiltEnabled). tiltEnabled er fortsatt på, så vinkelen kan
+    // justeres fritt med håndtakene etterpå.
+    if (slice.shape) {
+      const sh = slice.shape.clone();
+      sh.tilt = 90;
+      slice.shape = sh;
+    }
+  } catch (_) {}
+}
+
+// Fjern aktivt snittplan og nullstill knappen. Trygg å kalle når intet snitt finnes.
+function clearSlice() {
+  sliceActive = false;
+  document.getElementById('btn-slice')?.classList.remove('active');
+  if (slice) { try { slice.clear(); } catch (_) {} }
 }
 
 // Synk 3D-kameraet til 2D-kartets senter (omtrentlig «samme sted», sett ovenfra-skrått).
@@ -1457,6 +1520,12 @@ async function initScene() {
     listMode: 'hide', elevationInfo: { mode: 'absolute-height' },
   });
   map3d.add(selected3dLayer);
+
+  // Eget lag for linked-cursor-markøren (tømmes ikke av mark3dStation).
+  csCursor3dLayer = new window._GraphicsLayer({
+    listMode: 'hide', elevationInfo: { mode: 'absolute-height' },
+  });
+  map3d.add(csCursor3dLayer);
 
   // Klikk i 3D → velg nærmeste stasjon (åpner tverrprofil via selectStation).
   view3d.on('click', (event) => {
@@ -1556,6 +1625,70 @@ function clTangent(idx) {
   }
   const len = Math.hypot(dx, dy) || 1;
   return { tx: dx / len, ty: dy / len };
+}
+
+// ── LINKED CURSOR: tverrprofil-hover → markør i kart/3D ────────────────
+// Snittaksen for valgt stasjon: stasjonspunkt + enhetsnormal på senterlinja.
+// Normalen må matche backendens u-akse (cross_section._project_to_2d:
+// u = tangent × ẑ = (ty, -tx)), slik at positiv x_m = høyre side av vegen.
+function setCsMapAxis(idx) {
+  const s = stations[idx];
+  if (!s) { csMapAxis = null; return; }
+  const { tx, ty } = clTangent(idx);
+  csMapAxis = { x0: s.x, y0: s.y, px: ty, py: -tx };
+}
+
+// Flytt (eller opprett) cursor-markøren. rAF-throttlet: raske pointermove-
+// events gir maks én ArcGIS-geometrioppdatering per frame.
+function updateCsMapMarker(x_m, z_m) {
+  if (!csMapAxis) return;
+  _csCursorPending = { x_m, z_m };
+  if (_csCursorRaf) return;
+  _csCursorRaf = requestAnimationFrame(() => {
+    _csCursorRaf = 0;
+    const p = _csCursorPending;
+    _csCursorPending = null;
+    if (!p || !csMapAxis) return;
+    const x = csMapAxis.x0 + csMapAxis.px * p.x_m;
+    const y = csMapAxis.y0 + csMapAxis.py * p.x_m;
+    const SR = { wkid: 25833 };
+    if (csCursorLayer && window._Graphic) {
+      if (!csCursorGfx2d) {
+        csCursorGfx2d = new window._Graphic({
+          geometry: { type: 'point', x, y, spatialReference: SR },
+          symbol: {
+            type: 'simple-marker', color: MAGENTA, size: 9,
+            outline: { color: [255, 255, 255], width: 1.5 },
+          },
+        });
+        csCursorLayer.add(csCursorGfx2d);
+      } else {
+        csCursorGfx2d.geometry = { type: 'point', x, y, spatialReference: SR };
+      }
+    }
+    if (csCursor3dLayer && window._Graphic) {
+      if (!csCursorGfx3d) {
+        csCursorGfx3d = new window._Graphic({
+          geometry: { type: 'point', x, y, z: p.z_m, spatialReference: SR },
+          symbol: { type: 'point-3d', symbolLayers: [{
+            type: 'object', resource: { primitive: 'sphere' },
+            width: 1, depth: 1, height: 1, material: { color: MAGENTA },
+          }] },
+        });
+        csCursor3dLayer.add(csCursorGfx3d);
+      } else {
+        csCursorGfx3d.geometry = { type: 'point', x, y, z: p.z_m, spatialReference: SR };
+      }
+    }
+  });
+}
+
+// Skjul markøren (pointerleave, lukking av tegning, jobbytte).
+function hideCsMapMarker() {
+  _csCursorPending = null;
+  if (_csCursorRaf) { cancelAnimationFrame(_csCursorRaf); _csCursorRaf = 0; }
+  if (csCursorGfx2d) { csCursorGfx2d.layer?.remove(csCursorGfx2d); csCursorGfx2d = null; }
+  if (csCursorGfx3d) { csCursorGfx3d.layer?.remove(csCursorGfx3d); csCursorGfx3d = null; }
 }
 
 // Fly 3D-kameraet til valgt stasjon: stå ~120 m bak langs senterlinja, ~70 m opp,
@@ -1763,10 +1896,14 @@ function cimCircleRings(r = 4.5, n = 32) {
   return [pts];
 }
 
-// Parse x-axis tick values from a matplotlib SVG (labels are HTML comments)
+// Parse x-axis tick values from a matplotlib SVG (labels are HTML comments).
+// The scan window must be bounded: unlabelede xtick-grupper (minor-tikk,
+// toppakse) har ingen tallkommentar, og et ubegrenset søk ville blø over i
+// neste y-tikk-kommentar (kotetall). Merkede tikk har kommentaren < ~600 tegn
+// fra id-en.
 function parseSvgXTicks(svgText) {
   const ticks = [];
-  const re = /id="xtick_\d+"[\s\S]*?<!-- (−?[\d.]+) -->/g;
+  const re = /id="xtick_\d+"[\s\S]{0,800}?<!-- (−?[\d.]+) -->/g;
   let m;
   while ((m = re.exec(svgText)) !== null) {
     const val = parseFloat(m[1].replace('−', '-'));
@@ -1891,9 +2028,10 @@ function renderHoverOverlay(snap, coordMap) {
   const svg = csSvgEl(), ov = csOverlayEl();
   if (!svg || !ov) return;
   clearHoverOverlay();
-  if (!snap || !coordMap) return;
+  if (!snap || !coordMap) { hideCsMapMarker(); return; }
 
   const {x_m, z_m} = coordMap.svgToReal(snap.x, snap.y);
+  updateCsMapMarker(x_m, z_m);
   const vb = svg.viewBox.baseVal;
   if (!vb || vb.width === 0) return;
 
@@ -2079,7 +2217,10 @@ function drawCrossSectionLine(s, idx, xTicks) {
   }
   const len = Math.hypot(dx, dy) || 1;
   const tx = dx / len, ty = dy / len;   // unit tangent along CL
-  const px = -ty, py = tx;              // unit perpendicular (cross-section direction)
+  // Perpendicular must match the backend u-axis (cross_section._project_to_2d:
+  // u = tangent × ẑ = (ty, -tx)) so an asymmetric [xMin, xMax] lands on the
+  // correct side of the road — and the linked-cursor marker stays on the line.
+  const px = ty, py = -tx;              // unit perpendicular (cross-section direction)
 
   const SR = { wkid: 25833 };
   const p1 = [s.x + px * xMin, s.y + py * xMin];
@@ -2106,6 +2247,70 @@ function drawCrossSectionLine(s, idx, xTicks) {
   }
 }
 
+// ── HORISONTALGEOMETRI-MERKING (R/A) ───────────────────────────────────
+// Ren tekst for et horisontalsegment. Returnerer null hvis data mangler.
+function geomLabelText(hc) {
+  if (hc.kind === 'line') return 'R=∞';
+  if (hc.kind === 'curve') return hc.radius ? 'R=' + Math.round(hc.radius) : null;
+  if (hc.kind === 'spiral') return hc.A ? 'A=' + Math.round(hc.A) : null;
+  return null;
+}
+
+// TextSymbol.angle (grader) for en tangentvektor i kartkoordinater (y opp).
+// Normaliseres til [-90, 90] så teksten aldri står opp-ned.
+function geomLabelAngle(dx, dy) {
+  let a = Math.atan2(-dy, dx) * 180 / Math.PI; // klokkeretning fra øst i skjermrom
+  if (a > 90) a -= 180;
+  if (a < -90) a += 180;
+  return a;
+}
+
+// Posisjon + rotasjon for en gitt stasjon, interpolert mellom stasjonspunkter.
+// Returnerer { x, y, angle } i EPSG:25833, eller null hvis stasjonen er utenfor.
+function geomLabelPlacement(stations, sta) {
+  if (!stations || stations.length < 2) return null;
+  if (sta < stations[0].stasjon_m || sta > stations[stations.length - 1].stasjon_m) return null;
+  let i = 0;
+  while (i < stations.length - 1 && stations[i + 1].stasjon_m < sta) i++;
+  const a = stations[i], b = stations[i + 1] || stations[i];
+  const span = (b.stasjon_m - a.stasjon_m) || 1;
+  const t = Math.min(1, Math.max(0, (sta - a.stasjon_m) / span));
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    angle: geomLabelAngle(b.x - a.x, b.y - a.y),
+  };
+}
+
+const GEOM_MIN_SEG_M = 3; // hopp over svært korte segmenter for å unngå overlapp
+
+// Fyller geomLabelLayer med ett TextSymbol per horisontalsegment.
+function buildGeomLabels() {
+  if (!geomLabelLayer || !window._Graphic) return;
+  geomLabelLayer.removeAll();
+  if (!stations || stations.length < 2) return;
+  for (const hc of horCurves) {
+    if ((hc.sta_end - hc.sta_start) < GEOM_MIN_SEG_M) continue;
+    const text = geomLabelText(hc);
+    if (!text) continue;
+    const place = geomLabelPlacement(stations, (hc.sta_start + hc.sta_end) / 2);
+    if (!place) continue;
+    geomLabelLayer.add(new window._Graphic({
+      geometry: { type: 'point', x: place.x, y: place.y, spatialReference: { wkid: 25833 } },
+      symbol: {
+        type: 'text',
+        text,
+        angle: place.angle,
+        color: [20, 20, 20],
+        haloColor: [255, 255, 255, 230],
+        haloSize: 1.6,
+        font: { size: 11, family: 'ui-monospace, SFMono-Regular, monospace', weight: 'bold' },
+        yoffset: 5,
+      },
+    }));
+  }
+}
+
 function makePillUrl(text) {
   const pw = Math.round(text.length * 7.6 + 22);
   const ph = 26;
@@ -2119,7 +2324,8 @@ function makePillUrl(text) {
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
   const [Map, MapView, SceneView, VectorTileLayer, TileLayer, WMTSLayer, FeatureLayer,
-         SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic, OAuthInfo] =
+         SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic,
+         SliceViewModel, OAuthInfo] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
       '@arcgis/core/views/MapView.js',
@@ -2137,6 +2343,7 @@ try {
       '@arcgis/core/identity/IdentityManager.js',
       '@arcgis/core/layers/GraphicsLayer.js',
       '@arcgis/core/Graphic.js',
+      '@arcgis/core/widgets/Slice/SliceViewModel.js',
       '@arcgis/core/identity/OAuthInfo.js',
     ]);
 
@@ -2160,6 +2367,7 @@ try {
   window._Ground = Ground;
   window._Map = Map;
   window._GraphicsLayer = GraphicsLayer;
+  window._SliceVM = SliceViewModel;
 
   const map = new Map({ basemap: makeBasemap(BASEMAPS.find(b => b.id === activeBasemapId)) });
 
@@ -2187,8 +2395,12 @@ try {
 
   hoverLayer = new GraphicsLayer({ listMode: 'hide' });
   selectedLayer = new GraphicsLayer({ listMode: 'hide' });
+  geomLabelLayer = new GraphicsLayer({ listMode: 'hide', visible: false, minScale: 5000 });
   map.add(hoverLayer);
   map.add(selectedLayer);
+  map.add(geomLabelLayer);
+  csCursorLayer = new GraphicsLayer({ listMode: 'hide' });
+  map.add(csCursorLayer);
   window._Graphic = Graphic;
 
   window._map = map;
@@ -2311,30 +2523,30 @@ document.getElementById('station-search').addEventListener('keydown', e => {
 
 // ── JOBS ───────────────────────────────────────────────────────────────
 // Statisk bygg: jobblisten er hardkodet (ingen /api/jobs-backend). Per-prosjekt-
-// filene (SVG, DEM, horisontal kurvatur) ligger under ./demo-data/<job_id>/, og
-// AGOL-URL-ene peker rett på de publiserte (private) tjenestene. Nyeste først.
+// filene (SVG, DEM, horisontal/vertikal kurvatur) ligger under ./demo-data/<job_id>/,
+// og AGOL-URL-ene peker rett på de publiserte (private) tjenestene. Nyeste først.
 const STATIC_JOBS = [
   {
-    job_id: 'd0c4cbc4-60da-465e-9527-7a012d4edcf8',
-    modified: 1780906729,
-    n_stations: 13,
-    centerline_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_senterlinje/FeatureServer',
-    sections_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_tverrprofiler/FeatureServer',
-    bim_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_bim_3D_slpk/SceneServer',
-    bim_3d_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_bim/FeatureServer',
-    bim_scene_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_bim_3D_slpk/SceneServer',
-    bim_plan_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtest_m_f_veg_70400_Vegkropp_bim_plan/FeatureServer',
+    job_id: '8067f2fc-da67-417f-8004-67615ca09ed1',
+    modified: 1781247155,
+    n_stations: 44,
+    centerline_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_senterlinje/FeatureServer',
+    sections_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_tverrprofiler/FeatureServer',
+    bim_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_bim_3D_slpk/SceneServer',
+    bim_3d_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_bim/FeatureServer',
+    bim_scene_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_bim_3D_slpk/SceneServer',
+    bim_plan_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVtestm_f_veg_12200_Veg_01_bim_plan/FeatureServer',
   },
   {
-    job_id: '7401475f-20eb-4838-98cc-7e64b4bf6a32',
-    modified: 1780649400,
-    n_stations: 44,
-    centerline_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_senterlinje/FeatureServer',
-    sections_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_tverrprofiler/FeatureServer',
-    bim_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_bim_3D_slpk/SceneServer',
-    bim_3d_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_bim/FeatureServer',
-    bim_scene_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_bim_3D_slpk/SceneServer',
-    bim_plan_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/SVVterrengm_f_veg_12200_Veg_bim_plan/FeatureServer',
+    job_id: '8127b322-e9c9-4f83-b287-ce6af020ac72',
+    modified: 1780999961,
+    n_stations: 13,
+    centerline_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_senterlinje/FeatureServer',
+    sections_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_tverrprofiler/FeatureServer',
+    bim_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_bim_3D_slpk/SceneServer',
+    bim_3d_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_bim/FeatureServer',
+    bim_scene_url: 'https://tiles.arcgis.com/tiles/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_bim_3D_slpk/SceneServer',
+    bim_plan_url: 'https://services.arcgis.com/2JyTvMWQSnM2Vi8q/arcgis/rest/services/paaskriftm_f_veg_70400_Vegkropp_bim_plan/FeatureServer',
   },
 ];
 
@@ -2379,6 +2591,8 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   currentSceneUrl = bimSceneUrl;
   currentCenterlineUrl = centerlineUrl || '';
   currentSectionsUrl = sectionsUrl || '';
+  // Et snittplan hører til forrige modell — rydd det ved jobbytte.
+  clearSlice();
   // Oppdater 3D-lagene hvis scenen allerede er bygget (ellers gjør initScene det).
   if (scene3dReady) {
     updateScene3dLayer().catch(e => console.warn('3D-lag:', e));
@@ -2387,12 +2601,15 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   stations = [];
   horCurves = [];
   currentIdx = -1;
+  csMapAxis = null;
+  hideCsMapMarker();
   setLoading(true, 'Laster veidata fra AGOL…');
 
   if (clLayer && window._map) window._map.remove(clLayer);
   if (stLayer && window._map) window._map.remove(stLayer);
   for (const l of bimLayers) { if (window._map) window._map.remove(l); }
   clLayer = null; stLayer = null; bimLayers = [];
+  if (geomLabelLayer) geomLabelLayer.removeAll();
 
   document.getElementById('grp-bim').style.display = 'none';
   document.getElementById('legend-bim').style.display = 'none';
@@ -2498,6 +2715,8 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   // Keep graphics layers above feature layers
   map.reorder(selectedLayer, map.layers.length - 1);
   map.reorder(hoverLayer, map.layers.length - 1);
+  if (geomLabelLayer) map.reorder(geomLabelLayer, map.layers.length - 1);
+  if (csCursorLayer) map.reorder(csCursorLayer, map.layers.length - 1);
   if (selectedLayer) selectedLayer.removeAll();
 
   try {
@@ -2534,6 +2753,17 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
       console.warn('horizontal-alignment fetch:', err);
       horCurves = [];
     }
+
+    // Last vertikal geometri (konstant-fall-strekk) for R700 lengdefall-påskrift
+    try {
+      const vgRes = await fetch(DEMO_BASE + '/' + jobId + '/vertical_alignment.json');
+      vertGrades = vgRes.ok ? await vgRes.json() : [];
+    } catch (err) {
+      console.warn('vertical-alignment fetch:', err);
+      vertGrades = [];
+    }
+
+    buildGeomLabels();
 
     // Update UI
     const shortId = jobId.slice(0, 8) + '…';
@@ -2711,6 +2941,7 @@ async function loadBimLayers(bimUrl) {
   // Keep hover/selected graphics on top
   if (selectedLayer) map.reorder(selectedLayer, map.layers.length - 1);
   if (hoverLayer)   map.reorder(hoverLayer,   map.layers.length - 1);
+  if (csCursorLayer) map.reorder(csCursorLayer, map.layers.length - 1);
 
   // Load, detect the actual kategori field name (kan være "kategori_1" etter
   // JoinField/publisering), assign renderer, and count features.
@@ -2737,6 +2968,7 @@ async function selectStation(idx) {
   currentIdx = idx;
   if (hoverLayer) hoverLayer.removeAll();
   const s = stations[idx];
+  setCsMapAxis(idx);
 
   document.getElementById('mv-profil').textContent = s.profil_nr || '—';
   document.getElementById('mv-elev').textContent = s.z.toFixed(2) + ' m.o.h.';
@@ -2890,6 +3122,7 @@ async function loadSvg(stasjon_m) {
   ph.style.display = 'none';
   host.innerHTML = '';
   currentCoordMap = null;
+  hideCsMapMarker(); // stasjonsbytte via piltast gir ingen pointerleave
   zoomCtrl.classList.remove('visible');
   loading.style.display = 'flex';
 
@@ -3055,6 +3288,7 @@ svgArea.addEventListener('pointermove', (e) => {
 
 svgArea.addEventListener('pointerleave', () => {
   clearHoverOverlay();
+  hideCsMapMarker();
   svgDragging = false;
   svgArea.classList.remove('panning');
 });
@@ -3118,6 +3352,7 @@ function openCs() {
 }
 function closeCs() {
   csOpen = false;
+  hideCsMapMarker();
   document.getElementById('cs').classList.add('closed');
   document.getElementById('map-area').classList.remove('with-right-drawer', 'xp-max');
   document.getElementById('btn-cs').classList.remove('is-on');
@@ -3170,7 +3405,7 @@ function toggleLpScale() {
 }
 
 // ── LP ZOOM HELPERS ──────────────────────────────────────────────────────
-const LP_ZOOM_MIN = 1, LP_ZOOM_MAX = 8, LP_GW = 82, LP_PR = 16;
+const LP_ZOOM_MIN = 1, LP_ZOOM_MAX = 16, LP_GW = 82, LP_PR = 16;
 function lpZoomIn()    { _setLpZoom(lpZoom * 1.4); }
 function lpZoomOut()   { _setLpZoom(lpZoom / 1.4); }
 function lpZoomReset() { _setLpZoom(1); }
@@ -3349,6 +3584,22 @@ function drawLp() {
     rd += i === 0 ? `M${cx},${cy}` : ` L${cx},${cy}`;
   });
   $(`<path d="${rd}" fill="none" stroke="${CR}" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>`);
+
+  // Lengdefall-påskrift (R700): +X,X % / –X,X % midt på hvert konstant-fall-strekk.
+  vertGrades
+    .filter(t => t.sta_end > stMin && t.sta_start < stMax)
+    .forEach(t => {
+      const mid = (Math.max(t.sta_start, stMin) + Math.min(t.sta_end, stMax)) / 2;
+      const s = _lpNearest(mid);
+      const cx = xOf(s.stasjon_m), cy = yOf(s.z);
+      if (cy <= GPT + 14) return;
+      const g = t.gradient_pct;
+      const sign = g < 0 ? '–' : '+';
+      const txt = `${sign}${Math.abs(g).toFixed(1).replace('.', ',')} %`;
+      const w = txt.length * 5.2 + 6;
+      $(`<rect x="${(cx - w / 2).toFixed(1)}" y="${(cy - 16).toFixed(1)}" width="${w.toFixed(1)}" height="12" rx="2" fill="${isDark ? 'rgba(30,32,34,0.78)' : 'rgba(255,255,255,0.82)'}"/>`);
+      $(`<text x="${cx.toFixed(1)}" y="${(cy - 7).toFixed(1)}" text-anchor="middle" font-size="8.5" font-weight="600" fill="${CR}" font-family="var(--font-mono)">${txt}</text>`);
+    });
 
   // Profile height labels at 100m (above line)
   for (let st = Math.ceil(stMin / 100) * 100; st <= stMax; st += 100) {
@@ -3818,6 +4069,8 @@ function toggleLayer(name) {
   if (name === 'bim') {
     bimLayers.forEach(l => { l.visible = layerVis[name]; });
     if (sceneLayer3d) sceneLayer3d.visible = layerVis[name];
+  } else if (name === 'geom') {
+    if (geomLabelLayer) geomLabelLayer.visible = layerVis[name];
   } else {
     const layer = name === 'centerline' ? clLayer : stLayer;
     if (layer) layer.visible = layerVis[name];
@@ -3913,7 +4166,7 @@ Object.assign(window, {
   toggleTheme, toggleLp, toggleLpScale, openCs, closeCs, toggleCsMax,
   toggleLayer, toggleLayerCard, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
-  toggleBasemapPicker, setBasemap, setViewMode,
+  toggleBasemapPicker, setBasemap, setViewMode, toggleSlice,
   lpZoomIn, lpZoomOut, lpZoomReset,
   toggleLegend, toggleLpRow,
 });
