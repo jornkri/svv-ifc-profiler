@@ -38,8 +38,11 @@ Kartpunktet (EPSG:25833) beregnes som:
 ```
 
 der `(x0, y0)` er stasjonspunktet (`stations[idx].x/y`) og `(px, py)` er
-enhetsnormalen på senterlinja — samme matte som `drawCrossSectionLine()` og
-`clTangent(idx)` (perp = `(-ty, tx)`).
+enhetsnormalen på senterlinja: `(ty, -tx)` fra `clTangent(idx)` — samme
+u-akse som backenden (`cross_section._project_to_2d`: `u = tangent × ẑ`),
+slik at positiv `x_m` = høyre side sett i økende stasjonsretning.
+(NB: `drawCrossSectionLine()` bruker `(-ty, tx)`, men snittlinjen er
+symmetrisk så fortegnet er usynlig der — for markøren er fortegnet kritisk.)
 
 3D-punktet er `(x, y, z_m)` med `elevationInfo: absolute-height`.
 

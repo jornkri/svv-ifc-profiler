@@ -1626,11 +1626,13 @@ function clTangent(idx) {
 
 // ── LINKED CURSOR: tverrprofil-hover → markør i kart/3D ────────────────
 // Snittaksen for valgt stasjon: stasjonspunkt + enhetsnormal på senterlinja.
+// Normalen må matche backendens u-akse (cross_section._project_to_2d:
+// u = tangent × ẑ = (ty, -tx)), slik at positiv x_m = høyre side av vegen.
 function setCsMapAxis(idx) {
   const s = stations[idx];
   if (!s) { csMapAxis = null; return; }
   const { tx, ty } = clTangent(idx);
-  csMapAxis = { x0: s.x, y0: s.y, px: -ty, py: tx };
+  csMapAxis = { x0: s.x, y0: s.y, px: ty, py: -tx };
 }
 
 // Flytt (eller opprett) cursor-markøren. rAF-throttlet: raske pointermove-
