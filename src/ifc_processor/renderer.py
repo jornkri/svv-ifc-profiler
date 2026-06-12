@@ -38,8 +38,8 @@ _STYLE: dict[str, dict] = {
 # tynn heltrukken linje + grupper på tre korte skråstreker som henger under linja.
 _TERRAIN_GROUP_GAP    = 2.5   # m mellom tikk-grupper (senter-til-senter)
 _TERRAIN_TICKS_GROUP  = 3     # antall skråstreker per gruppe
-_TERRAIN_TICK_SPACING = 0.3   # m mellom strekene i en gruppe (langs linja)
-_TERRAIN_TICK_LEN     = 0.45  # m skråstrek-lengde
+_TERRAIN_TICK_SPACING = 0.15  # m mellom strekene i en gruppe (langs linja)
+_TERRAIN_TICK_LEN     = 0.22  # m skråstrek-lengde
 
 
 def _point_and_tangent(
