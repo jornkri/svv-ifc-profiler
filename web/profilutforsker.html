@@ -1636,6 +1636,7 @@ function updateCsMapMarker(x_m, z_m) {
   _csCursorRaf = requestAnimationFrame(() => {
     _csCursorRaf = 0;
     const p = _csCursorPending;
+    _csCursorPending = null;
     if (!p || !csMapAxis) return;
     const x = csMapAxis.x0 + csMapAxis.px * p.x_m;
     const y = csMapAxis.y0 + csMapAxis.py * p.x_m;
@@ -1675,8 +1676,8 @@ function updateCsMapMarker(x_m, z_m) {
 function hideCsMapMarker() {
   _csCursorPending = null;
   if (_csCursorRaf) { cancelAnimationFrame(_csCursorRaf); _csCursorRaf = 0; }
-  if (csCursorGfx2d && csCursorLayer) { csCursorLayer.remove(csCursorGfx2d); csCursorGfx2d = null; }
-  if (csCursorGfx3d && csCursor3dLayer) { csCursor3dLayer.remove(csCursorGfx3d); csCursorGfx3d = null; }
+  if (csCursorGfx2d) { csCursorGfx2d.layer?.remove(csCursorGfx2d); csCursorGfx2d = null; }
+  if (csCursorGfx3d) { csCursorGfx3d.layer?.remove(csCursorGfx3d); csCursorGfx3d = null; }
 }
 
 // Fly 3D-kameraet til valgt stasjon: stå ~120 m bak langs senterlinja, ~70 m opp,
