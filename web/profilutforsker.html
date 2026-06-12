@@ -913,6 +913,14 @@ html[data-theme="dark"] .esri-attribution { background: rgba(12,18,24,.85) !impo
           </svg>
         </button>
       </div>
+      <div class="map-tool-group" id="grp-slice" style="display:none">
+        <button class="map-tool" id="btn-slice" onclick="toggleSlice()" title="Snittverktøy (3D)">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="3" y="3" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M1 9.5L13 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
       <div class="map-tool-group" id="grp-basemap" style="position:relative;overflow:visible">
         <button class="map-tool" id="btn-basemap" onclick="toggleBasemapPicker()" title="Bytt bakgrunnskart">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -1330,6 +1338,8 @@ let map3d = null;           // Map for 3D
 let scene3dReady = false;   // lazy-init flagg
 let scene3dFirstOpen = true; // første 3D-veksling → Bilder settes som felles bakgrunn
 let scene3dHost = null;     // fersk container-div for SceneView (se initScene)
+let slice = null;           // SliceViewModel for 3D-snittverktøy (lazy)
+let sliceActive = false;    // er slice-verktøyet på (planet tegnes/vises)?
 let currentSceneUrl = '';        // bim_scene_url for valgt jobb (3D-vegmodell)
 let currentCenterlineUrl = '';   // senterlinje-FeatureLayer for valgt jobb
 let currentSectionsUrl = '';     // profilpunkt-FeatureLayer for valgt jobb
@@ -1363,6 +1373,10 @@ function setViewMode(mode) {
     scene3dHost.style.visibility = (mode === '3d') ? 'visible' : 'hidden';
     scene3dHost.style.pointerEvents = (mode === '3d') ? '' : 'none';
   }
+  // Snittverktøyet gir bare mening i 3D — vis knappen der, rydd et evt. aktivt snitt i 2D.
+  const grpSlice = document.getElementById('grp-slice');
+  if (grpSlice) grpSlice.style.display = (mode === '3d') ? '' : 'none';
+  if (mode !== '3d') clearSlice();
   if (mode === '3d') {
     // Første 3D-åpning: sett Bilder (flyfoto) som felles bakgrunnskart, så
     // scenen ser ut som før til brukeren aktivt velger noe annet. I mørk
@@ -1382,6 +1396,40 @@ function setViewMode(mode) {
     // 3D→2D uten valgt stasjon: sentrer 2D der 3D-kameraet så.
     syncCameraTo2d();
   }
+}
+
+// ── SLICE (3D-snittverktøy) ────────────────────────────────────────────
+// Slå snittverktøyet av/på. Lazy-oppretter SliceViewModel på view3d ved første
+// kall; planet kutter alt (vegmodell + terreng) og kan vippes fritt (tiltEnabled).
+async function toggleSlice() {
+  if (sliceActive) { clearSlice(); return; }
+  await initScene();              // sørg for at view3d finnes (no-op hvis bygget)
+  if (!view3d || !window._SliceVM) return;
+  if (!slice) {
+    slice = new window._SliceVM({ view: view3d });
+    slice.tiltEnabled = true;            // fritt vippbart plan (vertikale tverrsnitt)
+    slice.excludeGroundSurface = false;  // kutt også terrenget, ikke bare modellen
+  }
+  sliceActive = true;
+  document.getElementById('btn-slice')?.classList.add('active');
+  try {
+    await slice.start();                 // interaktiv plassering av snittplanet
+    // Tving planet loddrett som standard (ESRI orienterer det ellers etter flaten
+    // under markøren ved tiltEnabled). tiltEnabled er fortsatt på, så vinkelen kan
+    // justeres fritt med håndtakene etterpå.
+    if (slice.shape) {
+      const sh = slice.shape.clone();
+      sh.tilt = 90;
+      slice.shape = sh;
+    }
+  } catch (_) {}
+}
+
+// Fjern aktivt snittplan og nullstill knappen. Trygg å kalle når intet snitt finnes.
+function clearSlice() {
+  sliceActive = false;
+  document.getElementById('btn-slice')?.classList.remove('active');
+  if (slice) { try { slice.clear(); } catch (_) {} }
 }
 
 // Synk 3D-kameraet til 2D-kartets senter (omtrentlig «samme sted», sett ovenfra-skrått).
@@ -2194,7 +2242,8 @@ function makePillUrl(text) {
 // ── MAP INIT ───────────────────────────────────────────────────────────
 try {
   const [Map, MapView, SceneView, VectorTileLayer, TileLayer, WMTSLayer, FeatureLayer,
-         SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic] =
+         SceneLayer, ElevationLayer, BaseElevationLayer, TileInfo, Ground, Basemap, esriId, GraphicsLayer, Graphic,
+         SliceViewModel] =
     await $arcgis.import([
       '@arcgis/core/Map.js',
       '@arcgis/core/views/MapView.js',
@@ -2212,6 +2261,7 @@ try {
       '@arcgis/core/identity/IdentityManager.js',
       '@arcgis/core/layers/GraphicsLayer.js',
       '@arcgis/core/Graphic.js',
+      '@arcgis/core/widgets/Slice/SliceViewModel.js',
     ]);
 
   window._esriId = esriId;
@@ -2228,6 +2278,7 @@ try {
   window._Ground = Ground;
   window._Map = Map;
   window._GraphicsLayer = GraphicsLayer;
+  window._SliceVM = SliceViewModel;
 
   const map = new Map({ basemap: makeBasemap(BASEMAPS.find(b => b.id === activeBasemapId)) });
 
@@ -2422,6 +2473,8 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   currentSceneUrl = bimSceneUrl;
   currentCenterlineUrl = centerlineUrl || '';
   currentSectionsUrl = sectionsUrl || '';
+  // Et snittplan hører til forrige modell — rydd det ved jobbytte.
+  clearSlice();
   // Oppdater 3D-lagene hvis scenen allerede er bygget (ellers gjør initScene det).
   if (scene3dReady) {
     updateScene3dLayer().catch(e => console.warn('3D-lag:', e));
@@ -3228,7 +3281,7 @@ function toggleLpScale() {
 }
 
 // ── LP ZOOM HELPERS ──────────────────────────────────────────────────────
-const LP_ZOOM_MIN = 1, LP_ZOOM_MAX = 8, LP_GW = 82, LP_PR = 16;
+const LP_ZOOM_MIN = 1, LP_ZOOM_MAX = 16, LP_GW = 82, LP_PR = 16;
 function lpZoomIn()    { _setLpZoom(lpZoom * 1.4); }
 function lpZoomOut()   { _setLpZoom(lpZoom / 1.4); }
 function lpZoomReset() { _setLpZoom(1); }
@@ -3989,7 +4042,7 @@ Object.assign(window, {
   toggleTheme, toggleLp, toggleLpScale, openCs, closeCs, toggleCsMax,
   toggleLayer, toggleLayerCard, mapZoom, mapHome,
   nav, drawLp, svgZoomBtn, resetCsZoom, toggleMeasure, clearMeasure, copyMeasure,
-  toggleBasemapPicker, setBasemap, setViewMode,
+  toggleBasemapPicker, setBasemap, setViewMode, toggleSlice,
   lpZoomIn, lpZoomOut, lpZoomReset,
   toggleLegend, toggleLpRow,
 });
