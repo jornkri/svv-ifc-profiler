@@ -1900,10 +1900,14 @@ function cimCircleRings(r = 4.5, n = 32) {
   return [pts];
 }
 
-// Parse x-axis tick values from a matplotlib SVG (labels are HTML comments)
+// Parse x-axis tick values from a matplotlib SVG (labels are HTML comments).
+// The scan window must be bounded: unlabelede xtick-grupper (minor-tikk,
+// toppakse) har ingen tallkommentar, og et ubegrenset søk ville blø over i
+// neste y-tikk-kommentar (kotetall). Merkede tikk har kommentaren < ~600 tegn
+// fra id-en.
 function parseSvgXTicks(svgText) {
   const ticks = [];
-  const re = /id="xtick_\d+"[\s\S]*?<!-- (−?[\d.]+) -->/g;
+  const re = /id="xtick_\d+"[\s\S]{0,800}?<!-- (−?[\d.]+) -->/g;
   let m;
   while ((m = re.exec(svgText)) !== null) {
     const val = parseFloat(m[1].replace('−', '-'));
