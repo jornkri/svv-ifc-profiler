@@ -1355,6 +1355,14 @@ let trafikkBaseLayer = null;  // Trafikkportalen-laget i aktiv basemap, ellers n
 let svgScale = 1, svgPanX = 0, svgPanY = 0;
 let svgDragging = false, svgDragStartX = 0, svgDragStartY = 0;
 let currentCoordMap = null;
+// Linked cursor: tverrprofil-hover → markør i kart/3D
+let csMapAxis = null;        // {x0, y0, px, py} — snittakse i kartet for valgt stasjon
+let csCursorLayer = null;    // GraphicsLayer (2D) for cursor-markøren
+let csCursor3dLayer = null;  // GraphicsLayer (3D) for cursor-markøren
+let csCursorGfx2d = null;    // gjenbrukbar Graphic i 2D
+let csCursorGfx3d = null;    // gjenbrukbar Graphic i 3D
+let _csCursorRaf = 0;        // rAF-handle (throttling)
+let _csCursorPending = null; // {x_m, z_m} som venter på neste frame
 let measureMode = 'idle'; // 'idle' | 'wait_a' | 'wait_b' | 'result'
 let measurement = null;   // {a: {svgX, svgY, x_m, z_m, loose}, b: ...}
 let hoverIdx = -1;
@@ -1608,6 +1616,67 @@ function clTangent(idx) {
   }
   const len = Math.hypot(dx, dy) || 1;
   return { tx: dx / len, ty: dy / len };
+}
+
+// ── LINKED CURSOR: tverrprofil-hover → markør i kart/3D ────────────────
+// Snittaksen for valgt stasjon: stasjonspunkt + enhetsnormal på senterlinja.
+function setCsMapAxis(idx) {
+  const s = stations[idx];
+  if (!s) { csMapAxis = null; return; }
+  const { tx, ty } = clTangent(idx);
+  csMapAxis = { x0: s.x, y0: s.y, px: -ty, py: tx };
+}
+
+// Flytt (eller opprett) cursor-markøren. rAF-throttlet: raske pointermove-
+// events gir maks én ArcGIS-geometrioppdatering per frame.
+function updateCsMapMarker(x_m, z_m) {
+  if (!csMapAxis) return;
+  _csCursorPending = { x_m, z_m };
+  if (_csCursorRaf) return;
+  _csCursorRaf = requestAnimationFrame(() => {
+    _csCursorRaf = 0;
+    const p = _csCursorPending;
+    if (!p || !csMapAxis) return;
+    const x = csMapAxis.x0 + csMapAxis.px * p.x_m;
+    const y = csMapAxis.y0 + csMapAxis.py * p.x_m;
+    const SR = { wkid: 25833 };
+    if (csCursorLayer && window._Graphic) {
+      if (!csCursorGfx2d) {
+        csCursorGfx2d = new window._Graphic({
+          geometry: { type: 'point', x, y, spatialReference: SR },
+          symbol: {
+            type: 'simple-marker', color: MAGENTA, size: 9,
+            outline: { color: [255, 255, 255], width: 1.5 },
+          },
+        });
+        csCursorLayer.add(csCursorGfx2d);
+      } else {
+        csCursorGfx2d.geometry = { type: 'point', x, y, spatialReference: SR };
+      }
+    }
+    if (csCursor3dLayer && window._Graphic) {
+      if (!csCursorGfx3d) {
+        csCursorGfx3d = new window._Graphic({
+          geometry: { type: 'point', x, y, z: p.z_m, spatialReference: SR },
+          symbol: { type: 'point-3d', symbolLayers: [{
+            type: 'object', resource: { primitive: 'sphere' },
+            width: 1, depth: 1, height: 1, material: { color: MAGENTA },
+          }] },
+        });
+        csCursor3dLayer.add(csCursorGfx3d);
+      } else {
+        csCursorGfx3d.geometry = { type: 'point', x, y, z: p.z_m, spatialReference: SR };
+      }
+    }
+  });
+}
+
+// Skjul markøren (pointerleave, lukking av tegning, jobbytte).
+function hideCsMapMarker() {
+  _csCursorPending = null;
+  if (_csCursorRaf) { cancelAnimationFrame(_csCursorRaf); _csCursorRaf = 0; }
+  if (csCursorGfx2d && csCursorLayer) { csCursorLayer.remove(csCursorGfx2d); csCursorGfx2d = null; }
+  if (csCursorGfx3d && csCursor3dLayer) { csCursor3dLayer.remove(csCursorGfx3d); csCursorGfx3d = null; }
 }
 
 // Fly 3D-kameraet til valgt stasjon: stå ~120 m bak langs senterlinja, ~70 m opp,
