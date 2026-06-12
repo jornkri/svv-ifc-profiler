@@ -1518,6 +1518,12 @@ async function initScene() {
   });
   map3d.add(selected3dLayer);
 
+  // Eget lag for linked-cursor-markøren (tømmes ikke av mark3dStation).
+  csCursor3dLayer = new window._GraphicsLayer({
+    listMode: 'hide', elevationInfo: { mode: 'absolute-height' },
+  });
+  map3d.add(csCursor3dLayer);
+
   // Klikk i 3D → velg nærmeste stasjon (åpner tverrprofil via selectStation).
   view3d.on('click', (event) => {
     const p = event.mapPoint;
@@ -2380,6 +2386,8 @@ try {
   map.add(hoverLayer);
   map.add(selectedLayer);
   map.add(geomLabelLayer);
+  csCursorLayer = new GraphicsLayer({ listMode: 'hide' });
+  map.add(csCursorLayer);
   window._Graphic = Graphic;
 
   window._map = map;
@@ -2666,6 +2674,7 @@ async function loadJob(jobId, centerlineUrl, sectionsUrl, bimUrl = '', bimSceneU
   map.reorder(selectedLayer, map.layers.length - 1);
   map.reorder(hoverLayer, map.layers.length - 1);
   if (geomLabelLayer) map.reorder(geomLabelLayer, map.layers.length - 1);
+  if (csCursorLayer) map.reorder(csCursorLayer, map.layers.length - 1);
   if (selectedLayer) selectedLayer.removeAll();
 
   try {
@@ -2892,6 +2901,7 @@ async function loadBimLayers(bimUrl) {
   // Keep hover/selected graphics on top
   if (selectedLayer) map.reorder(selectedLayer, map.layers.length - 1);
   if (hoverLayer)   map.reorder(hoverLayer,   map.layers.length - 1);
+  if (csCursorLayer) map.reorder(csCursorLayer, map.layers.length - 1);
 
   // Load, detect the actual kategori field name (kan være "kategori_1" etter
   // JoinField/publisering), assign renderer, and count features.
