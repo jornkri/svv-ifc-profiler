@@ -19,7 +19,7 @@ tegnes i kartet for valgt stasjon.
   som vises i kartet.)
 - Markøren vises i **både 2D-kartet og 3D-scenen** (den av dem som er aktiv —
   det er billig å oppdatere begge ubetinget så lenge lagene finnes).
-- Markøren fjernes når cursoren forlater SVG-området (`pointerleave`), når
+- Markøren skjules når cursoren forlater SVG-området (`pointerleave`), når
   tegningen lukkes, og ved jobbytte.
 - Måle-modus påvirkes ikke; hover-flyten kjører som før.
 
@@ -48,17 +48,25 @@ enhetsnormalen på senterlinja — samme matte som `drawCrossSectionLine()` og
 Alle endringer i `web/profilutforsker.html`:
 
 1. **Tilstand `csMapAxis`** — `{x0, y0, px, py}` settes i `selectStation(idx)`
-   (gjenbruker `clTangent(idx)`), nulles ved jobbytte og når tegningen lukkes.
-2. **2D-markør** — én gjenbrukbar `Graphic` i eksisterende `hoverLayer`
-   (`listMode: hide`, ligger øverst): liten magenta sirkel (samme MAGENTA som
-   snittlinjen) med hvit ring, `simple-marker`, ~9 px.
-3. **3D-markør** — én gjenbrukbar `Graphic` i eksisterende `selected3dLayer`
-   (har allerede `absolute-height`): magenta kule (`point-3d`, object-symbol,
-   ~1 m diameter). Oppdateres kun hvis `view3d`/laget er initialisert
-   (3D er lazy-init).
+   (gjenbruker `clTangent(idx)`), nulles ved jobbytte. Ved lukking av
+   tegningen skjules bare markøren (aksen beholdes så hover virker ved
+   gjenåpning).
+2. **2D-markør** — én gjenbrukbar `Graphic` i et **eget** `GraphicsLayer`
+   (`csCursorLayer`, `listMode: hide`, holdes øverst): liten magenta sirkel
+   (samme MAGENTA som snittlinjen) med hvit ring, `simple-marker`, ~9 px.
+   (Eksisterende `hoverLayer` kan ikke brukes — den tømmes med `removeAll()`
+   av kart-hoveren og i `selectStation`.)
+3. **3D-markør** — én gjenbrukbar `Graphic` i et **eget** `GraphicsLayer`
+   (`csCursor3dLayer`, `absolute-height`): magenta kule (`point-3d`,
+   object-symbol, ~1 m diameter). Oppdateres kun hvis laget er initialisert
+   (3D er lazy-init). (Eksisterende `selected3dLayer` tømmes av
+   `mark3dStation` ved stasjonsbytte.)
 4. **Hook i hover-flyten** — `renderHoverOverlay(snap, coordMap)` beregner
-   kartpunktet fra `x_m`/`z_m` og kaller `updateCsMapMarker(x_m, z_m)`;
-   `clearHoverOverlay()` kaller `hideCsMapMarker()`.
+   kartpunktet fra `x_m`/`z_m` og kaller `updateCsMapMarker(x_m, z_m)`.
+   `hideCsMapMarker()` hektes på `pointerleave`, `closeCs()`, jobbytte og
+   early-return i `renderHoverOverlay` — IKKE i `clearHoverOverlay()`, som
+   kjøres øverst i hver `renderHoverOverlay` og ville ødelagt
+   Graphic-gjenbruken.
 5. **rAF-throttling** — geometri-oppdateringene buffres gjennom
    `requestAnimationFrame` slik at raske `pointermove`-events ikke gir mer enn
    én ArcGIS-oppdatering per frame.
