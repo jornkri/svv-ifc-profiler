@@ -2217,7 +2217,10 @@ function drawCrossSectionLine(s, idx, xTicks) {
   }
   const len = Math.hypot(dx, dy) || 1;
   const tx = dx / len, ty = dy / len;   // unit tangent along CL
-  const px = -ty, py = tx;              // unit perpendicular (cross-section direction)
+  // Perpendicular must match the backend u-axis (cross_section._project_to_2d:
+  // u = tangent × ẑ = (ty, -tx)) so an asymmetric [xMin, xMax] lands on the
+  // correct side of the road — and the linked-cursor marker stays on the line.
+  const px = ty, py = -tx;              // unit perpendicular (cross-section direction)
 
   const SR = { wkid: 25833 };
   const p1 = [s.x + px * xMin, s.y + py * xMin];
